@@ -234,6 +234,14 @@ test('deliver (live verify, P): what asks the person is a notice, not context on
   assert.equal(D(ALICE, d2, all2), 'notice', 'an agreed decision on a proposal alice is in');
   assert.equal(D(BOB, d2, all2), 'notice', 'bob is in it too: shown, no wake');
   assert.equal(D(CAROL, d2, all2), 'context', 'not in it: context');
+  // 0.7.0: the one who asked hears each Yes as it comes ("bob agreed to plan paging v2"); the others' Claudes only read it
+  const H3 = 'cccccccccccc';
+  prop('carol', H3, ['alice', 'bob', 'carol']);
+  const b3 = answer('bob', 'signoff', H3);
+  const all3 = R.readAll();
+  assert.equal(D(CAROL, b3, all3), 'notice', 'carol asked: she sees bob\'s Yes');
+  assert.equal(D(ALICE, b3, all3), 'context', 'another approver: context');
+  assert.equal(D(BOB, b3, all3), 'none', 'his own answer');
 });
 
 test('deliver (noise pass A): the room\'s invite-join line, "NAME joined (MACHINE)", is the people\'s join notice; the bare "joined" after it is not drawn again', () => {

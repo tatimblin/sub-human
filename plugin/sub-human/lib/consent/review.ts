@@ -2,9 +2,9 @@
  * plugin/sub-human/lib/consent/review.ts: the consent hook's session-side state machine, as one pure reducer.
  *
  *   reduce(state, event, ctx) -> {state, effects, say}
- * state: {review, note}, the seat's two documents (members/NAME/review: the plan-view review; members/NAME/confirm: a
- * review's note waiting for the person's Send). The room's record of a proposal (who agreed, the decision) is not
- * here: lib/room/consent.ts fold is its one interpretation, and an answer reaches it only through the `answer` effect.
+ * state: {review, note}: the seat's review (members/NAME/review, the plan-view review) and, within one event only, the
+ * note the dialog closed with, which reduce sends at once (0.7.0: no note waits for a card). The room's record of a
+ * proposal (who agreed, the decision) is not here: lib/room/consent.ts fold is its one interpretation, and an answer reaches it only through the `answer` effect.
  * hooks/consent.ts gathers each event's facts (the transcript, the plan file, the room), runs the effects
  * (the lock, plan-file I/O, proposal.answer), stores the state and writes the say. Nothing here reads a
  * file, the clock or the room.
@@ -18,13 +18,8 @@
  *                                                          "exit plan mode?", which the person answers) ─exited─► (none), restored
  * The hooks never answer a permission check with allow: entering plan mode asks nothing anyway, and leaving it is the
  * person's own answer to Claude Code's question.
- * A review closed with a note (the dialog's own tool_result, read only once it is on disk: `unread` until then) opens
- * the note; nothing is recorded until the person's Send on its card.
- * The note (Confirm.stage):
- *   waiting ─stop─► nudged ─prompt─► told        asked ─prompt (no Post: Esc)─► reoffered ─stop─► told
- *   waiting|nudged ─ask─► asked ─answered (no answer)─► told; reoffered ─ask─► told; Send / Discard ─► (none)
- *   told ─prompt─► told, the person told once what Send and Discard do (explained); the note keeps waiting
- * A note whose proposal is no longer the seat's to answer is dropped wherever it is met.
+ * A review closed with a note (the dialog's own tool_result, read only once it is on disk: `unread` until then) is the
+ * person's objection, recorded with the note in the same step: "Tell Claude what to change" is the send.
  *
  * Events (ConsentEvent, each carrying its facts; ctx {name, now}) are the hooks around EnterPlanMode, ExitPlanMode,
  * AskUserQuestion and the room's MCP tools, plus Stop, UserPromptSubmit and a failed writePlan (planFailed). Notes:
@@ -37,36 +32,33 @@
  *     plan mode stays on, the person's own plan back in the file), never let through to leave plan mode.
  *   rejected: Claude Code runs no PostToolUse for a rejected plan view, so the module's tool.call hook reports it the
  *     moment ExitPlanMode's call comes back refused (mod/consent.ts); the review resolves there and then.
- *   noteAnswer (#34, ctx.keepMode): a refusal that opened a note has the module ask its Send / Discard at once, while
- *     plan mode is still on; the answer comes back here before the closing call (none: the note waits for its card).
- *     The closing call then keeps the person's mode from before the review (leaving): auto exits with the closing line
- *     as the plan (closePlan), manual and accept edits with the empty exit (accept edits: one line, shift+tab).
- *   roomTool: while a review is shown or closing any room tool is denied; while a note waits for its card the post
- *     tool is (the card decides what the room gets, so a paraphrase cannot go out first).
+ *   keepMode (#34, ctx.keepMode): the closing call keeps the person's mode from before the review (leaving): auto
+ *     exits with the closing line as the plan (closePlan), manual and accept edits with the empty exit (accept edits:
+ *     one line, shift+tab).
+ *   roomTool: while a review is shown or closing any room tool is denied.
  * answerNeeded(review, event) says whether, and how, the handler reads the dialog's answer for an event.
  *
  * Effects run in order. save comes before a writePlan, so the backup is on disk first; restorePlan with a null backup
  * removes the file; blankPlan empties it for the closing ExitPlanMode (which reads it as it runs: the person's own plan
- * there would show as approved), and the restore follows at exited or the next prompt; answer is lib/proposal.ts answer then decide, its clearNote dropping the note only on success.
+ * there would show as approved), and the restore follows at exited or the next prompt; answer is lib/proposal.ts answer then decide.
  * say is what the hook answers (context, deny, or ask: the plan view, the card, or the closing call's "exit plan mode?");
  * its parts are lines, {answer: hash} (the answer effect's outcome line) or {ifRecorded}. Every model-facing line is
  * in NEXT and SAY below: one mechanic per phase and short outcome lines (CLAUDE.md "Unprescriptive").
  *
  * A draft (Review.draft: lib/proposal.ts check) is the person's own new version, before anyone else is asked: its
  * dialog says so (dialogDraft), its Yes is recorded as any (the answer effect, which then sends it out: hooks/consent.ts
- * record), and a note on it opens no note card: nothing is recorded or sent, and the model is told to write the next
- * version (revise); the card's Object on it says the same.
+ * record), and a note on it records nothing and sends nothing: the model is told to write the next version (revise);
+ * the card's Object on it says the same.
  *
- * A proposal is a sign-off request on one version of a room plan (lib/plans.ts). Editing a plan is lib/consent/edit.ts,
- * a reducer of its own: while an edit is open the hooks route plan mode to it, never here, so an edit's ExitPlanMode
- * never reaches a review and the person's own plan approved in the dialog is never an answer (only a review the hooks
+ * A proposal is a sign-off request on one version of a room plan (lib/plans.ts; a version is stored by the plan tool's
+ * edit, mcp/room-server.ts). The person's own plan approved in the dialog is never an answer (only a review the hooks
  * opened records one). Every comparison of the dialog's plan with the proposal goes through shownHash.
  */
 
 import { hash12 } from '../text.ts';
 import { YES_GUARD_MS } from '../config.ts';
 import { assertNever } from '../../mod/core/never.ts';
-import type { Confirm, NoteStage, Recheck, Review, Steer } from '../types-app.ts';
+import type { Confirm, Recheck, Review, Steer } from '../types-app.ts';
 import type { CardAnswer } from './card.ts';
 import type { RoomCode } from '../brand.ts';
 
@@ -75,7 +67,7 @@ import type { RoomCode } from '../brand.ts';
 export interface State { review: Review | null; note: Confirm | null; recheck?: Recheck | null | undefined; steer?: Steer | null | undefined }
 /** guardMs: YES_GUARD_MS unless the handler says otherwise (the tests shorten it: env.testMs). keepMode (#34, the
  * verdict's keep-mode on): a review's closing call keeps the mode the person had before it (auto: a non-empty closing
- * plan; manual and accept edits: the empty exit), and Send / Discard comes first (noteAnswer); off: the empty exit for every mode. */
+ * plan; manual and accept edits: the empty exit); off: the empty exit for every mode. */
 export interface ReviewCtx { name: string; now: number; guardMs?: number; keepMode?: boolean }
 
 /** How the review's dialog closed (cc.planAnswer): note null for no note (Esc, a bare deny). */
@@ -104,17 +96,15 @@ export type ConsentEvent =
   | { type: 'exited'; toolUseId: string | null; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null;
       response: { plan: unknown; edited: boolean; isAgent: boolean; filePath: unknown }; callPlan: unknown;
       pending: Pending[]; callNames: string[]; reviewable: boolean }
-  | { type: 'stop'; mode: string | undefined; active: boolean; answer?: ReviewAnswer | null; target?: Target | null; live: boolean }
-  | { type: 'roomTool'; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null; post?: boolean; noteLive?: boolean }
+  | { type: 'stop'; mode: string | undefined; active: boolean; answer?: ReviewAnswer | null; target?: Target | null }
+  | { type: 'roomTool'; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null }
   | { type: 'rejected'; toolUseId: string | null; answer: ReviewAnswer | null; target?: Target | null }
-  | { type: 'prompt'; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null; live: boolean }
-  | { type: 'ask'; admit: string | null; noteNamed: boolean; live: boolean; hit: Pending[]; reviewable: boolean }
-  | { type: 'answered'; note: CardAnswer; target?: Target | null; afk: boolean; asked: boolean;
+  | { type: 'prompt'; mode: string | undefined; answer?: ReviewAnswer | null; target?: Target | null }
+  | { type: 'ask'; admit: string | null; hit: Pending[]; reviewable: boolean }
+  | { type: 'answered'; afk: boolean; asked: boolean;
       answers: { hash: string; answer: CardAnswer; live: boolean; draft?: boolean }[] }
-  | { type: 'planFailed'; early: boolean }
-  /** #34: the note's Send / Discard, asked by the module itself ($.ui.ask) right as the plan view refused with a
-   * note, while plan mode is still on; label null: no answer (dismissed, no one to ask): the note waits for its card */
-  | { type: 'noteAnswer'; label: 'Send' | 'Discard' | null; target?: Target | null };
+  | { type: 'planFailed'; early: boolean };
+
 
 export type ConsentEffect =
   | { do: 'save'; review: Review }
@@ -125,9 +115,9 @@ export type ConsentEffect =
   /** #34: the plan file holds only the review's closing line for the closing ExitPlanMode of a person who was in auto
    * mode (a non-empty plan: its dialog's first row, preselected, keeps auto); restorePlan follows at exited */
   | { do: 'closePlan'; file: string; text: string }
-  /** clearNote: the note goes once recorded; closing: the review's closing line says the note went (Review.closing
-   * 'sent') once recorded */
-  | { do: 'answer'; hash: string; choice: 'Agree' | 'Object'; notes?: string; clearNote?: boolean; closing?: boolean };
+  /** sentTo: the person's note, to the request's asker: once recorded, the person is told it went (one line) and the
+   * review's closing line says so (Review.closing 'sent') */
+  | { do: 'answer'; hash: string; choice: 'Agree' | 'Object'; notes?: string; sentTo?: string };
 
 export type Part = string | { answer: string } | { ifRecorded: string };
 /** context: what the model reads. deny: the call refused with an empty reason (nothing red for the person: Claude's
@@ -135,7 +125,7 @@ export type Part = string | { answer: string } | { ifRecorded: string };
 export type Say =
   | { to: 'context'; parts: Part[] }
   | { to: 'deny'; context: Part[] }
-  | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { note: true } | { admit: string } | { leave: true } | { close: string } };
+  | { to: 'ask'; text: string; show: { plan: string } | { card: string[] } | { admit: string } | { leave: true } | { close: string } };
 
 /** notice: a line for the person (the hook's systemMessage, a sub-human notice), beside what the model is told. */
 export interface ReviewStep { state: State; effects: ConsentEffect[]; say: Say | null; notice?: string }
@@ -193,20 +183,16 @@ export const NEXT = {
     : `call EnterPlanMode, then ExitPlanMode, to restore ${n}'s ${mode} mode (no dialogs)`),
   /** the fallback card */
   card: (h: string) => `call AskUserQuestion with "proposal ${h}"`,
-  /** a note's confirm card */
-  note: (h: string) => `call AskUserQuestion with "objection ${h}"`,
   admit: (ref: string) => `call AskUserQuestion with "admit ${ref}"`,
 };
 
 /**
  * #34: the plan text of a review's closing call for a person who was in auto mode: one line, never the proposal (the
- * model reads "User has approved your plan" with it). The note sent: where it went; one that waits, discarded, or none.
+ * model reads "User has approved your plan" with it). A note: where it went.
  */
 export function closingLine(r: Review, note: Confirm | null): string {
   const to = r.from || 'the room';
-  if (note && note.hash === r.hash) return `Your note to ${to} is not sent yet. Nothing to build.`;
-  if (r.closing === 'sent') return `Your note went to ${to}. Nothing to build.`;
-  if (r.closing === 'discarded') return 'Your note was not sent. Nothing to build.';
+  if ((note && note.hash === r.hash) || r.closing === 'sent') return `Your note went to ${to}. Nothing to build.`;
   return 'Room review closed. Nothing to build.';
 }
 
@@ -227,8 +213,6 @@ const requestName = (h: string, title: string | null | undefined): string => (!t
 const planIn = (title: string | null | undefined): string | null => /^plan ([a-z0-9-]+) v\d+$/.exec(String(title ?? ''))?.[1] ?? null;
 /** The edit call for the plan a request is about. */
 const editCall = (title: string | null | undefined): string => { const p = planIn(title); return `the plan tool, op edit${p ? `, name ${p}` : ''}`; };
-/** The note is the person's: the model neither posts it nor answers its card for them. */
-const keepNote = (_n: string) => 'Don\'t post or answer it yourself.';
 /** The longest text one consent hook adds to the model's context: a step says one or two short lines, so more is a
  *  bug (a part repeated, a title run long), and the cap keeps it from flooding the turn. */
 export const SAY_MAX = 600;
@@ -237,15 +221,13 @@ export const SAY_MAX = 600;
 export const SAY = {
   recorded: 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.',
   /** after an objection with a note: the note is the person's words to the room and, often, to their own Claude ("ask
-   * cameron if…"); live 2026-10-17 the model took "post nothing" as "do nothing" and the question was never asked. Who
-   * writes the changes is not prescribed: this side may, when the note says how; the author's Claude is told it may too
-   * (lib/room/render.ts changesLine). */
-  noteFollow: (n: string): string => `${n}'s note went to the author; you may write its changes as the next version (plan, op edit). If it asks anything else (e.g. SendMessage NAME.CODE), do it. Don't repeat the note.`,
+   * cameron if…"); live 2026-10-17 the model took "post nothing" as "do nothing" and the question was never asked. The
+   * author's Claude writes the next version (0.7.0: lib/room/render.ts changesLine), so this side does not. */
+  noteFollow: (n: string): string => `${n}'s note went to the author, whose Claude writes the next version. If it asks anything else (e.g. SendMessage NAME.CODE), do it. Don't repeat the note.`,
   /** the author's Yes on their own new version: sent out (lib/proposal.ts sendOut) */
-  /** others: who else was asked ("bob, carol"; '' in a room of one) */
-  sent: (n: string, what: string, others: string, decided?: string | null): string => `${n} sent ${what} out${others ? `: ${others} asked to sign off` : ''}; `
-    + `${n}'s Yes is their own sign-off${decided ? `; the room decided: ${decided}` : ''}. The room shows it: post nothing about it.`,
-  sendFailed: (n: string, h: string, why: string): string => `${n}'s Yes on ${h} is recorded, but it did not go out (${why}). If ${n} asks, ask for sign-off (the plan tool, op ask).`,
+  /** others: who else was asked ("bob, carol"; '' in a room of one). One sentence (0.7.0): the room shows the rest */
+  sent: (n: string, what: string, others: string, decided?: string | null): string => `${n} sent ${what} out${others ? ` to ${others}` : ''}${decided ? `; the room decided: ${decided}` : ''}: nothing to build or post.`,
+  sendFailed: (n: string, h: string, why: string): string => `${n}'s Yes on ${h} is recorded, but it did not go out (${why}); nothing to build. If ${n} asks, ask for sign-off (the plan tool, op ask).`,
   /** the author's note on their own new version: another version, nothing sent or recorded */
   revise: (n: string, h: string, title?: string | null): string => `Nothing was sent or recorded: ${n} wants changes to their own new version (${requestName(h, title)}). Write them as the plan's next version (${editCall(title)}); it comes back to ${n} before anyone else is asked.`,
   agreed: (n: string, h: string, decided?: string | null): string => `${n} agreed to proposal ${h}${decided ? `; the room decided: ${decided} (${n} sees it: don't restate it)` : ''}.`,
@@ -278,19 +260,12 @@ export const SAY = {
   planView: (n: string, h: string): string => `Open it in the plan view instead: ${NEXT.open(h)}. The hooks show ${n} the full proposal.`,
   unread: (n: string, h: string): string => `${n}'s answer in the review of proposal ${h} is not on record yet; nothing was recorded.`,
   closed: (n: string, h: string): string => `${n} closed the review of proposal ${h} without answering; nothing was recorded.`,
-  /** said once the dialog closed with a note (live, a model told the person it was recorded before the card) */
-  noted: (n: string, h: string): string => `Nothing is recorded yet: ${n}'s note on ${h} waits for Send or Discard on its card. Next, ${NEXT.note(h)}.`,
-  /** the dialog's rejection with a note, said in its own result (live, the model posted a paraphrase before the card) */
-  rejectedNote: (n: string, h: string): string => `sub-human: nothing is recorded yet: ${n}'s note on ${h} waits for its card (Send or Discard), which decides what the room gets; post nothing about it. First call ExitPlanMode now (no plan needed); then ${NEXT.note(h)}.`,
+  /** the dialog's rejection with a note, said in its own result: the outcome follows (reduce) */
+  rejectedNote: `sub-human: First ${NEXT.exit}.`,
   rejectedClosed: (n: string, h: string): string => `sub-human: ${n} closed the review of proposal ${h} without answering; nothing was recorded. First ${NEXT.exit}; then ${DONE.toLowerCase()}`,
-  /** a post while a note waits for its card */
-  noteWaits: (n: string, h: string): string => `sub-human: refused: ${n}'s note on proposal ${h} waits for Send or Discard on its card, which decides what the room gets. Post nothing about it; ${NEXT.note(h)}.`,
   nothingToShow: (h: string | undefined): string => `${h ? `proposal ${h}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.`,
   /** after the closing call: plainly, nothing is to be built (said here alone) */
   reviewOver: 'The room review is closed. Nothing is to be built: it was a room plan review, not a plan to carry out.',
-  /** #34: the note answered on its card while plan mode was still on; the closing call is next */
-  noteSentExit: `Next, ${NEXT.exit}.`,
-  noteDiscardedNow: (n: string, h: string): string => `${n} discarded the note; nothing was recorded and proposal ${h} still awaits ${n}'s answer. Next, ${NEXT.exit}.`,
   /** #34: accept edits has no exit that keeps it: the person's one line after the empty exit */
   acceptEditsBack: 'shift+tab returns you to accept edits',
   /** a review opened in the person's own plan mode, closed without a Yes: its closing ExitPlanMode is denied (plan
@@ -307,16 +282,6 @@ export const SAY = {
   stillOpen: (n: string, next: string): string => `sub-human: ${n}'s room review is still open: ${next}.`,
   roomToolDenied: (said: string): string => `sub-human: ${said ? `${said} ` : ''}Post nothing about the review. First ${NEXT.exit}; then return to what you were doing.`,
   promptExit: (said: string): string => `sub-human: ${said ? `${said} ` : ''}Before anything else, ${NEXT.exit}; then continue.`,
-  // the note and its confirm card
-  noteAsk: (n: string, h: string): string => `room proposal ${h}: ${n}'s note, to send or discard`,
-  nudge: (n: string, h: string): string => `${n}'s note on ${h} waits: ${NEXT.note(h)} (Send or Discard). ${keepNote(n)}`,
-  reoffer: (n: string, h: string, interrupted: boolean): string => `${n}'s note on ${h}:${interrupted ? '' : ' its card was never shown.'} ${showNote(n, h, interrupted)} ${keepNote(n)}`,
-  renudge: (n: string, h: string): string => `${n}'s note on ${h} still waits; Esc was no answer. First, ${NEXT.note(h)}. ${keepNote(n)}`,
-  noteNoAnswer: (n: string, h: string): string => `Nothing was recorded: the card closed without ${n}'s answer; the note waits. If ${n} asks, ${NEXT.note(h)}. ${DONE}`,
-  noteOther: (h: string): string => `proposal ${h}: no Send/Discard answer; nothing was recorded and the note waits. ${DONE}`,
-  /** the person's notice once the card went by unanswered again: what each button does; the note keeps waiting */
-  noteStillWaits: (title: string | null, h: string): string => `your note on ${title ? `"${title}"` : `proposal ${h}`} still waits, not sent. On its card, Send posts it as your objection; Discard drops it and records nothing (the proposal stays unanswered). Esc keeps it waiting: ask your Claude for the card when you decide`,
-  discarded: (n: string, h: string): string => `${n} discarded the note; nothing was recorded and proposal ${h} still awaits ${n}'s answer. ${DONE}`,
   // the fallback card
   cardNoAnswer: (n: string): string => `Nothing was recorded: the card closed without ${n}'s answer. Reopening it later is fine. ${DONE}`,
   notYet: (n: string, h: string): string => `proposal ${h}: ${n} has not decided; nothing was recorded. Do not ask again unless ${n} asks.`,
@@ -329,28 +294,8 @@ export const SAY = {
   admitFailed: (n: string, why: string): string => `Nothing was done: ${why}. ${n} has been told. ${DONE}`,
 };
 
-/**
- * The model is to show the note's card now (consent's reoffer and renudge, and lib/tail.ts's reminder say it alike).
- * interrupted: the card was shown and closed with no answer (an Esc), which the model reads as declined; it is neither.
- */
-export function showNote(_n: string, h: string, interrupted = false): string {
-  return interrupted
-    ? `Esc was no answer, not a decline. First, ${NEXT.note(h)}.`
-    : `First, ${NEXT.note(h)}.`;
-}
-
-// ---------- the note ----------
-/** A note's stage. */
-export const stageOf = (cf: Confirm): NoteStage => cf.stage ?? 'waiting';
-const staged = (cf: Confirm, stage: NoteStage): Confirm => ({ ...cf, stage });
-/** The card shown (Pre AskUserQuestion): an offer still due becomes asked; one offered again is the last. */
-const onShown = (s: NoteStage): NoteStage => (s === 'waiting' || s === 'nudged' || s === 'asked' ? 'asked' : 'told');
-
-/** The seat still has something consent must act on at a turn's end or the next prompt (the mod's reviewMaybeOpen): a
- * note told already counts until the person heard once what Send and Discard do (noteAtPrompt: explained). */
-export function openOf(state: State): boolean {
-  return !!state.review || (!!state.note && (stageOf(state.note) !== 'told' || !state.note.explained));
-}
+/** The seat still has something consent must act on at a turn's end or the next prompt (the mod's reviewMaybeOpen). */
+export function openOf(state: State): boolean { return !!state.review; }
 
 // ---------- the review ----------
 /** The plan file back as it was: the effect, and the review marked restored. */
@@ -377,14 +322,15 @@ export function answerNeeded(r: Review | null, ev: { type: ConsentEvent['type'];
     case 'stop': return ev.mode === 'plan' && r.phase !== 'restore' && r.phase !== 'entering' ? 'now' : null;
     case 'roomTool': return r.phase === 'shown' || r.phase === 'exiting' ? 'now' : null;
     case 'prompt': return (ev.mode === 'plan' && r.phase !== 'restore') || r.unread ? 'now' : null;
-    case 'enter': case 'entered': case 'planFailed': case 'rejected': case 'ask': case 'answered': case 'noteAnswer': return null;
+    case 'enter': case 'entered': case 'planFailed': case 'rejected': case 'ask': case 'answered': return null;
     default: return assertNever(ev.type, 'consent event');
   }
 }
 
 /**
- * The dialog closed: what it said, once its tool_result is on disk (answer). A note never counts on its own: it opens
- * the note (Send on its card records it). No answer yet (answer null) with the call's id known is unread, unless the
+ * The dialog closed: what it said, once its tool_result is on disk (answer). A note is the person's objection: the
+ * step returns it as the state's note, and reduce sends it at once. No answer yet (answer null) with the call's id
+ * known is unread, unless the
  * review is closing (close): then it closed without an answer.
  */
 function resolve(r: Review, note: Confirm | null, ev: { answer?: ReviewAnswer | null; target?: Target | null }, ctx: ReviewCtx, close = false): { review: Review; note: Confirm | null } {
@@ -398,8 +344,7 @@ function resolve(r: Review, note: Confirm | null, ev: { answer?: ReviewAnswer | 
   const t = ev.target && ev.target.hash === r.hash ? ev.target : null;
   if (!t) return { review: { ...rest, resolved: true, said: SAY.stale(h) }, note };
   if (r.draft || t.draft) return { review: { ...rest, resolved: true, revise: true, said: SAY.revise(ctx.name, h, r.title ?? t.title) }, note };
-  return { review: { ...rest, resolved: true, said: SAY.noted(ctx.name, h) },
-    note: { hash: t.hash, note: text, from: t.from, title: t.title, at: ctx.now, stage: 'waiting' } };
+  return { review: { ...rest, resolved: true }, note: { hash: t.hash, note: text, from: t.from, title: t.title, at: ctx.now } };
 }
 
 /** A blank plan, or the stub the model is told to pass ("plan paging v1", "proposal <hash>"): not a plan of its own. */
@@ -517,7 +462,7 @@ function closeInPlan(prev: State, step: ReviewStep, ctx: ReviewCtx): ReviewStep 
   if (!rv || rv.phase !== 'exiting' || rv.mode !== 'plan' || step.say || (prev.review && prev.review.phase === 'restore')) return step;
   const [, effects] = restore(rv);
   const all = [...step.effects, ...effects];
-  const noted = !!step.state.note && step.state.note !== prev.note; // the person's note opened: its card is next
+  const noted = !!step.state.note && step.state.note !== prev.note; // the person's note went: its outcome follows (reduce)
   const said = rv.said ? `${rv.said} ` : '';
   const card = rv.card ? SAY.cardInstead(ctx.name, rv.card) : '';
   const back = rv.foreign ? [SAY.foreign(ctx.name, rv.hash)] : backLine(all);
@@ -548,7 +493,7 @@ function leaving(step: ReviewStep, ctx: ReviewCtx): ReviewStep {
 /**
  * A review in the person's own plan mode closed where it stands (live validation: after an Esc the model would not
  * call the ExitPlanMode the person had just refused): the dialog's answer read now, the plan file put back, the review
- * cleared; plan mode stays on, so no ExitPlanMode is needed. A note opened here waits for its card.
+ * cleared; plan mode stays on, so no ExitPlanMode is needed. A note read here goes out (reduce).
  */
 function closedHere(state: State, r: Review, ev: { answer?: ReviewAnswer | null; target?: Target | null }, ctx: ReviewCtx): ReviewStep {
   const res = resolve(r, state.note, ev, ctx, true);
@@ -563,7 +508,23 @@ function closedHere(state: State, r: Review, ev: { answer?: ReviewAnswer | null;
  * there, and took the file for overwritten). */
 const backLine = (effects: ConsentEffect[]): Part[] => (effects.some(e => e.do === 'restorePlan' && e.backup != null) ? [SAY.fileBack] : []);
 
+/**
+ * One event. A note the dialog closed with goes out at once (0.7.0, docs/next/PLAN-SMOOTH.md): its objection is
+ * recorded with the note, no card asks first, and the model reads the outcome beside whatever the step says.
+ */
 export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewStep {
+  const step = reduceOne({ ...state, note: null }, ev, ctx);
+  const cf = step.state.note;
+  if (!cf) return step;
+  const sent: Part[] = [{ answer: cf.hash }, { ifRecorded: SAY.noteFollow(ctx.name) }];
+  const s = step.say;
+  const say: Say | null = !s ? ctxSay(...sent) : s.to === 'context' ? { ...s, parts: [...s.parts, ...sent] }
+    : s.to === 'deny' ? { ...s, context: [...s.context, ...sent] } : s; // a dialog's ask carries no context: the room shows it
+  return { ...step, state: { ...step.state, note: null }, say,
+    effects: [...step.effects, { do: 'answer', hash: cf.hash, choice: 'Object', notes: cf.note, sentTo: cf.from || 'the room' }] };
+}
+
+function reduceOne(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewStep {
   const n = ctx.name;
   const r = state.review;
   switch (ev.type) {
@@ -576,12 +537,11 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       // the request the person's latest words name (a hash, a plan's name), else the oldest: never the model's choice
       const p = (ev.named ? ev.pending.find(q => q.hash === ev.named) : undefined) ?? oldest;
       let review: Review = { phase: 'entering', mode: ev.mode, at: ctx.now, hash: p.hash, from: p.from || null, ...(p.title ? { title: p.title } : {}), ...(p.draft ? { draft: true } : {}) };
-      const note = state.note && state.note.hash === p.hash ? null : state.note; // reviewed again: its note is superseded
       // the file as it will be once the left-behind review's restore has run (the facts were read before it)
       const now = r && r.file && r.file === ev.plan.file && !r.restored ? { file: r.file, text: typeof r.backup === 'string' ? r.backup : null } : ev.plan;
       const [shown, early] = showEarly(review, now);
       review = shown;
-      return { state: { review, note }, effects: [...effects, ...early], say: null };
+      return { state: { review, note: null }, effects: [...effects, ...early], say: null }; // a new review: the steer and recheck memos go
     }
 
     case 'entered': {
@@ -626,7 +586,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       /** the plan file's line (foreign says it already) */
       const fileLine = (effects: ConsentEffect[]): Part[] => (foreign.length ? foreign : backLine(effects));
       if (cur.phase === 'exiting') {
-        const res = resolve(cur, state.note, ev, ctx, true); // unread until now: the note, if any, waits for Send
+        const res = resolve(cur, state.note, ev, ctx, true); // unread until now: the note, if any, goes out (reduce)
         const [, effects] = restore(res.review);
         const card = cur.card ? SAY.cardInstead(n, cur.card) : '';
         const said = res.review.said ? `${res.review.said} ` : '';
@@ -662,12 +622,13 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
         const { said: _s, ...rest } = back;
         return { state: { ...state, recheck, review: { ...rest, phase: 'restore' } }, effects, say: ctxSay(...line, SAY.modeChanged(n, cur.mode), ...fileLine(effects)), ...withNotice };
       }
-      return { state: { ...state, recheck, review: null }, effects, say: ctxSay(...line, SAY.notAPlan, ...fileLine(effects)), ...withNotice };
+      // a draft's outcome line (SAY.sent / sendFailed) says it already: nothing to build
+      return { state: { ...state, recheck, review: null }, effects, say: ctxSay(...line, ...(cur.draft ? [] : [SAY.notAPlan]), ...fileLine(effects)), ...withNotice };
     }
 
     case 'stop': {
       if (ev.active) return none(state);
-      if (!r) return noteAtStop(state, ev, ctx);
+      if (!r) return none(state);
       let next: string;
       let review: Review | null = r;
       let note = state.note;
@@ -693,16 +654,14 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
         return { state: { review: { ...res.review, phase: 'exiting' }, note: res.note }, effects: [],
           say: { to: 'deny', context: [SAY.roomToolDenied(res.review.said || '')] } };
       }
-      if (!state.note || !ev.post) return none(state);
-      if (ev.noteLive === false) return { state: { ...state, note: null }, effects: [], say: null }; // no longer this seat's to answer
-      return { state, effects: [], say: { to: 'deny', context: [SAY.noteWaits(n, state.note.hash)] } };
+      return none(state);
     }
 
     case 'rejected': {
       if (!r || !r.tool_use_id || r.tool_use_id !== ev.toolUseId || r.resolved || !(r.phase === 'shown' || r.unread)) return none(state);
       const h = r.hash || '';
       if (r.mode === 'plan') { // the person's own plan mode: closed here, no ExitPlanMode to leave it
-        return closedHere(state, r, ev, ctx); // a note's card follows at once: no notice before it
+        return closedHere(state, r, ev, ctx);
       }
       const res = resolve(r, state.note, ev, ctx, true);
       const added = res.note !== state.note ? res.note : null;
@@ -712,17 +671,17 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
           say: ctxSay(`sub-human: First ${NEXT.exit}. Then: ${res.review.said ?? ''}`) };
       }
       return { state: { review: { ...res.review, phase: 'exiting' }, note: res.note }, effects: [],
-        say: ctxSay(added ? SAY.rejectedNote(n, h) : SAY.rejectedClosed(n, h)) };
+        say: ctxSay(added ? SAY.rejectedNote : SAY.rejectedClosed(n, h)) };
     }
 
     case 'prompt': {
-      if (!r) return noteAtPrompt(state, ev, ctx);
+      if (!r) return none(state);
       if (ev.mode === 'plan' && r.phase !== 'restore' && r.mode === 'plan') return closedHere(state, r, ev, ctx); // the person's plan mode
       if (ev.mode === 'plan' && r.phase !== 'restore') {
         const res = resolve(r, state.note, ev, ctx);
         return { state: { review: { ...res.review, phase: 'exiting' }, note: res.note }, effects: [], say: ctxSay(SAY.promptExit(res.review.said || '')) };
       }
-      // left plan mode another way: a note read only now still waits for Send
+      // left plan mode another way: a note read only now goes out (reduce)
       const res = r.unread ? resolve(r, state.note, ev, ctx, true) : { review: r, note: state.note };
       const [, effects] = restore(res.review);
       const back = backLine(effects);
@@ -731,13 +690,7 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
 
     case 'ask': {
       if (ev.admit) return { state, effects: [], say: { to: 'ask', text: '', show: { admit: ev.admit } } };
-      let note = state.note;
-      if (note && !ev.live) note = null; // its proposal is no longer this seat's to answer
-      if (note && ev.noteNamed) {
-        return { state: { ...state, note: staged(note, onShown(stageOf(note))) }, effects: [],
-          say: { to: 'ask', text: SAY.noteAsk(n, note.hash), show: { note: true } } };
-      }
-      const base = { ...state, note };
+      const base = state;
       const [first] = ev.hit;
       if (!first) return none(base);
       // a Yes that came as the plan view opened is confirmed on the card, not in the view again
@@ -751,17 +704,6 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
     }
 
     case 'answered': {
-      const cf = state.note;
-      if (cf && ev.note.kind !== 'absent') {
-        const told = { ...state, note: staged(cf, 'told') }; // the model is told: no offer again
-        if (ev.note.kind === 'none') return { state: told, effects: [], say: ctxSay(SAY.noteNoAnswer(n, cf.hash)) };
-        if (ev.note.kind === 'other') return { state: told, effects: [], say: ctxSay(SAY.noteOther(cf.hash)) };
-        if (ev.note.label === 'Discard') return { state: { ...state, note: null }, effects: [], say: ctxSay(SAY.discarded(n, cf.hash)) };
-        if (!ev.target || ev.target.hash !== cf.hash) return { state: { ...state, note: null }, effects: [], say: ctxSay(SAY.stale(cf.hash)) };
-        // not sent (the room unreachable): the note waits for another Send (clearNote only on success)
-        return { state, effects: [{ do: 'answer', hash: cf.hash, choice: 'Object', notes: cf.note, clearNote: true }],
-          say: ctxSay({ ifRecorded: SAY.recorded }, ...(cf.note.trim() ? [{ ifRecorded: SAY.noteFollow(n) }, { answer: cf.hash }] : [{ answer: cf.hash }, { ifRecorded: DONE }])) };
-      }
       if (!ev.answers.length && !ev.asked) return none(state); // not a consent card
       // the recheck is asked once: any card for its proposal settles it, answered or not
       const held = state.recheck;
@@ -786,52 +728,8 @@ export function reduce(state: State, ev: ConsentEvent, ctx: ReviewCtx): ReviewSt
       else if (!ev.answers.some(a => a.draft && a.answer.kind === 'answer' && a.answer.label === 'Object')) parts.push(DONE);
       return { state, effects, say: ctxSay(...parts) };
     }
-    case 'noteAnswer': {
-      const cf = state.note;
-      // only a review closing with its note open (the module asks right as the plan view refused with it)
-      if (!cf || !r || r.hash !== cf.hash || r.phase !== 'exiting') return none(state);
-      const h = cf.hash;
-      if (ev.label === null) return { state, effects: [], say: ctxSay(SAY.rejectedNote(n, h)) }; // the card later
-      // answered: the review's "the note waits for its card" line is no longer true
-      const { said: _s, ...answered } = r;
-      if (ev.label === 'Discard') return { state: { review: { ...answered, closing: 'discarded' }, note: null }, effects: [], say: ctxSay(SAY.noteDiscardedNow(n, h)) };
-      if (!ev.target || ev.target.hash !== h) return { state: { review: answered, note: null }, effects: [], say: ctxSay(SAY.stale(h), SAY.noteSentExit) };
-      // Send: recorded (the note cleared only on success: a failed send waits for its card, never lost); the closing
-      // line says it went only once the record says so (closing: the hooks set it from the answer's outcome)
-      return { state: { review: answered, note: cf }, effects: [{ do: 'answer', hash: h, choice: 'Object', notes: cf.note, clearNote: true, closing: true }],
-        say: ctxSay({ ifRecorded: SAY.recorded }, ...(cf.note.trim() ? [{ ifRecorded: SAY.noteFollow(n) }] : []), { answer: h }, SAY.noteSentExit) };
-    }
     default: return assertNever(ev, 'consent event');
   }
-}
-
-/** Stop with no review: a note whose card was never shown is asked for once (nudged); an interrupted card offered
- * again and not shown since, once more (renudge). */
-function noteAtStop(state: State, ev: Extract<ConsentEvent, { type: 'stop' }>, ctx: ReviewCtx): ReviewStep {
-  const cf = state.note;
-  if (!cf) return none(state);
-  const stage = stageOf(cf);
-  if (stage !== 'waiting' && stage !== 'reoffered') return none(state);
-  if (!ev.live) return { state: { ...state, note: null }, effects: [], say: null };
-  if (stage === 'reoffered') return { state: { ...state, note: staged(cf, 'told') }, effects: [], say: ctxSay(SAY.renudge(ctx.name, cf.hash)) };
-  return { state: { ...state, note: staged(cf, 'nudged') }, effects: [], say: ctxSay(SAY.nudge(ctx.name, cf.hash)) };
-}
-
-/** The next prompt with no review: a note whose card was interrupted (asked, no Post) or never shown though Stop
- * nudged is offered again, once; one told already gets the person a notice of what Send and Discard do, once. */
-function noteAtPrompt(state: State, ev: Extract<ConsentEvent, { type: 'prompt' }>, ctx: ReviewCtx): ReviewStep {
-  const cf = state.note;
-  if (!cf) return none(state);
-  const stage = stageOf(cf);
-  // offered and told already, and its card went by again: the person hears once what Send and Discard do (never a
-  // silent drop: the note keeps waiting)
-  if (stage === 'told' && !cf.explained && ev.live) {
-    return { state: { ...state, note: { ...cf, explained: true } }, effects: [], say: null, notice: SAY.noteStillWaits(cf.title, cf.hash) };
-  }
-  if (stage !== 'asked' && stage !== 'nudged') return none(state);
-  if (!ev.live) return { state: { ...state, note: null }, effects: [], say: null };
-  const interrupted = stage === 'asked';
-  return { state: { ...state, note: staged(cf, interrupted ? 'reoffered' : 'told') }, effects: [], say: ctxSay(SAY.reoffer(ctx.name, cf.hash, interrupted)) };
 }
 
 /** A say's parts as text; outcome(hash) is the answer effect's line, recorded whether any answer was recorded. */

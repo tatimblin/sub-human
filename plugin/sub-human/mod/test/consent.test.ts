@@ -93,7 +93,7 @@ test('an unseated session never runs consent', async ($, on) => {
   expect(seen.consent.length).toBe(0)
 })
 
-test('every PreToolUse hook beneath runs on a room tool, a review open or not; node consent only while a review may be open, and always for the post tool (a waiting note refuses it: stage 8e D)', async ($, on) => {
+test('every PreToolUse hook beneath runs on a room tool, a review open or not; node consent only while a review may be open (the post tool too)', async ($, on) => {
   const seen = world(on)
   await start($)
   const read = ($: Engine) => $.tool.call({ tool: READ })
@@ -103,7 +103,7 @@ test('every PreToolUse hook beneath runs on a room tool, a review open or not; n
   await post($)
   await post($)
   expect(seen.beneathPre).toEqual([READ, READ, POST, POST])
-  expect(seen.consent.map(c => `${String(c.stdin.hook_event_name)} ${String(c.stdin.tool_name)}`)).toEqual([`PreToolUse ${READ}`, `PreToolUse ${POST}`, `PreToolUse ${POST}`])
+  expect(seen.consent.map(c => `${String(c.stdin.hook_event_name)} ${String(c.stdin.tool_name)}`)).toEqual([`PreToolUse ${READ}`])
 })
 
 test('a consent shim that fails leaves the turn end to what is beneath', async ($, on) => {
@@ -163,63 +163,19 @@ test('an unseated session runs no consent on the plan tools or the card', async 
   expect(seen.beneathPre).toEqual(['AskUserQuestion', 'ExitPlanMode'])
 })
 
-test('M (live verify): an ExitPlanMode refused in the plan view goes to consent at once as a PostToolUseFailure; its line rides on the refusal the model reads, the person gets a notice', async ($, on) => {
+test('M (live verify): an ExitPlanMode refused in the plan view goes to consent at once as a PostToolUseFailure; its line (the note recorded) rides on the refusal the model reads', async ($, on) => {
   const refusal = "The user doesn't want to proceed with this tool use. … the user said:\nplease also add a CODE_OF_CONDUCT\n\nNote: The user's next message …"
-  const line = 'sub-human: nothing is recorded yet: bob\'s note on abcdef012345 waits for its card (Send or Discard)'
-  const answer = { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: line }, systemMessage: 'sub-human: your note on "Add CONTRIBUTING" is not sent yet', subHuman: { reviewOpen: true, noteWaits: true } }
-  const pre = { subHuman: { reviewOpen: true, noteWaits: false } }
-  const seen = world(on, { answers: [pre, answer, { subHuman: { reviewOpen: true, noteWaits: true } }], exit: { deny: refusal } })
+  const line = 'sub-human: First call ExitPlanMode now (no plan needed: the hooks close the review; your person leaves plan mode). bob objected to proposal abcdef012345.'
+  const answer = { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: line }, subHuman: { reviewOpen: true } }
+  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true } }, answer], exit: { deny: refusal } })
   await start($)
   const r = await exitPlan($, 'proposal abcdef012345')
   expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse', 'PostToolUseFailure'])
   const sent = must(seen.consent[1], 'the failure\'s consent run').stdin
   expect([sent.hook_event_name, sent.tool_name, sent.permission_mode, sent.error]).toEqual(['PostToolUseFailure', 'ExitPlanMode', 'plan', refusal])
   expect(r.deny).toBe(`${refusal}\n\n${line}`)
-  expect(seen.logs).toEqual(['your note on "Add CONTRIBUTING" is not sent yet'])
-  // the note waits: a post goes to consent (which refuses it), whatever review flag
-  await post($)
-  expect(seen.consent.length).toBe(3)
-  expect(seen.consent[2]?.stdin.tool_name).toBe(POST)
+  expect(seen.logs).toEqual([])
 })
-
-/** #34: a refusal with a note that consent asks the module to put on its own card first (subHuman.noteAsk). */
-function noteFirst(on: On, ask: string | null, fail?: number) {
-  const refusal = "The user doesn't want to proceed with this tool use. … the user said:\ncap pages at 100\n\nNote: The user's next message …"
-  const waits = 'sub-human: nothing is recorded yet: bob\'s note on abcdef012345 waits for its card (Send or Discard)'
-  const card = { question: 'room proposal abcdef012345: send bob\'s note to alice?', header: 'Room plan', options: ['Send', 'Discard'] }
-  const rejected = { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: waits }, subHuman: { reviewOpen: true, noteWaits: true, noteAsk: card } }
-  const said = ask === 'Send' ? 'Recorded. bob objected to proposal abcdef012345. Next, call ExitPlanMode now (no plan needed)'
-    : ask === 'Discard' ? 'bob discarded the note; nothing was recorded. Next, call ExitPlanMode now (no plan needed)' : waits
-  const answered = { hookSpecificOutput: { hookEventName: 'NoteAnswer', additionalContext: said }, subHuman: { reviewOpen: true, noteWaits: ask === null } }
-  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true, noteWaits: false } }, rejected, answered], exit: { deny: refusal }, ask, ...(fail !== undefined ? { fail } : {}) })
-  return { seen, refusal, said, card, waits }
-}
-
-test('#34 keep-mode: consent failing on the person\'s Send leaves the refusal\'s line for the model, and tells the person in one line that the note may not have gone', async ($, on) => {
-  const { seen, refusal, waits } = noteFirst(on, 'Send', 2)
-  await start($)
-  const r = await exitPlan($, 'proposal abcdef012345')
-  expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse', 'PostToolUseFailure', 'NoteAnswer'])
-  expect(r.deny).toBe(`${refusal}\n\n${waits}`)
-  // consent may have recorded the Send before it failed: the line claims neither way
-  expect(seen.logs).toEqual(['Your note may not have been sent; ask your Claude to check its card.'])
-})
-
-for (const ask of ['Send', 'Discard', null] as const) {
-  test(`#34 keep-mode: a refusal with a note puts Send / Discard on the module's own card at once, in plan mode; the answer (${String(ask)}) goes to consent, and its line replaces the refusal's`, async ($, on) => {
-    const { seen, refusal, said, card } = noteFirst(on, ask)
-    await start($)
-    const r = await exitPlan($, 'proposal abcdef012345')
-    expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse', 'PostToolUseFailure', 'NoteAnswer'])
-    // the card: the module's own AskUserQuestion, never sent through consent's card rewrite (its own hooks pass it by)
-    expect(seen.tools).toEqual(['ExitPlanMode', 'AskUserQuestion'])
-    expect(seen.beneathPre).toContain('AskUserQuestion')
-    const answer = must(seen.consent[2], 'the answer\'s consent run').stdin
-    expect([answer.session_id, answer.sub_human_note]).toEqual([SID, ask])
-    expect(r.deny).toBe(`${refusal}\n\n${said}`)
-    expect(card.options).toEqual(['Send', 'Discard'])
-  })
-}
 
 test('M: an ExitPlanMode that ran (a Yes) is not a refusal: no consent run from tool.call', async ($, on) => {
   const seen = world(on)
@@ -244,7 +200,7 @@ test('a subagent\'s ExitPlanMode reaches consent\'s PreToolUse with its agentId 
 })
 
 test('8: the prompt holding typed text as the plan view opens goes with ExitPlanMode\'s consent payload (sub_human_typing); an empty prompt sends none', async ($, on) => {
-  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true, noteWaits: false } }] })
+  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true } }] })
   await start($)
   const hint = (isDraft: boolean) => $.ui.mount({ plugin: 'sub-human', surface: 'terminal', component: 'PromptHint', props: { isDraft, isWorking: true, hint: 'esc to interrupt' } })
   let ui = await hint(true)
@@ -257,27 +213,11 @@ test('8: the prompt holding typed text as the plan view opens goes with ExitPlan
   await ui.unmount()
 })
 
-test('a plan_mode attachment runs consent only while a review or an edit may be open; consent\'s line is appended, the engine\'s text kept', async ($, on) => {
-  const seen = world(on, { answers: [{ subHuman: { reviewOpen: false } }, { subHuman: { reviewOpen: true, attach: 'sub-human: room plan room starts in the plan file' } }] })
-  on('prompt.attachment', (_$, e) => ({ text: e.text }))
-  await start($)
-  await stop($) // consent reports no review: the flag is false
-  const att: Parameters<typeof $.prompt.attachment>[0] = { type: 'plan_mode', text: 'plan mode rules', origin: { kind: 'engine' }, detail: { reminder: 'full', planFilePath: '/p/x.md', hasPlan: false } }
-  expect((await $.prompt.attachment(att)).text).toBe('plan mode rules')
-  expect(seen.consent.length).toBe(1)
-  // the plan tool (its edit op opens an edit): the next plan_mode attachment goes to consent
-  await $.tool.call({ tool: 'mcp__plugin_sub-human_room__plan' })
-  expect((await $.prompt.attachment(att)).text).toBe('plan mode rules\n\nsub-human: room plan room starts in the plan file')
-  const last = must(seen.consent.at(-1), 'the attachment run')
-  expect(last.stdin.hook_event_name).toBe('PlanAttachment')
-  expect(last.stdin.plan_file_path).toBe('/p/x.md')
-})
-
-test('author first: an ExitPlanMode refused with a note on the person\'s own new version: consent\'s line (write the next version) rides on the refusal, and no note card holds the post tool', async ($, on) => {
+test('author first: an ExitPlanMode refused with a note on the person\'s own new version: consent\'s line (write the next version) rides on the refusal', async ($, on) => {
   const refusal = "The user doesn't want to proceed with this tool use. … the user said:\ncap pages at 100\n\nNote: The user's next message …"
   const line = 'sub-human: First call ExitPlanMode now (no plan needed; the hooks close the review). Then: Nothing was sent or recorded: bob wants changes to their own new version (plan room v2).'
-  const answer = { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: line }, subHuman: { reviewOpen: true, noteWaits: false } }
-  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true, noteWaits: false } }, answer, { subHuman: { reviewOpen: false, noteWaits: false } }], exit: { deny: refusal } })
+  const answer = { hookSpecificOutput: { hookEventName: 'PostToolUseFailure', additionalContext: line }, subHuman: { reviewOpen: true } }
+  const seen = world(on, { answers: [{ subHuman: { reviewOpen: true } }, answer, { subHuman: { reviewOpen: false } }], exit: { deny: refusal } })
   await start($)
   const r = await exitPlan($, 'proposal abcdef012345')
   expect(seen.consent.map(c => c.stdin.hook_event_name)).toEqual(['PreToolUse', 'PostToolUseFailure'])

@@ -30,7 +30,7 @@ export type SubHumanHello = {
 };
 
 /** A feature a Claude Code version's verdict can turn to its fallback (mod/core/cc.ts GATED, the same list). */
-export type SubHumanGated = 'tasks' | 'plan-edit' | 'sign-off' | 'reap-rm' | 'quiet-plan' | 'keep-mode' | 'room-row';
+export type SubHumanGated = 'tasks' | 'sign-off' | 'reap-rm' | 'quiet-plan' | 'keep-mode' | 'room-row';
 
 /** A Claude Code version's verdict, as hooks/handlers/mod-hello.ts read it (mod/core/cc.ts parseCc). */
 export type SubHumanCc = {

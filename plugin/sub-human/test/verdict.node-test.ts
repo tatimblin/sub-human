@@ -19,7 +19,7 @@ import type { ContractEntry, Feature } from '../lib/cc/contract.ts';
 
 const entry = (id: string, feature: Feature, extra: Partial<ContractEntry> = {}): ContractEntry => ({ id, stability: 'incidental', feature, search: [`${id}-search`], note: id, ...extra });
 const ENTRIES = [
-  entry('a-core', 'core'), entry('a-tasks', 'tasks'), entry('a-sign', 'sign-off'), entry('a-edit', 'plan-edit'),
+  entry('a-core', 'core'), entry('a-tasks', 'tasks'), entry('a-sign', 'sign-off'),
   entry('a-rows', 'rows'), entry('a-look', 'cosmetic'), entry('a-test', 'test'), entry('a-room', 'room-session'), entry('a-ask', 'fallback'),
   entry('a-later', 'delivery', { degraded: [{ from: '9.0.0', note: 'reported changed' }] }),
 ];
@@ -48,25 +48,24 @@ test('contract: every entry names a feature, one of FEATURES', () => {
   }
   // the gated features are features, and each has its fallback's words
   for (const f of GATED) { assert.ok(contract.FEATURES.includes(f), f); assert.ok(FALLBACK[f], f); }
-  // the plan view's own internals gate sign-off; the edit receipt's gate plan-edit
+  // the plan view's own internals gate sign-off
   const of = (id: string) => must(contract.CONTRACT.find(e => e.id === id), id).feature;
   assert.equal(of('exitplan-empty-plan'), 'sign-off');
-  assert.equal(of('module-plan-mode-detail'), 'plan-edit');
+  assert.equal(of('pretool-deny-context'), 'sign-off');
   assert.equal(of('task-file-schema'), 'tasks');
   assert.equal(of('bg-dispatch-line'), 'room-session');
   assert.equal(of('hooks-modules'), 'core');
 });
 
-test('judge: core, cosmetic and test failures gate nothing (unverified only); a gated one turns its feature off; sign-off implies plan-edit', () => {
+test('judge: core, cosmetic and test failures gate nothing (unverified only); a gated one turns its feature off, and only that one', () => {
   const none = judged([]);
   assert.deepEqual([none.failed, none.off, verdict.verified(none)], [[], [], true]);
   const plumbing = judged(['a-core', 'a-look', 'a-test', 'a-rows', 'a-ask']);
   assert.deepEqual(plumbing.off, [], 'no fallback for plumbing, drawing, the tests, rows or a fallback itself');
   assert.equal(verdict.verified(plumbing), false);
   assert.deepEqual(judged(['a-tasks']).off, ['tasks']);
-  assert.deepEqual(judged(['a-edit']).off, ['plan-edit']);
-  assert.deepEqual(judged(['a-sign']).off, ['plan-edit', 'sign-off'], 'a plan edit goes through plan mode too');
-  assert.deepEqual(judged(['a-sign', 'a-room', 'a-tasks', 'a-core']).off, ['tasks', 'plan-edit', 'sign-off'], 'GATED order; room-session gates nothing');
+  assert.deepEqual(judged(['a-sign']).off, ['sign-off'], 'sign-off implies nothing else');
+  assert.deepEqual(judged(['a-sign', 'a-room', 'a-tasks', 'a-core']).off, ['tasks', 'sign-off'], 'GATED order; room-session gates nothing');
   // an entry reported changed on the version counts as failed there, though the probe found it
   assert.deepEqual(judged([], '9.0.1').failed, ['a-later']);
   assert.deepEqual(judged([], '2.1.900').failed, []);
@@ -74,7 +73,7 @@ test('judge: core, cosmetic and test failures gate nothing (unverified only); a 
 });
 
 test('closeOff, parseCc and ccNotice: the one line, only when something is off', () => {
-  assert.deepEqual(closeOff(['sign-off', 'bogus', 'tasks', 'tasks', 3]), ['tasks', 'plan-edit', 'sign-off']);
+  assert.deepEqual(closeOff(['sign-off', 'bogus', 'plan-edit', 'tasks', 'tasks', 3]), ['tasks', 'sign-off'], 'plan-edit (gone in 0.7.0) is no feature');
   assert.equal(isCcVersion('2.1.296'), true);
   assert.equal(isCcVersion('2.1.300-dev'), true);
   for (const bad of ['../x', '2.1', 'latest', '2.1.296/../../x', 2, null]) assert.equal(isCcVersion(bad), false, String(bad));
@@ -87,11 +86,11 @@ test('closeOff, parseCc and ccNotice: the one line, only when something is off',
   // only what SUB_HUMAN_CC_OFF forced: the line does not blame the version
   assert.equal(ccNotice({ version: '2.1.302', verified: false, off: ['tasks'], forced: ['tasks'] }), 'SUB_HUMAN_CC_OFF: the room task list is off (tasks are kept in the room).');
   assert.deepEqual(parseCc({ version: '2.1.302', verified: false, off: ['tasks'], forced: ['tasks', 'bogus'] }), { version: '2.1.302', verified: false, off: ['tasks'], forced: ['tasks'] });
-  assert.equal(ccNotice({ version: '2.1.302', verified: false, off: ['tasks', 'plan-edit', 'sign-off'] }),
-    "Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), plan edits use the plan tool, sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details.");
+  assert.equal(ccNotice({ version: '2.1.302', verified: false, off: ['tasks', 'sign-off'] }),
+    "Claude Code 2.1.302 isn't verified with sub-human yet: the room task list is off (tasks are kept in the room), sign-off is a question Claude Code asks you, not the plan view. sub-human doctor has details.");
   assert.match(must(ccNotice({ version: '2.1.296', verified: true, off: ['tasks'] })), /^SUB_HUMAN_CC_OFF: the room task list is off/);
   const out = { home: '/h', seat: null, cc: { version: '2.1.302', verified: false, off: ['sign-off'] } };
-  assert.deepEqual(must(parseHello(JSON.stringify(out), 's1')).cc, { version: '2.1.302', verified: false, off: ['plan-edit', 'sign-off'] });
+  assert.deepEqual(must(parseHello(JSON.stringify(out), 's1')).cc, { version: '2.1.302', verified: false, off: ['sign-off'] });
   assert.equal('cc' in must(parseHello(JSON.stringify({ home: '/h' }), 's1')), false, 'no version: no cc');
 });
 
@@ -115,8 +114,8 @@ test('read, record and off: kept per version under the home; a changed contract 
   const was = process.env.SUB_HUMAN_CC_OFF;
   t.after(() => { if (was === undefined) delete process.env.SUB_HUMAN_CC_OFF; else process.env.SUB_HUMAN_CC_OFF = was; });
   process.env.SUB_HUMAN_CC_OFF = ' sign-off ,nonsense';
-  assert.deepEqual(verdict.forced(), ['plan-edit', 'sign-off']);
-  assert.equal(verdict.off('plan-edit'), true);
+  assert.deepEqual(verdict.forced(), ['sign-off']);
+  assert.equal(verdict.off('sign-off'), true);
   assert.equal(verdict.off('tasks'), false);
   assert.deepEqual(verdict.forced({ SUB_HUMAN_CC_OFF: 'room-row,tasks,room-session' }), ['tasks', 'room-row'], 'GATED order; room-session is no gate');
 });
@@ -194,7 +193,7 @@ test('mod-hello: hands the module the version\'s verdict, keeps the version in t
   assert.equal(fileField(path.join(w.home, 'sessions', 'mods', `${sid}.json`), 'cc_version'), contract.PROBED_VERSION);
   assert.equal(fileField(path.join(w.home, 'cc', 'seen.json'), 'version'), contract.PROBED_VERSION);
   const forcedRun = w.hook('mod-hello', { session_id: sid, cc_version: contract.PROBED_VERSION }, { env: { SUB_HUMAN_CC_OFF: 'sign-off' } });
-  assert.deepEqual(field(forcedRun.stdout, 'cc'), { version: contract.PROBED_VERSION, verified: true, off: ['plan-edit', 'sign-off'], forced: ['plan-edit', 'sign-off'] });
+  assert.deepEqual(field(forcedRun.stdout, 'cc'), { version: contract.PROBED_VERSION, verified: true, off: ['sign-off'], forced: ['sign-off'] });
   // a version not checked here: verified null at once, the runner's verdict in the background
   const dir = h.tmpDir('sh-verdict-bin-', t);
   const fresh = w.hook('mod-hello', { session_id: sid, cc_version: '9.9.4' }, { env: { CLAUDE_BIN: fakeBinary(dir, '9.9.4'), PATH: '' } });

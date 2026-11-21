@@ -5,8 +5,8 @@
  * <home>/cc/<version>.json = {version, probedAt, contract, failed: [entry ids], off: [features]} (atomic). contract: a
  * hash of contract.json, so a plugin update that changes the contract checks the version again. failed: the entries
  * the probe (contract.ts probe) did not find in the binary, plus those reported changed on the version (degradedOn).
- * off: the gated features (mod/core/cc.ts GATED: tasks, plan-edit, sign-off, reap-rm, quiet-plan, keep-mode, room-row) of failed entries, sign-off
- * implying plan-edit. A failed entry of any other feature (core plumbing, rows, delivery, ...) turns nothing off: it
+ * off: the gated features (mod/core/cc.ts GATED: tasks, sign-off, reap-rm, quiet-plan, keep-mode, room-row) of failed entries.
+ * A failed entry of any other feature (core plumbing, rows, delivery, ...) turns nothing off: it
  * only makes the version unverified (doctor warns). The version contract.json `probed` names is verified without a
  * probe. <home>/cc/seen.json = {version, at}: the version mod-hello last saw on this machine, for a process that has no
  * session to ask (the host's tail, a detached spawn).
@@ -25,7 +25,7 @@
  *   verified(v) -> bool                           no entry failed
  *   judge(version, failed, {entries?, now?}) -> Verdict   the verdict for those failed ids (pure but for the hash)
  *   record(version, failed) -> Verdict | null    judge and keep it (the runner; doctor after its own probe)
- *   forced(env?) -> Gated[]                       SUB_HUMAN_CC_OFF's features (closed: sign-off implies plan-edit)
+ *   forced(env?) -> Gated[]                       SUB_HUMAN_CC_OFF's features
  *   offFor(version) -> Gated[]                    forced() and the version's verdict's off
  *   off(feature, {version?, sid?}?) -> bool       feature runs its fallback for that version (see above for the default)
  *   sessionVersion(sid) -> string | null          the version the session's lease names

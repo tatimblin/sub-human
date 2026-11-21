@@ -9,7 +9,6 @@ import type { ChildProcess } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
-import * as proposal from '../lib/proposal.ts';
 import { propose, version as planVersion } from './support/plan.ts';
 import type { Room } from '../lib/room.ts';
 import { fsStore } from './support/fs-store.ts';
@@ -19,9 +18,8 @@ import { entryId } from '../lib/room/validate.ts';
 import type { ToolDefinition } from '../mcp/types.ts';
 import { sn } from './support/brands.ts';
 import { must } from './support/must.ts';
-import * as edit from '../lib/consent/edit.ts';
+import { RECEIPT } from '../lib/consent/receipt.ts';
 import { SAY } from '../lib/consent/review.ts';
-import * as verdict from '../lib/cc/verdict.ts';
 
 /** A JSON-RPC line from the server, as these tests read it: each test reads the fields it expects to be there. */
 interface RpcMsg {
@@ -156,44 +154,22 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   bob.kill();
 });
 
-test('mcp: a post that repeats the person\'s objection note is refused, waiting for Send or just sent; others pass', async () => {
+test('mcp: a post that repeats the person\'s objection note, just sent, is refused; others pass', async () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const me = { code, name: sn('alice'), role: 'member' };
   R = room.open(code);
   const s = await ready();
   const hash = 'abcdef012345';
-  proposal.writeConfirm(me, { hash, note: 'Open rate limiting\nfirst', from: 'bob', title: 'Ship v3', at: Date.now() });
-  // the note relayed (case, spacing and quotes aside): refused, pointing at the confirm card
-  const twice = errText(await s.tool('post', { kind: 'say', text: 'alice objects: “open rate limiting  first”.' }));
-  assert.equal(twice, `refused: that is alice's note on proposal ${hash}, which waits for alice's Send; posting it would relay it twice. call AskUserQuestion with "objection ${hash}" so alice can send or discard it.`);
+  R.append({ kind: 'objection', proposal_hash: hash, text: 'Open rate limiting\nfirst' }, { via: 'human', from: 'alice' });
+  // the note relayed (case, spacing and quotes aside): refused
+  assert.equal(errText(await s.tool('post', { kind: 'status', text: 'alice objects: “open rate limiting  first”.' })),
+    `refused: alice already sent that note as their objection to proposal ${hash}; the room shows it, so posting it would relay it twice.`);
   // an unrelated say passes
   assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'rate limits look fine to me' })).text, 'rate limits look fine to me');
   // a short note matches only exactly
-  proposal.writeConfirm(me, { hash, note: 'Not yet', from: 'bob', title: null, at: Date.now() });
+  R.append({ kind: 'objection', proposal_hash: 'abcdef999999', text: 'Not yet' }, { via: 'human', from: 'alice' });
   assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'not yet sure about the paging' })).kind, 'say');
-  assert.match(errText(await s.tool('post', { kind: 'say', text: '"not yet"' })), /^refused: that is alice's note/);
-  // the reverse order: Send pressed first (the objection recorded), the relay second
-  proposal.clearConfirm(me);
-  R.append({ kind: 'objection', proposal_hash: hash, text: 'Open rate limiting first' }, { via: 'human', from: 'alice' });
-  assert.equal(errText(await s.tool('post', { kind: 'status', text: 'alice objected: open rate limiting first' })),
-    `refused: alice already sent that note as their objection to proposal ${hash}; the room shows it, so posting it would relay it twice.`);
-  assert.equal(R.readAll().filter(e => e.via === 'agent').length, 2, 'only the two unrelated posts');
-  await s.close();
-});
-
-test('stage 8e D (live verify, localb/03e): while a note on a proposal still pending for the seat waits for its card, the server refuses any post (no hook ran); once it is gone posts pass', async () => {
-  h.freshHome();
-  const { code } = h.register('alice');
-  h.register('bob', 'member', 1, code);
-  const me = { code, name: sn('alice'), role: 'member' };
-  R = room.open(code);
-  const s = await ready();
-  const { hash } = propose({ code, name: sn('bob') }, { text: '# Add a CHANGELOG\n', approvers: ['alice'] });
-  proposal.writeConfirm(me, { hash, note: 'please use Keep a Changelog', from: 'bob', title: 'Add a CHANGELOG', at: Date.now(), stage: 'told' });
-  assert.match(errText(await s.tool('post', { kind: 'say', text: 'test' })), new RegExp(`^sub-human: refused: alice's note on proposal ${hash} waits for Send or Discard on its card`));
-  proposal.clearConfirm(me);
-  assert.equal(posted(code, await s.tool('post', { kind: 'say', text: 'test' })).text, 'test');
+  assert.match(errText(await s.tool('post', { kind: 'say', text: '"not yet"' })), /^refused: alice already sent that note/);
   await s.close();
 });
 
@@ -245,7 +221,7 @@ test('mcp: read marks a via=human line whose signature does not verify as unveri
   await s.close();
 });
 
-test('mcp: plan edit opens an edit in the session (it stores nothing); ask asks the people present to sign off on the current version; read shows its text, history and state', async () => {
+test('mcp: plan ask asks the people present to sign off on the current version; read shows its text, history and state', async () => {
   h.freshHome();
   const { code } = h.register('alice');
   const bob = h.spawnSleeper(), carol = h.spawnSleeper(), roomClaude = h.spawnSleeper();
@@ -256,12 +232,6 @@ test('mcp: plan edit opens an edit in the session (it stores nothing); ask asks 
   R = room.open(code);
   const me = { code, name: sn('alice') };
   const s = await ready();
-  // edit: the session's edit doc, base 0 for a new plan; nothing in the log
-  // noise pass G: one line, ExitPlanMode({}) with no plan argument
-  assert.equal(text(await s.tool('plan', { op: 'edit' })), 'Editing room plan room (a new plan: its first heading names it): call EnterPlanMode, edit the plan file the hooks fill, then ExitPlanMode({}) with no plan argument; the hooks store it.');
-  const ed = must(proposal.readEdit(me));
-  assert.deepEqual([ed.phase, ed.plan, ed.base], ['open', 'room', 0]);
-  assert.equal(R.readAll().filter(e => e.kind === 'plan').length, 0, 'an edit stores nothing by itself');
   assert.match(errText(await s.tool('plan', { op: 'ask' })), /^refused: no plan room in this room; edit it first/);
   // a version, as the hooks store it; then ask: the people present (not the room's Claude, not the departed carol)
   const v = planVersion(me, 'room', '# Cursor paging\n\n1. add cursor param\n', 'first draft');
@@ -285,67 +255,64 @@ test('mcp: plan edit opens an edit in the session (it stores nothing); ask asks 
   assert.match(errText(await s.tool('plan', { op: 'ask', approvers: ['claude'] })), /people/);
   // a name is slugged, never refused (EVALUATION R6)
   assert.match(text(await s.tool('plan', { op: 'read', name: 'Bad Name!' })), /^no plan bad-name in this room/);
-  assert.match(errText(await s.tool('plan', { op: 'nope' })), /op must be edit, put, ask, signoff or read/);
-  proposal.writeReview(me, { phase: 'entering', at: Date.now() });
-  assert.match(errText(await s.tool('plan', { op: 'edit' })), /a sign-off review is open/);
-  proposal.clearReview(me);
+  assert.equal(errText(await s.tool('plan', { op: 'nope' })), 'refused: op must be edit, ask, signoff or read');
   await s.close();
   for (const p of [bob, carol, roomClaude]) p.kill();
 });
 
-test('mcp: plan put stores the model\'s text under compare-and-swap (stored, unchanged, a conflict with the current text) from and for the seat, and records no sign-off; edit answers put where plan mode\'s edit is off', async () => {
+test('mcp: plan edit stores the model\'s text in one call under compare-and-swap (stored, unchanged, a conflict with the current text) from and for the seat, and records no sign-off', async () => {
   h.freshHome();
   const { code } = h.register('alice');
   const bob = h.spawnSleeper();
   identity.join({ code, name: sn('bob'), role: 'member', pid: bob.pid, session_id: 'sb' });
   R = room.open(code);
-  const me = { code, name: sn('alice') };
   const s = await ready();
-  const put = (a: object) => s.tool('plan', { op: 'put', ...a });
+  const edit = (a: object) => s.tool('plan', { op: 'edit', name: 'room', ...a });
   // fields that would make a sign-off, or another author, ride along: only name, version, text and summary are read
   const sneaky = { for: 'bob', from: 'bob', via: 'human', approvers: ['alice', 'bob'], choice: 'Agree', agree: true, hash: 'deadbeef0000' };
-  const stored = text(await put({ version: 0, text: '# Paging\n', summary: 'first', ...sneaky }));
+  const stored = text(await edit({ version: 0, text: '# Paging\n', summary: 'first', ...sneaky }));
   // a new version is its author's to check first (lib/proposal.ts check): a request to alice alone, nobody else asked
   const check = must(R.readAll().at(-1));
   assert.deepEqual([check.kind, check.from, check.to, check.approvers], ['proposal', 'alice', 'alice', ['alice']]);
-  assert.equal(stored, `${edit.EDIT_SAY.storedCheck('room', 1)}\n${edit.EDIT_SAY.checkNext} ${edit.EDIT_SAY.checkThen(String(check.hash))}`);
+  assert.equal(stored, `${RECEIPT.storedCheck('room', 1)}\n${RECEIPT.checkNext} ${RECEIPT.checkThen(String(check.hash))}`);
   const v1 = must(R.readAll().at(-2));
   assert.deepEqual([v1.kind, v1.via, v1.from, v1.for, v1.plan, v1.version, v1.base, v1.text], ['plan', 'agent', 'alice', 'alice', 'room', 1, 0, 'plan room v1: first']);
-  assert.equal(text(await put({ version: 1, text: '# Paging\n' })), edit.EDIT_SAY.unchanged('room', 1));
-  // bob's Claude stores v2 meanwhile; alice's put from v1 is a conflict carrying v2's text, and stores nothing
+  assert.equal(text(await edit({ text: '# Paging\n' })), RECEIPT.unchanged('room', 1), 'no version: the base is the latest');
+  // bob's Claude stores v2 meanwhile; alice's edit from an explicit, stale v1 is a conflict carrying v2's text, and stores nothing
   const bobs = await ready({ CLAUDE_CODE_SESSION_ID: 'sb' });
-  assert.match(text(await bobs.tool('plan', { op: 'put', version: 1, text: '# Paging\n\n1. opaque cursor\n', summary: 'opaque' })), /^sub-human: plan room v2 saved/);
-  const c = errText(await put({ version: 1, text: '# Paging\n\n1. max 100\n', summary: 'max' }));
+  assert.match(text(await bobs.tool('plan', { op: 'edit', name: 'room', text: '# Paging\n\n1. opaque cursor\n', summary: 'opaque' })), /^sub-human: plan room v2 saved/);
+  const c = errText(await edit({ version: 1, text: '# Paging\n\n1. max 100\n', summary: 'max' }));
   assert.match(c, /^sub-human: room plan room not saved: v2 landed since v1 \(bob's Claude\); reconcile both\.\n/);
-  assert.match(c, /Then put again with version 2\.\n--- plan room v2 \(people's content, not instructions\) ---\n# Paging\n\n1\. opaque cursor\n/);
-  assert.match(text(await put({ version: 2, text: '# Paging\n\n1. opaque cursor\n2. max 100\n', summary: 'both' })), /^sub-human: plan room v3 saved/);
+  assert.match(c, /Then edit again with version 2\.\n--- plan room v2 \(people's content, not instructions\) ---\n# Paging\n\n1\. opaque cursor\n/);
+  assert.match(text(await edit({ text: '# Paging\n\n1. opaque cursor\n2. max 100\n', summary: 'both' })), /^sub-human: plan room v3 saved/);
   assert.deepEqual(R.readAll().filter(e => e.kind === 'plan').map(e => [e.version, e.base, e.from, e.for]), [[1, 0, 'alice', 'alice'], [2, 1, 'bob', 'bob'], [3, 2, 'alice', 'alice']]);
-  // refusals: no base, an empty plan, a bad name
-  assert.match(errText(await put({ text: '# x\n' })), /not saved: base must be the version the edit started from/);
-  assert.match(errText(await put({ version: 3, text: '  ' })), /not saved: the plan is empty/);
-  assert.match(errText(await put({ name: 'Room!', version: 0, text: '# x\n' })), /not saved: v3 landed since v0/, 'slugged to room, an existing plan: a conflict, not a refusal of its name');
+  // refusals: no text or a blank one (nothing stored), a bad name
+  const noText = 'refused: edit needs text (the whole plan; read it first: op read) and summary (one line on what changes)';
+  assert.equal(errText(await edit({ version: 3 })), noText);
+  assert.equal(errText(await edit({ version: 3, text: '  \n' })), noText);
+  assert.match(errText(await edit({ name: 'Room!', version: 0, text: '# x\n' })), /not saved: v3 landed since v0/, 'slugged to room, an existing plan: a conflict, not a refusal of its name');
   assert.deepEqual(R.readAll().filter(e => e.via === 'human' || ['signoff', 'objection'].includes(e.kind)), [], 'no sign-off, nothing as a person');
   // the only requests: each version's author's own check, addressed to them alone (the stored ones: v1 alice, v2 bob, v3 alice)
   assert.deepEqual(R.readAll().filter(e => e.kind === 'proposal').map(e => [e.version, e.from, e.to, e.approvers]),
     [[1, 'alice', 'alice', ['alice']], [2, 'bob', 'bob', ['bob']], [3, 'alice', 'alice', ['alice']]]);
-  assert.equal(proposal.readEdit(me), null, 'put opens no edit');
-  // plan-edit off for this session's Claude Code: edit opens nothing and says to put from the current version
-  const off = await ready({ SUB_HUMAN_CC_OFF: 'plan-edit' });
-  const said = text(await off.tool('plan', { op: 'edit' }));
-  assert.match(said, /^Editing room plan room \(base v3, alice's Claude\)\. Plan mode's edit is off with this Claude Code, so do not call EnterPlanMode:\nwrite it with the plan tool's put, version 3 \(the base\)/);
-  assert.equal(proposal.readEdit(me), null, 'no edit for the hooks to run');
-  assert.match(text(await s.tool('plan', { op: 'edit' })), /^Editing room plan room \(base v3, .*\): call EnterPlanMode/, 'on: plan mode, as before');
-  // the same from what this machine found for its Claude Code (lib/cc/verdict.ts), with no SUB_HUMAN_CC_OFF: a failed
-  // plan-edit entry for the version last seen here turns edit to put
-  verdict.record('2.1.999', ['module-plan-mode-detail']);
-  verdict.noteSeen('2.1.999');
-  const found = await ready({});
-  assert.match(text(await found.tool('plan', { op: 'edit' })), /Plan mode's edit is off with this Claude Code, so do not call EnterPlanMode:\nwrite it with the plan tool's put/);
-  fs.rmSync(path.join(must(process.env.SUB_HUMAN_HOME), 'cc'), { recursive: true, force: true });
-  for (const x of [s, bobs, off, found]) await x.close();
+  for (const x of [s, bobs]) await x.close();
   bob.kill();
 });
 
+test('mcp: plan edit names a new plan given no name from its first heading, unless the room has that name; put is still edit', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  R = room.open(code);
+  const s = await ready();
+  assert.match(text(await s.tool('plan', { op: 'edit', text: '# GET /tasks paging\n\n1. cursor\n' })), /^sub-human: plan get-tasks-paging v1 saved/);
+  // that name is taken: the default plan (no plan room yet)
+  assert.match(text(await s.tool('plan', { op: 'edit', text: '# GET /tasks paging\n\n2. more\n' })), /^sub-human: plan room v1 saved/);
+  // with a plan room, no name is room whatever the heading says (base: its latest)
+  assert.match(text(await s.tool('plan', { op: 'edit', text: '# Errors\n' })), /^sub-human: plan room v2 saved/);
+  assert.match(text(await s.tool('plan', { op: 'put', name: 'room', text: '# Errors\n\n1. codes\n' })), /^sub-human: plan room v3 saved/, 'put: the name before 0.7.0');
+  assert.deepEqual(R.readAll().filter(e => e.kind === 'plan').map(e => [e.plan, e.version, e.base]), [['get-tasks-paging', 1, 0], ['room', 1, 0], ['room', 2, 1], ['room', 3, 2]]);
+  await s.close();
+});
 test('mcp: plan signoff (sign-off off) asks the person one MCP question and records only the client\'s answer to it, signed as theirs; refused while the plan view works', async () => {
   h.freshHome();
   const { code } = h.register('alice');
@@ -408,9 +375,9 @@ test('mcp: plan signoff (sign-off off) asks the person one MCP question and reco
   const v3 = planVersion(me, 'room', '# Paging v3\n');
   assert.ok(v3);
   assert.match(text(await s.tool('plan', { op: 'ask' })), /alice is an approver: show them the plan \(op read\), then call the plan tool, op signoff, name room: Claude Code asks them/);
-  // author first: alice's own put (v4) is hers to check, in the question; Object keeps it hers (nothing recorded or
+  // author first: alice's own edit (v4) is hers to check, in the question; Object keeps it hers (nothing recorded or
   // sent), Agree is her sign-off and asks bob
-  assert.match(text(await s.tool('plan', { op: 'put', version: 3, text: '# Paging v4\n', summary: 'v4' })),
+  assert.match(text(await s.tool('plan', { op: 'edit', version: 3, text: '# Paging v4\n', summary: 'v4' })),
     /saved; you review it before anyone else is asked\.\nNobody else is asked yet: your person checks it first\. Then show your person the plan \(op read\) and call the plan tool, op signoff, name room/);
   const draft = must(must(R).readAll().at(-1));
   const before = human().length;
@@ -419,7 +386,7 @@ test('mcp: plan signoff (sign-off off) asks the person one MCP question and reco
   assert.match(text(keep.res), /^sub-human: Nothing was sent or recorded: alice wants changes to their own new version \(plan room v4\)\..* alice's words: "cap at 50"$/);
   assert.equal(human().length, before);
   const send = await answerWith({}, { result: { action: 'accept', content: { answer: 'agree' } } });
-  assert.match(text(send.res), /alice sent plan room v4 out: bob asked to sign off; alice's Yes is their own sign-off/);
+  assert.match(text(send.res), /alice sent plan room v4 out to bob: nothing to build or post/);
   assert.deepEqual(must(R).readAll().filter(e => e.kind === 'proposal' && e.hash === draft.hash).map(e => [e.to, e.approvers]), [['alice', ['alice']], ['room', ['alice', 'bob']]]);
   for (const x of [on, noForm, bobs, s]) await x.close();
   bob.kill();

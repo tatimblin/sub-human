@@ -131,7 +131,7 @@ test('node starts per event: a seated member (before its tail child reports the 
     AskUserQuestion: 2, EnterPlanMode: 2, // consent Pre and Post
     ExitPlanMode: 2, // consent Pre and Post; PermissionRequest only while a review may be open (consent said none is)
     'a room MCP tool': 0, // consent only while a review may be open
-    'the room post tool': 1, // consent always: a note waiting for its card refuses it (stage 8e D)
+    'the room post tool': 0, // 0.7.0: no note waits for a card, so a post outside a review starts no node
     TaskCreate: 0, TaskCompleted: 0, // a member's own tasks
     'turn end (Stop)': 0, // consent only while a review may be open
     'Notification idle_prompt': 1, StopFailure: 1, // presence, not awaited

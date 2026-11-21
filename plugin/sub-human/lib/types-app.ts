@@ -16,8 +16,6 @@ export interface SessionDoc {
   cursor?: number;
   shown?: { ids: number[]; log: { id: number; via: string; at: string }[] };
   review?: Review;
-  confirm?: Confirm;
-  edit?: PlanEdit;
   recheck?: Recheck;
   steer?: Steer;
   blocks?: Record<string, number>;
@@ -111,39 +109,12 @@ export interface Review {
   shownAt?: number;
   /** the person had typed text in the prompt when the plan view opened: their keys may answer it, so a Yes is asked again */
   typing?: boolean;
-  /** #34: the note's Send / Discard, answered before the closing call (lib/consent/review.ts noteAnswer): the closing
-   * plan line of a person in auto mode says where it went */
-  closing?: 'sent' | 'discarded';
+  /** the person's note was recorded (hooks/consent.ts, the answer effect's sentTo): the closing plan line of a person
+   * in auto mode says where it went */
+  closing?: 'sent';
   /** hash12 of what the review last wrote to the plan file (the framed version, the closing line): a stale review's
    * restore (lib/proposal.ts restoreStale) puts the person's plan back over it, never over a file they wrote since */
   wrote?: string;
-}
-/**
- * members/NAME/session edit: a room plan edit in this seat's session (the plan tool's edit op opens it; the hooks run
- * it: lib/consent/edit.ts). open: the plan file is (to be) seeded with the base version; stored: the version is in the
- * room, and one more ExitPlanMode only leaves plan mode.
- */
-export interface PlanEdit {
-  /** put: plan mode's edit could not run in this Claude Code (lib/consent/edit.ts fallback): the model stores the edit with
-   * the plan tool's put, and the next ExitPlanMode only leaves plan mode */
-  phase: 'open' | 'stored' | 'put';
-  plan: string;
-  /** the version the edit started from (0: a new plan); a conflict moves it to the current one */
-  base: number;
-  at: number;
-  /** the person's mode at EnterPlanMode, put back when plan mode is left */
-  mode?: string | undefined;
-  /** the session plan file the edit was seeded into, and what it held before (null: no file) */
-  file?: string;
-  backup?: string | null;
-  restored?: boolean;
-  /** stored: the version it made (unchanged: the same text as the base) */
-  version?: number;
-  unchanged?: boolean;
-  /** stored: the author's check of that version (lib/proposal.ts ask draft), which the person answers next */
-  check?: string;
-  /** a new plan edited with no name: its first heading names it when it is stored (lib/consent/edit.ts), else `plan` */
-  unnamed?: true;
 }
 /** members/NAME/session recheck: a Yes that came as the plan view opened, recorded only once the person confirms it on
  * the card (lib/consent/review.ts); asked once. */
@@ -152,21 +123,13 @@ export interface Recheck { hash: string; at: number }
  * denied once because it would show the person's own plan file (lib/consent/review.ts steer): the request (hash) and
  * the plan text's hash12 (plan). The same call again passes: the person's own plan was meant. */
 export interface Steer { hash: string; plan: string; at: number }
-/** Where a review's note stands (lib/consent/review.ts): waiting (its card never shown), nudged (Stop asked for the card
- * once), asked (the card was shown; no Post yet), reoffered (an interrupted card offered again at the next prompt),
- * told (the model was told the card closed without an answer, or every offer is spent: the card is the person's to ask for). */
-export type NoteStage = 'waiting' | 'nudged' | 'asked' | 'reoffered' | 'told';
-/** members/NAME/confirm: a review's note waiting for the person's Send. */
+/** A review's note, within one consent step (lib/consent/review.ts reduce sends it at once). */
 export interface Confirm {
   hash: string;
   note: string;
   from: string | null;
   title: string | null;
   at: number;
-  /** absent: waiting (lib/consent/review.ts stageOf) */
-  stage?: NoteStage;
-  /** the person was told, once, what Send and Discard do after the card closed with no answer more than once (stage 8e D) */
-  explained?: true;
 }
 
 // ---------- lib/tail.ts ----------

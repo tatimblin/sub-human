@@ -523,7 +523,7 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   snap "$b's Claude asks $a's Claude natively (SendMessage to $a.$(room)); $a's Claude answers. No card, no turn for the room's Claude"
 }
 
-S4() { # let's plan: B's own Claude drafts room plan v1 (plan mode; the hooks store it, no dialog); B checks it first in
+S4() { # let's plan: B's own Claude stores room plan v1 (one plan tool call, no dialog); B checks it first in
   # her own plan view (0.5.0-beta.24: nobody else is asked about a version before its author), and her Yes sends it out
   local a=$SEAT_A b=$SEAT_B
   local before; before=$($LIB log-max)
@@ -536,7 +536,7 @@ S4() { # let's plan: B's own Claude drafts room plan v1 (plan mode; the hooks st
   settle "$a"; save_pane "$a" "mode-$a"
   mark plan "$b asks her Claude to draft the room plan for cursor paging"
   submit "$b" "$PLAN4"
-  need wait_log --kind plan --from "$b" --after "$before" --timeout 420 --what "$b's Claude stores room plan v1 (an edit in plan mode, the store's receipt)" || return 1
+  need wait_log --kind plan --from "$b" --after "$before" --timeout 420 --what "$b's Claude stores room plan v1 (the plan tool's edit, the store's receipt)" || return 1
   save_pane "$b" "save-$b"   # the save's call and result rows as drawn (no red Error: on a save)
   need wait_card "$b" "$b's own check of v1 is open (nobody else is asked yet)" || return 1
   mark check "$b checks her Claude's version first; nobody else is asked yet"
@@ -569,36 +569,35 @@ read_plan() {
   record "$1 paged to the end of the proposal (${i}× PgDn)" "$ok"
 }
 
-S5() { # A objects with a note; his own Claude works the note in as v2, which he checks first and sends out (his Yes is his
-  # sign-off); v2 opens for B, who agrees → decision. (B's Yes on v1 does not carry over: a new version is asked anew.)
+S5() { # A objects with a note, sent as the plan view closes (0.7.0); B's Claude, the author's, works the note in as v2
+  # with no prompt, B checks it first and sends it out (her Yes is her sign-off); v2 opens for A, who agrees → decision.
+  # (A's objection on v1 does not carry over: a new version is asked anew.)
   local a=$SEAT_A b=$SEAT_B
   local p1; p1=$($LIB last-id --kind proposal)
   mark answers "$a objects with a note"
   need card_answer "$a" Object "$NOTE5" || return 1
   need wait_log --kind objection --from "$a" --via human --after "$p1" --timeout 30 || return 1
-  settle "$a" "$b"
+  settle "$a"
   save_pane "$a" "mode-after-$a"   # the footer's mode once the review closed (the same as state/S4/mode-A)
-  snap "$a objects with a note (via=human, byte-exact); $b had agreed with her Yes; $a's mode is the one he had"
-  mark edits "$a asks his Claude to work his note into the plan"
+  snap "$a objects with a note (via=human, byte-exact), sent as the plan view closes; $b had agreed with her Yes; $a's mode is the one he had"
+  mark edits "$b's Claude works $a's note into the plan, unasked"
   local e0; e0=$($LIB log-max)
-  need $LIB wait-idle "sh-$a" --timeout 90 || return 1
-  submit "$a" "$EDIT5A"
-  need wait_log --kind plan --from "$a" --after "$e0" --timeout 600 --what "$a's Claude stores the next version" || return 1
-  save_pane "$a" "save-$a"
-  need wait_card "$a" "$a's own check of his Claude's version is open" || return 1
-  paint "sh-$a"
-  settle "$b"
-  snap "$a's Claude stores the next version with his note and opens it for $a first"
-  [ "$FILM" = 1 ] && DWELL="$DWELL5"   # he stops on the page with his note before paging on
-  need card_answer "$a" Agree || { DWELL=""; return 1; }
-  DWELL=""
-  need wait_log --kind signoff --from "$a" --via human --after "$e0" --timeout 30 || return 1
-  need wait_card "$b" "$b's review of the latest version" || return 1
-  mark revision "The latest version opens for $b"
+  need wait_log --kind plan --from "$b" --after "$p1" --timeout 600 --what "$b's Claude stores the next version from $a's note" || return 1
+  save_pane "$b" "save-$b"
+  need wait_card "$b" "$b's own check of her Claude's next version is open" || return 1
   paint "sh-$b"
-  snap "The latest version opens for $b, with $a's note in it"
-  [ "$FILM" = 1 ] && DWELL="$DWELL5"
+  settle "$a"
+  snap "$b's Claude stores the next version with $a's note and opens it for $b first"
+  [ "$FILM" = 1 ] && DWELL="$DWELL5"   # she stops on the page with his note before paging on
   need card_answer "$b" Agree || { DWELL=""; return 1; }
+  DWELL=""
+  need wait_log --kind signoff --from "$b" --via human --after "$e0" --timeout 30 || return 1
+  need wait_card "$a" "$a's review of the latest version" || return 1
+  mark revision "The latest version opens for $a"
+  paint "sh-$a"
+  snap "The latest version opens for $a, with his note in it; $b's Yes already counts as hers"
+  [ "$FILM" = 1 ] && DWELL="$DWELL5"
+  need card_answer "$a" Agree || { DWELL=""; return 1; }
   DWELL=""
   need wait_log --kind decision --after "$e0" --timeout 30 || return 1
   mark agreed "Both agree: the decision is logged"
@@ -886,7 +885,7 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
   snap "carol posts with @room from the second home: signed there, placed and verified on the host, back in her mirror"
   local b2; b2=$($LIB log-max)
   local plan; plan=$($LIB json-string "$PLAN11")
-  submit alice "write the room plan named review with exactly this text: $plan (the mcp__plugin_sub-human_room__plan tool, op edit, name review, then plan mode as it says). Then ask carol alone to sign off on it (op ask, name review, approvers [\"carol\"]). Do not edit any other file"
+  submit alice "write the room plan named review with exactly this text: $plan (the mcp__plugin_sub-human_room__plan tool, op edit, name review). Then ask carol alone to sign off on it (op ask, name review, approvers [\"carol\"]). Do not edit any other file"
   need wait_log --kind plan --from alice --after "$b2" --timeout 300 --what "alice's Claude stores plan review v1" || return 1
   need wait_log --kind proposal --from alice --after "$b2" --timeout 120 || return 1
   need wait_card carol "carol's proposal is open (its plan was prefetched into her mirror)" || return 1

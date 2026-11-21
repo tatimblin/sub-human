@@ -1,5 +1,5 @@
 // lib/consent/card.ts answerCard: the one reading of the person's answer on a card the hooks built (the consent
-// card, a note's confirm card, a join request's card).
+// card, a join request's card).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { answerCard } from '../lib/consent/card.ts';
