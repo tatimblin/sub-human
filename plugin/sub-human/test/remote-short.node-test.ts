@@ -422,7 +422,8 @@ test('an invite: the host CLI masks the SECRET and the PIN inside Claude Code, `
   stopDaemon(t, remote, code);
   const masked = spawnSync(process.execPath, [h.BIN, 'invite', '--pipe'], { env: { ...host.env(null), CLAUDECODE: '1' }, encoding: 'utf8' });
   assert.equal(masked.status, 0, masked.stderr);
-  assert.match(masked.stdout, /\/sub-human join pipe:\S+#####\n/);
+  assert.match(masked.stdout, /\/sub-human join pipe:\S+#…\n/);
+  assert.doesNotMatch(masked.stdout, /#####/, 'the fragment reads #…, not the # and the mask run together');
   assert.match(masked.stdout, /another way\): ####\n/);
   assert.match(masked.stdout, /PIN and SECRET hidden/);
   const plain = spawnSync(process.execPath, [h.BIN, 'invite', '--pipe'], { env: host.env(null), encoding: 'utf8' });

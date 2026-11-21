@@ -74,7 +74,7 @@ test('invite over ssh: the line with the host folder and no NAME, the PIN apart;
   assert.equal(inCc.status, 0, inCc.stderr);
   assert.doesNotMatch(inCc.stdout, /[0-9a-z]{39}/);
   assert.doesNotMatch(inCc.stdout, /another way\): \d{4}/);
-  assert.match(inCc.stdout, new RegExp(`${code}\\?home=\\S+#####\n[\\s\\S]*PIN and SECRET hidden: this ran inside Claude Code.*/sub-human invite in the room`));
+  assert.match(inCc.stdout, new RegExp(`${code}\\?home=\\S+#…\n[\\s\\S]*PIN and SECRET hidden: this ran inside Claude Code.*/sub-human invite in the room`));
   assert.equal(cli(['invite', '--ssh', 'bad host', '--room', code]).status, 1);
   assert.equal(cli(['invite', '--pipe', '--web', '--room', code]).status, 2);
   assert.equal(cli(['admit', 'shk1.nope', '--yes']).status, 2);
