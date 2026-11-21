@@ -376,6 +376,29 @@ save_pane() {
   return 0
 }
 
+# row_open SEAT — open SEAT's room row view (↓ onto it, Enter; its rule "─ @CODE ─" with room-chat on). row_close SEAT —
+# back: ↑ to main, Enter (the view closes, the cursor stays on main), then one ↑ to the prompt (one only: a second ↑
+# with the focus already on the prompt recalls the last prompt).
+row_open() {
+  need $LIB wait-idle "sh-$1" --timeout 60 || return 1
+  need $LIB select-row "sh-$1" "$(room)" || return 1
+  keys "$1" Enter
+  need wait_pane "$1" "─ @?$(room) ─" 15 --what "$1's $(room) row view is open" || return 1
+  paint "sh-$1"
+}
+row_close() {
+  # the focus is on the view's prompt box after typing (↓ goes into the panel, onto main: ↑ there recalls a prompt),
+  # or still on the panel's row after Enter (↑ to main)
+  local k=Down
+  $LIB wait-pane "sh-$1" "^❯\s+(└\s*)?[⏺◯●]\s" --timeout 1 >/dev/null 2>&1 && k=Up
+  need $LIB select-row "sh-$1" main --key "$k" || return 1
+  keys "$1" Enter
+  need wait_pane "$1" "─ @?$(room) ─" 10 --absent --what "$1's room view closed" || return 1
+  need wait_pane "$1" "^❯\s+[⏺◯●]\s+main(\s|$)" 5 --what "$1's panel cursor stays on main" || return 1
+  keys "$1" Up
+  need wait_pane "$1" "^❯\s+(└\s*)?[⏺◯●]\s" 5 --absent --what "$1's focus is back on the prompt" || return 1
+}
+
 # show_room SEAT OTHER (film): the person opens the room row in their agent panel (↓ onto it, Enter): the row's view
 # (room-chat on: the chat, its rule "─ @CODE ─", main's status line under it naming who else is here, "CODE · OTHER
 # here"; off: its own line, the hold's, leads with "OTHER here · …"; one row per session, only its keeper nested).
@@ -427,16 +450,35 @@ S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
     submit "$b" "/sub-human $b"
   fi
   need wait_log --kind member_joined --from "$b" --timeout 60 || return 1
-  # the join as a group-chat line in A's pane ("sub-human: B joined": the hooks module's $.ui.log notice, no
-  # model turn); kept as evidence
+  # the join as a group-chat line for A, no model turn; kept as evidence. room-chat on: drawn in A's room row only
+  # (Phase 3; the row's own transcript, state/S2/row-line-A.txt); off: a $.ui.log notice in A's main pane
   mkdir -p "$SNAP_DIR/state/S2"
-  wait_pane "$a" "^\s*(⏺ |⎿ )?(sub-human: )?(room: )?$b joined(\s*$| from )" 60 --what "$a sees the chat line \"$b joined\"" && $LIB pane "sh-$a" > "$SNAP_DIR/state/S2/notice-$a.txt"
+  if [ "$($LIB row-kind "$a")" = chat ]; then
+    $LIB wait-row-line "$a" "^$b joined" --timeout 60 --save "$SNAP_DIR/state/S2/row-line-$a.txt" --what "$a's room row draws \"$b joined\""
+  else
+    wait_pane "$a" "^\s*(⏺ |⎿ )?(sub-human: )?(room: )?$b joined(\s*$| from )" 60 --what "$a sees the chat line \"$b joined\"" && $LIB pane "sh-$a" > "$SNAP_DIR/state/S2/notice-$a.txt"
+  fi
   need wait_pane "$b" "$(panel_row "$(room)")" 90 || return 1
   need $LIB wait-row "$b" --timeout 120 || return 1
   # who else is here (lib/rows.ts hereLine, reread every 5 s): room-chat on, main's status line under the prompt
   # ("CODE · B here · …", here_line); off, the room row's own line in the panel
   need wait_pane "$a" "$(here_line "$b")" 60 --what "$a's status line (or room row) names $b" || return 1
   need wait_pane "$b" "$(here_line "$a")" 60 --what "$b's status line (or room row) names $a" || return 1
+  # room-chat on: the row is the room's chat. A opens it (the join drawn there: state/S2/row-A), types ROW2 (posted as
+  # typed), and B's row draws "A: …" (its transcript, then B's open row view: state/S2/row-B); checks/s02-join.ts
+  if [ "$($LIB row-kind "$a")" = chat ]; then
+    row_open "$a" || return 1
+    save_pane "$a" "row-$a"
+    local said; said=$($LIB log-max)
+    submit "$a" "$ROW2"
+    need wait_log --kind say --from "$a" --after "$said" --timeout 30 --what "$a's line typed into the row is posted" || return 1
+    row_close "$a" || return 1
+    need $LIB wait-row-line "$b" "^$a: ${ROW2:0:20}" --timeout 30 --save "$SNAP_DIR/state/S2/row-line-$b.txt" --what "$b's room row draws $a's line" || return 1
+    row_open "$b" || return 1
+    need wait_pane "$b" "^\s*$a: ${ROW2:0:20}" 15 --what "$b's open row view shows $a's line" || return 1
+    save_pane "$b" "row-$b"
+    row_close "$b" || return 1
+  fi
   settle "$a" "$b"
   snap "$b joins: one $(room) row in each panel, nothing nested; $a's row names $b, $b's names $a; the room's Claude runs no turn"
   if [ "$FILM" = 1 ]; then
@@ -500,6 +542,8 @@ else
 fi
 # S7's line typed into the row (room-chat on): quotes, an em dash and an ampersand, posted as typed
 ROW7='row check: "exact" bytes — 50/page & more'
+# S2's line A types into the room row (room-chat on): it names nobody and asks nothing, so it wakes no Claude
+ROW2='row check: the paging notes are in docs/paging.md'
 REPLY3="sure, once we've agreed how paging works"
 DWELL5="400"   # S5's latest version: the page with A's note (in his Claude's words)
 
@@ -845,9 +889,14 @@ S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
   mark leave "$a and $b leave; the room closes itself"
   exit_seat "$a"
   need wait_log --kind member_left --from "$a" --after "$before" --timeout 30 || return 1
-  # the leave reaches B as a chat line once it has settled (8 s with no rejoin)
+  # the leave reaches B as a chat line once it has settled (8 s with no rejoin): room-chat on, drawn in B's room row
+  # only (its transcript, state/S10/row-line-B.txt); off, a notice in B's main pane
   mkdir -p "$SNAP_DIR/state/S10"
-  wait_pane "$b" "^\s*(⏺ |⎿ )?(sub-human: )?$a left( \([^()]*\))?\s*$" 45 --what "$b sees the chat line \"$a left\" after the 8 s settle" && $LIB pane "sh-$b" > "$SNAP_DIR/state/S10/notice-$b.txt"
+  if [ "$($LIB row-kind "$b")" = chat ]; then
+    $LIB wait-row-line "$b" "^$a left( \([^()]*\))?\s*$" --timeout 45 --save "$SNAP_DIR/state/S10/row-line-$b.txt" --what "$b's room row draws \"$a left\" after the 8 s settle"
+  else
+    wait_pane "$b" "^\s*(⏺ |⎿ )?(sub-human: )?$a left( \([^()]*\))?\s*$" 45 --what "$b sees the chat line \"$a left\" after the 8 s settle" && $LIB pane "sh-$b" > "$SNAP_DIR/state/S10/notice-$b.txt"
+  fi
   need $LIB wait-idle "sh-$b" --timeout 30 || return 1
   exit_seat "$b"
   need wait_log --kind member_left --from "$b" --after "$before" --timeout 30 || return 1
@@ -962,7 +1011,7 @@ done
 fresh=(); [ "$RESET" = 1 ] && fresh=(--fresh)
 remote=(); [ "$REMOTE" = 1 ] && remote=(--remote "$SEAT_B=$LAPTOP/home")
 $LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" --seats "$SEAT_A $SEAT_B" ${remote[@]+"${remote[@]}"} ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
-$LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5" edit5a "$EDIT5A" edit5b "$EDIT5B" row7 "$ROW7"
+$LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5" edit5a "$EDIT5A" edit5b "$EDIT5B" row7 "$ROW7" row2 "$ROW2"
 # the mode S5 objects from (checks/s05-consent.ts): set by --object-mode; a fresh run without it records none
 { [ -n "$OBJECT_MODE" ] || [ "$RESET" = 1 ]; } && $LIB run-words "$SNAP_DIR/run.json" objectMode "$OBJECT_MODE"
 

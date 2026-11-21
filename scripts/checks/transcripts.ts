@@ -52,7 +52,9 @@ export interface HoldCall { at: string, room: string, result: string | null }
  * `id` the agent id (ID), `parent` the agent that spawned it (meta parentAgentId: a keeper's is its room row), '' for
  * main's own.
  */
-export interface SubAgent { session: string, file: string, id: string, parent: string, agentType: string, first: string, prompt: string, holds: HoldCall[], modelText: string[] }
+export interface SubAgent { session: string, file: string, id: string, parent: string, agentType: string, first: string, prompt: string, holds: HoldCall[], modelText: string[], drawn: DrawnLine[] }
+/** One line a chat row drew: a line of a turn.step answer of the module's (answeredWithoutRequest), and when. */
+export interface DrawnLine { at: string, text: string }
 
 const textOfContent = (c: string | Block[] | undefined): string => (typeof c === 'string' ? c : (c || []).filter(b => b.type === 'text').map(b => b.text ?? '').join('\n'));
 
@@ -71,10 +73,13 @@ function subagent(dir: string, session: string, f: string): SubAgent {
   // answeredWithoutRequest: cc CONTRACT step-answered-without-request)
   const modelText = es.filter(e => e.type === 'assistant' && !e.answeredWithoutRequest)
     .flatMap(e => blocksOf(e).filter(c => c.type === 'text' && (c.text ?? '').trim()).map(c => c.text ?? ''));
+  // what the module drew in the row (room-chat on: mod/chat.ts answers each step with the waiting lines; "·" is nothing)
+  const drawn: DrawnLine[] = es.filter(e => e.type === 'assistant' && e.answeredWithoutRequest)
+    .flatMap(e => blocksOf(e).filter(c => c.type === 'text').flatMap(c => (c.text ?? '').split('\n')).filter(l => l.trim() && l.trim() !== '·').map(text => ({ at: e.timestamp ?? '', text })));
   const u = es.find(e => e.type === 'user');
   return { session, file: f, id: f.replace(/^agent-/, '').replace(/\.jsonl$/, ''), parent: meta && typeof meta.parentAgentId === 'string' ? meta.parentAgentId : '',
     agentType: meta && typeof meta.agentType === 'string' ? meta.agentType : '', first: es.find(e => e.timestamp)?.timestamp ?? '',
-    prompt: textOfContent(u && u.message ? u.message.content : undefined), holds, modelText };
+    prompt: textOfContent(u && u.message ? u.message.content : undefined), holds, modelText, drawn };
 }
 
 /**
@@ -125,6 +130,9 @@ export const rowHolds = (all: readonly SubAgent[], code: string): boolean => all
   if (!isChatRow(s, code) && blocking(s, code)) return true;
   return all.some(k => k.session === s.session && isKeeper(k, code) && (!k.parent || k.parent === s.id) && blocking(k, code));
 });
+/** Every line the chat rows of room code among `all` drew (room-chat on), oldest first. */
+export const drawnIn = (all: readonly SubAgent[], code: string): DrawnLine[] =>
+  all.filter(s => isChatRow(s, code)).flatMap(s => s.drawn).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
 /** Whether room row `row` held code at all: its own hold call (room-chat off), or its keeper's (on). */
 export const rowHeld = (all: readonly SubAgent[], row: SubAgent, code: string): boolean =>
   row.holds.some(h => h.room === code) || all.some(k => k.session === row.session && isKeeper(k, code) && (!k.parent || k.parent === row.id) && k.holds.some(h => h.room === code));

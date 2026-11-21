@@ -37,6 +37,12 @@
  *                                                  on, its keeper (sub-human:keeper) whose hold call for the room has
  *                                                  no result yet; room-chat off, the row's own hold call
  *                                                  (checks/transcripts.ts rowHolds)
+ *   demo-lib.ts row-kind <seat>                  print the seat's room row's kind: chat (room-chat on: "chat: CODE"),
+ *                                                  hold (off: "room: CODE") or none
+ *   demo-lib.ts wait-row-line <seat> <regex> [--save FILE] [--timeout S]   wait until <seat>'s chat row has drawn a
+ *                                                  line matching <regex> (a line of the module's answer in the row's
+ *                                                  transcript, answeredWithoutRequest: checks/transcripts.ts drawnIn);
+ *                                                  print it (and save it to FILE)
  *   demo-lib.ts set-mode <session> <auto|default|acceptEdits>   shift+tab until the footer shows that mode (the
  *                                                  person's own switch; --object-mode)
  *   demo-lib.ts member-field <name> <field>       print members.json[name][field] ('' if none)
@@ -103,7 +109,7 @@ import type { LogEntry } from './snap.ts';
 import * as paths from './lib/paths.ts';
 import { readJson, jsonl, esc } from './lib/io.ts';
 import { panelRows, subagentRows, cardState, planState, joinLineIn, pinIn, admitCardState, footerMode } from './lib/panes.ts';
-import { subagents, rowHolds } from './checks/transcripts.ts';
+import { subagents, rowHolds, isChatRow, isRoomRow, drawnIn } from './checks/transcripts.ts';
 import type { DialogState } from './lib/panes.ts';
 
 /**
@@ -477,6 +483,28 @@ async function waitRow(o: Opts, T: number): Promise<number> {
   }));
 }
 
+/** The seat's session's subagents (members.json session_id; any of its folder's when the record has none). */
+const seatSubagents = (seat: string) => {
+  const sid = (readJson<Record<string, { session_id?: string } | undefined>>(roomFile('members.json'), {})[seat] || {}).session_id;
+  return subagents(paths.seatProjectDir(seat), sid || null);
+};
+/** chat, hold or none: what the seat's room row is (its prompt). */
+async function rowKind(o: Opts): Promise<number> {
+  const code = roomCode() ?? '';
+  const rows = seatSubagents(arg(o, 0)).filter(s => isRoomRow(s, code));
+  print(rows.some(s => isChatRow(s, code)) ? 'chat' : rows.length ? 'hold' : 'none');
+  return 0;
+}
+/** A line the seat's chat row drew (room-chat on), matching the regex. */
+async function waitRowLine(o: Opts, T: number): Promise<number> {
+  const seat = arg(o, 0), src = arg(o, 1), code = roomCode() ?? '';
+  const re = new RegExp(src);
+  let hit: { at: string, text: string } | undefined;
+  const ok = await until(o.what || `${seat}'s room row draws /${src}/`, T, () => (hit = drawnIn(seatSubagents(seat), code).find(l => re.test(l.text))) !== undefined);
+  if (hit) { print(`${hit.at} ${hit.text}`); if (o.save) fs.writeFileSync(o.save, `${hit.at} ${hit.text}\n`); }
+  return exit(ok);
+}
+
 /** The person moves their seat to a permission mode with shift+tab (Claude Code's own cycle), as they would by hand. */
 async function setMode(o: Opts): Promise<number> {
   const session = arg(o, 0), want = arg(o, 1);
@@ -818,6 +846,8 @@ export const COMMANDS: Record<string, Command> = {
   'wait-log': waitLog,
   'approve-until': approveUntil,
   'wait-row': waitRow,
+  'row-kind': rowKind,
+  'wait-row-line': waitRowLine,
   'set-mode': setMode,
   'member-field': memberField,
   'wait-member': waitMember,

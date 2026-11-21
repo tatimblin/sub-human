@@ -3,7 +3,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as paths from '../lib/paths.ts';
 import { MAIN_ROW, panelRows, oneRoomRow } from '../lib/panes.ts';
-import { rowStrays, isChatRow, rowKeepers, KEEPERS_MAX } from './transcripts.ts';
+import { rowStrays, isChatRow, rowKeepers, KEEPERS_MAX, drawnIn } from './transcripts.ts';
+import * as metrics from '../metrics.ts';
 import { readJson, readText, clip, esc } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 import type { AgentRow, TaskRec } from './captures.ts';
@@ -31,11 +32,24 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const taskEntries = log.filter(e => e.kind === 'task').length;
   const tj = readJson<TaskRec[] | null>(path.join(roomDir, 'tasks.json'), null);
   if (taskEntries) det('<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept (${taskEntries} task entries in the log)` : `missing (${taskEntries} task entries in the log)`);
-  const ln = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(A)} left(?: \\([^()]*\\))?\\s*$`, 'm').exec(readText(x.stateFile('S10', `notice-${B}.txt`)) || '');
+  // room-chat on (Phase 3): drawn in B's room row only (its transcript); off: a notice in B's main pane
+  const chatOn = (n: string): boolean => x.seatAgents(n).some(a => a.first >= x.runStart && isChatRow(a, code));
+  const leftRe = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(A)} left(?: \\([^()]*\\))?\\s*$`, 'm');
+  const drawnB = chatOn(B) ? drawnIn(x.seatAgents(B).filter(a => a.first >= x.runStart), code).find(l => leftRe.test(l.text)) : undefined;
+  const ln = chatOn(B) ? (drawnB ? [drawnB.text] : null) : leftRe.exec(readText(x.stateFile('S10', `notice-${B}.txt`)) || '');
   const via = la && x.shownVia(B, la.id);
   const early = la && lb && Date.parse(lb.at) - Date.parse(la.at) < 8000;
-  det(`${B} sees the chat line "${A} left" once the leave settled (8 s)`, ln && via === 'mod' && !early,
-    `${ln ? `"${ln[0]}" in ${B}'s pane (state/S10/notice-${B}.txt)` : `not seen in ${B}'s pane`}; ${B}'s session document: #${la ? la.id : '?'} shown via ${via || 'nothing'}; ${B} left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after ${A}`);
+  det(`${B} sees the chat line "${A} left" once the leave settled (8 s)${chatOn(B) ? ', in the room row' : ''}`, ln && via === 'mod' && !early,
+    `${ln ? `"${ln[0]}" ${chatOn(B) ? `drawn in ${B}'s row${drawnB ? ` at ${drawnB.at.slice(11, 19)}` : ''}` : `in ${B}'s pane (state/S10/notice-${B}.txt)`}` : `not seen in ${B}'s ${chatOn(B) ? 'row' : 'pane'}`}; ${B}'s session document: #${la ? la.id : '?'} shown via ${via || 'nothing'}; ${B} left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after ${A}`);
+  // room-chat on (Phase 3, all run): no other person's notice line in main: their words ("bob: …", "bob's Claude: …"),
+  // joins and leaves are drawn in the room row only (main keeps its own Claude's words, wakes, plan views, receipts)
+  for (const n of [A, B].filter(chatOn)) {
+    const others = [A, B].filter(o => o !== n).map(esc).join('|');
+    const re = new RegExp(`^sub-human: (?:${others})(?:'s Claude)?(?:: | joined\\b| left\\b)`);
+    const hits = x.entries(n).filter(e => !e.isSidechain && e.timestamp !== undefined && e.timestamp >= x.runStart && metrics.isChatNotice(e) && re.test(String(e.content)));
+    det(`${n}'s main draws no other person's room line (their words, joins and leaves are the row's)`, hits.length === 0,
+      hits.length ? `${hits.length} in main: ${hits.slice(0, 3).map(e => `${e.timestamp?.slice(11, 19)} "${clip(String(e.content), 70)}"`).join('; ')}` : `none in ${n}'s main transcript`);
+  }
 
   // every human saw a join/leave notice
   const moves = log.filter(e => (e.kind === 'member_joined' || e.kind === 'member_left') && e.via === 'system' && e.from !== 'claude');

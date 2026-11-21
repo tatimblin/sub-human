@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as paths from '../lib/paths.ts';
 import { panelRows, joinNotices, hereNames, roomStatus, oneRoomRow } from '../lib/panes.ts';
-import { isRoomRow, isChatRow, rowHeld, rowStrays } from './transcripts.ts';
+import { isRoomRow, isChatRow, rowHeld, rowStrays, drawnIn } from './transcripts.ts';
 import { readJson, readText, jsonl, esc } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 import type { LogEntry } from './log.ts';
@@ -52,12 +52,23 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     brows.length === 1 && !!brows[0] && rowHeld(bs, brows[0], code) && rowStrays(bs, code).length === 0 && !bs.some(s => s.agentType === 'sub-human:participant')
       && !x.seatAgents(A).some(s => s.session !== x.roomClaudeSid && !!s2 && s.first > s2.from && s.first <= s2.to && (isRoomRow(s, code) || s.agentType === 'sub-human:participant')),
     bs.map(s => `${s.agentType || '?'} holds ${s.holds.map(h => h.room).join(',') || 'none'}`).join('; ') || `no subagent of ${B} in S2`);
-  // the join as a group-chat line in A's pane: the hooks module's $.ui.log row "sub-human: B joined"
-  const jt = readText(x.stateFile('S2', `notice-${A}.txt`)) || '';
-  const jl = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(B)} joined\\s*$`, 'm').exec(jt);
+  // the join as a group-chat line for A. room-chat on (Phase 3): drawn in A's room row only (its transcript; A's open
+  // row view, state/S2/row-A, as drawn) and in no row of main's; off: the hooks module's $.ui.log row in A's pane
   const via = j && x.shownVia(A, j.id);
-  det(`${A} sees the chat line "${B} joined" (a lasting line, no room code, no ids)`, jl && via === 'mod',
-    `${jl ? `"${jl[0].trim()}" in ${A}'s pane (state/S2/notice-${A}.txt)` : `not seen in ${A}'s pane`}; ${A}'s session document: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+  const joinRe = new RegExp(`^\\s*${esc(B)} joined(?: \\([^()]*\\))?\\s*$`);
+  const aDrawn = chat(A) ? drawnIn(x.seatAgents(A).filter(s => s.first >= x.runStart), code) : [];
+  if (chat(A)) {
+    const inRow = aDrawn.filter(l => joinRe.test(l.text));
+    const view = (readText(x.stateFile('S2', `row-${A}.txt`)) || '').split('\n').some(l => joinRe.test(l));
+    const inMain = x.chatIn(x.entries(A)).filter(e => j && e.timestamp !== undefined && e.timestamp > j.at && new RegExp(`^sub-human: ${esc(B)} joined`).test(String(e.content)));
+    det(`${A} sees the chat line "${B} joined" in the room row only (a lasting line, no room code, no ids; none in main)`, inRow.length === 1 && view && inMain.length === 0 && via === 'mod',
+      `${inRow.length} line(s) drawn in ${A}'s row${inRow[0] ? ` (${inRow[0].at.slice(11, 19)})` : ''}; ${view ? 'shown' : 'not shown'} in ${A}'s open row view (state/S2/row-${A}.txt); ${inMain.length} in main; ${A}'s session document: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+  } else {
+    const jt = readText(x.stateFile('S2', `notice-${A}.txt`)) || '';
+    const jl = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(B)} joined\\s*$`, 'm').exec(jt);
+    det(`${A} sees the chat line "${B} joined" (a lasting line, no room code, no ids)`, jl && via === 'mod',
+      `${jl ? `"${jl[0].trim()}" in ${A}'s pane (state/S2/notice-${A}.txt)` : `not seen in ${A}'s pane`}; ${A}'s session document: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+  }
   // room-chat off: the row's line (the hold's progress) leads with the join; on, the row's label is fixed at spawn (its
   // code) and the join is the chat line above
   const arow = panelRows(x.cap('S2', A, 'last')).find(r => r.label === code);
@@ -65,7 +76,9 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   // a join is group chat: the person sees the row, the model gets a copy, nothing wakes it
   const s2end = x.span('S2')?.to;
   const inS2 = (es: TEntry[]): TEntry[] => (j ? es.filter(e => e.timestamp !== undefined && e.timestamp > j.at && s2end !== undefined && e.timestamp <= s2end) : []);
-  const notes = inS2(x.chatIn(x.entries(A))).filter(e => e.content === `sub-human: ${B} joined`);
+  // the person's line: room-chat on, the row's (drawn by the module, no model); off, main's chat row
+  const notes = chat(A) ? [] : inS2(x.chatIn(x.entries(A))).filter(e => e.content === `sub-human: ${B} joined`);
+  const rowNotes = aDrawn.filter(l => joinRe.test(l.text));
   // the copy for A's Claude is held by the hooks module and rides as context beside A's next prompt (mod/deliver.ts
   // holdPullEvent, mod/prompt.ts: "room since your last turn"), so it lands at A's next turn, after S2 when A is idle;
   // an isMeta row is the fallback when it cannot be held
@@ -76,8 +89,27 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     && [e.attachment.content].flat().some(c => typeof c === 'string' && joinedLine.test(c)));
   const woke = inS2(x.wakeIn(x.entries(A))).filter(e => x.textOf(e.message && e.message.content).includes(`${B} joined`));
   const ct = notes[0] ? x.chatTurn(A, notes[0]) : null;
-  det(`The join reached ${A} as one chat row and one copy for ${A}'s Claude, with no model turn`, notes.length === 1 && pulls.length + held.length === 1 && woke.length === 0 && ct && !ct.woke,
-    `${notes.length} chat row(s) "sub-human: ${B} joined"; ${held.length} held cop${held.length === 1 ? 'y' : 'ies'} (context on ${A}'s next prompt${held[0]?.timestamp ? `, ${held[0].timestamp.slice(11, 19)}` : ''}), ${pulls.length} isMeta; ${woke.length} wake(s) carrying it; ${ct ? ct.evidence : 'no chat row'}`);
+  const rowOk = chat(A) ? rowNotes.length === 1 : notes.length === 1 && !!ct && !ct.woke;
+  det(`The join reached ${A} as one chat line (${chat(A) ? 'the row\'s' : 'main\'s'}) and one copy for ${A}'s Claude, with no model turn`, rowOk && pulls.length + held.length === 1 && woke.length === 0,
+    `${chat(A) ? `${rowNotes.length} line(s) drawn in ${A}'s row (the module's answer, no model)` : `${notes.length} chat row(s) "sub-human: ${B} joined"`}; ${held.length} held cop${held.length === 1 ? 'y' : 'ies'} (context on ${A}'s next prompt${held[0]?.timestamp ? `, ${held[0].timestamp.slice(11, 19)}` : ''}), ${pulls.length} isMeta; ${woke.length} wake(s) carrying it${ct ? `; ${ct.evidence}` : ''}`);
+  // room-chat on: the row is the room's chat. A's line typed into her row (state/S2: row-A before it) is posted as
+  // typed and reaches B's row, drawn "A: …" (B's row transcript, and B's open row view, state/S2/row-B), and wakes no
+  // Claude (it names nobody and asks nothing)
+  if (chat(A)) {
+    const want = x.DEMO.row2;
+    const said = x.logIn(x.span('S2')).filter(e => e.kind === 'say' && e.from === A);
+    const p = said[0];
+    det(`${A}'s line typed into the row is posted once, with her exact bytes, via=human`, said.length === 1 && !!p && p.via === 'human' && p.text === want,
+      p ? `${said.map(x.fmt).join('; ')}; text ${p.text === want ? 'byte-exact' : `"${p.text}" (want "${want}")`}` : `no say from ${A} in S2`);
+    const line = `${A}: ${want}`;
+    const got = drawnIn(x.seatAgents(B).filter(s => s.first >= x.runStart), code).find(l => l.text.trim() === line);
+    const lag = got && p ? (Date.parse(got.at) - Date.parse(p.at)) / 1000 : null;
+    const view = (readText(x.stateFile('S2', `row-${B}.txt`)) || '').split('\n').some(l => l.trim() === line);
+    det(`${B}'s row draws it as "${A}: …" within 30 s (B's open row view shows it)`, !!got && lag !== null && lag <= 30 && view,
+      `${got ? `drawn ${got.at.slice(11, 19)}, ${lag?.toFixed(1)} s after the post` : `not drawn in ${B}'s row`}; ${view ? 'shown' : 'not shown'} in ${B}'s open row view (state/S2/row-${B}.txt)`);
+    const wakes = [A, B].flatMap(n => x.wakeIn(x.inSpan(x.entries(n), x.span('S2'))).filter(e => x.textOf(e.message && e.message.content).includes(want)).map(() => n));
+    det(`${A}'s row line wakes no Claude (it names nobody and asks nothing)`, wakes.length === 0, wakes.length ? `woke ${wakes.join(', ')}` : 'no wake carrying it');
+  }
   const rh = x.remote && x.remote[B];
   if (rh) remoteJoin(x, det, j, rh);
 }

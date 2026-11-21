@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { COMMANDS, opts, listsRoomClaude, keyDelays, paneBelow, newMatches, taskFor } from '../demo-lib.ts';
 import { panelRows, rowViewLine, hereNames, footerMode, subagentRows, roomStatus, oneRoomRow } from '../lib/panes.ts';
-import { subagents, holdingRow, isRoomRow, isChatRow, isKeeper, rowHolds, rowHeld, rowStrays, rowKeepers, KEEPERS_MAX } from '../checks/transcripts.ts';
+import { subagents, holdingRow, isRoomRow, isChatRow, isKeeper, rowHolds, rowHeld, rowStrays, rowKeepers, KEEPERS_MAX, drawnIn } from '../checks/transcripts.ts';
 import { runInfo } from '../checks/context.ts';
 import { parseJson } from '../lib/io.ts';
 
@@ -195,6 +195,8 @@ test('transcripts rowKeepers and modelText: a row that respawns its keeper past 
   let row = all.find(x => x.id === 'row');
   assert.ok(row);
   assert.deepEqual(row.modelText, []);
+  assert.deepEqual(drawnIn(all, 'vole-7874').map(l => l.text), ['only you']); // the module's answer: drawn
+  assert.deepEqual(drawnIn(all, 'swan-6397'), []);
   assert.deepEqual([rowKeepers(all, row, 'vole-7874').keepers.length, rowKeepers(all, row, 'vole-7874').peak], [5, 5]);
   // a sixth inside the window: past the cap; one after it starts a window of its own
   put('k5', { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(300), message: { content: 'keep: vole-7874' } }));

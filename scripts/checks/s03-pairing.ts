@@ -1,4 +1,6 @@
 // S3: pairing with no plan: @room both ways, then Claude-to-Claude SendMessage
+// TODO(0.8.0 Phase 2/3, not in the gate): SAY3 names B ("bob, …"), so it now wakes B's Claude, and with room-chat on
+// A's words are drawn in B's room row, not as a chat row in main (drawnIn); this scene's checks still encode 0.7.0.
 import { clip } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 

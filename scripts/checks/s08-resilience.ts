@@ -1,4 +1,6 @@
 // S8: resilience: /clear keeps rows; /exit + --continue brings the row back with no prompt; the room still reaches bob
+// TODO(0.8.0 Phase 3, not in the gate): with room-chat on, alice's words after the resume are drawn in bob's room row
+// (transcripts.ts drawnIn), not as a chat row in his main; the last check still reads main.
 import * as metrics from '../metrics.ts';
 import { panelRows } from '../lib/panes.ts';
 import { esc } from '../lib/io.ts';

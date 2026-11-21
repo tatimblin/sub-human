@@ -1,4 +1,6 @@
 // S9b: a multi-line @room post whose later lines read like a decision and a sign-off: they show nested under
+// TODO(0.8.0 Phase 3, not in the gate): with room-chat on the multi-line post is drawn in bob's room row, not main;
+// the pane and chat-row checks still read main.
 // the sender (CHAT_NEST "  │ "), never as bare room lines, and the room's consent state is untouched
 import * as paths from '../lib/paths.ts';
 import { readText, esc } from '../lib/io.ts';

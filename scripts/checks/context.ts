@@ -42,6 +42,8 @@ export const DEMO = {
   carol11: 'hello from the second home',
   /** S7 (room-chat on): the line alice types into her room row */
   row7: 'row check: "exact" bytes — 50/page & more',
+  /** S2 (room-chat on): the line A types into her room row */
+  row2: 'row check: the paging notes are in docs/paging.md',
   /** demo.sh --object-mode: the mode A objects from in S5 (auto, default, acceptEdits); '' when not set */
   objectMode: '',
 };
