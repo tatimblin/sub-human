@@ -151,6 +151,7 @@ export type TailEvent =
   | { type: 'pull', text: string }
   | { type: 'wake', text: string }
   | { type: 'reminders', text: string | null }
+  | { type: 'here', text: string }
   | { type: 'health', text: string; quiet?: true }
   | { type: 'invites', open: string[], expired?: string[] }
   | { type: 'take', code: string, name: string, text: string, check?: string };

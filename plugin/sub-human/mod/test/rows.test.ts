@@ -24,7 +24,7 @@ type Seen = {
    * texts (the model's context rows) */
   deny: string | null; appends: string[]
 }
-function world(on: On, { seat = SEAT, answer = {}, off = [], down = false, deny = null, watch = deny !== null }: { seat?: Seat | null; answer?: Record<string, unknown>; off?: string[]; down?: boolean; deny?: string | null; watch?: boolean } = {}) {
+function world(on: On, { seat = SEAT, answer = {}, off = ['room-chat'], down = false, deny = null, watch = deny !== null }: { seat?: Seat | null; answer?: Record<string, unknown>; off?: string[]; down?: boolean; deny?: string | null; watch?: boolean } = {}) {
   const seen: Seen = { runs: [], beneathStop: 0, spawns: [], agents: [], clock: { now: 1_000_000 }, offered: [], debug: [], seat, lists: 0, listHold: null, spawnHold: null, deny, appends: [] }
   session(on, SID)
   on('session.cwd', () => ({ value: '/w' }))

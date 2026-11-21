@@ -265,7 +265,9 @@ test('agents: no model key; Agent(...) restrictions name agents that exist', () 
       for (const t of must(types).split(',').map(s => s.trim())) assert.ok(names.has(t) || t === 'general-purpose', `${f}: unknown agent type ${t}`);
     }
   }
-  assert.match(frontmatter(path.join(dir, 'room.md')), /^tools: mcp__plugin_sub-human_room__hold$/m, 'the one room row: its hold only, no nested rows');
+  // the one room row: its hold, and (room-chat) its one keeper child, which does the hold; no participant rows
+  assert.match(frontmatter(path.join(dir, 'room.md')), /^tools: mcp__plugin_sub-human_room__hold, Agent\(sub-human:keeper\)$/m);
+  assert.match(frontmatter(path.join(dir, 'keeper.md')), /^tools: mcp__plugin_sub-human_room__hold$/m);
   assert.ok(!names.has('sub-human:participant'), 'no participant rows');
 });
 

@@ -275,6 +275,8 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
   assert.deepEqual(d.parseEvent('{"type":"rows","text":"sign off v2"}'), { type: 'reminders', text: 'sign off v2' });
   assert.deepEqual(d.route({ type: 'reminders', text: 'sign off v2' }), d.route(must(d.parseEvent('{"type":"rows","text":"sign off v2"}'))));
   assert.deepEqual(d.parseEvent('{"type":"seat","seat":null}'), { type: 'seat', seat: null });
+  assert.deepEqual(d.parseEvent('{"type":"here","text":"only you"}'), { type: 'here', text: 'only you' });
+  assert.equal(d.parseEvent('{"type":"here"}'), null);
   assert.equal(d.parseEvent('{"type":"wake"}'), null);
   assert.equal(d.parseEvent('{"type":"exec","text":"rm"}'), null);
   assert.equal(d.parseEvent('not json'), null);
@@ -293,6 +295,7 @@ test('deliver: the routing table: chat is a notice, pull held for the next promp
   assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', '  │ more', 'carol joined'] }), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: '  │ more' }, { do: 'log', text: 'carol joined' }]);
   assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'hold-pull', text: 'Room since…' }], 'stage 8e B: never a user row of its own');
   assert.deepEqual(d.route({ type: 'reminders', text: null }), [{ do: 'hold-reminders', text: null }]);
+  assert.deepEqual(d.route({ type: 'here', text: 'bob here' }), [{ do: 'here', text: 'bob here' }], 'the room row\'s status line');
   assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);
   const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });
   assert.deepEqual(idle, [{ do: 'submit', text: `${d.WAKE_HEAD}\nroom: decided\n(for Claude) room now: …`, seen: ['room: decided'] }]);

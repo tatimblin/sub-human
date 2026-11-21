@@ -611,6 +611,21 @@ test('tail: rows says the pending reminders at start and when they change (never
   assert.match(must(must(t.of('reminders').at(-1)).text), new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
 });
 
+test('tail: who else is here goes to the module at start and when it changes (the room row\'s status line)', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');                                                  // #1
+  const t = startNd({ sid: 's' });
+  t.advance(300);
+  assert.deepEqual(t.of('here').map(x => x.text), ['only you']);
+  t.advance(FAST.healthMs + 100);
+  assert.equal(t.of('here').length, 1, 'unchanged: not sent again');
+  h.register('bob', 'member', 1, code);
+  t.advance(FAST.healthMs + 100);
+  assert.equal(must(t.of('here').at(-1)).text, 'bob here');
+  t.stop();
+});
+
 test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the room\'s Claude\'s keeps them', () => {
   h.freshHome();
   const { code } = h.register('alice');

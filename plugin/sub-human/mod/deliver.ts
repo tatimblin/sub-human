@@ -10,7 +10,7 @@
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  wakeParts, holdPull, takeWake, takeFallback, DELIVERY_ERROR_NOTICE, TAIL_RESTART, WAKE_RESEND,
+  wakeParts, holdPull, takeWake, takeFallback, visibleLines, DELIVERY_ERROR_NOTICE, TAIL_RESTART, WAKE_RESEND,
 } from './core/deliver.ts';
 import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { homeMark, BYPASS_DEBUG } from './core/constants.ts';
@@ -26,6 +26,8 @@ import {
   ROW_RUN_MS, ROW_ASK_WAIT_MS, ROOM_AGENT, type SpawnLedger, type RowAskState,
 } from './core/rows.ts';
 import { noteRow, offerRow } from './rows.ts';
+import { chat, chatStatus, keeperOf, NOTHING } from './chat.ts';
+import { chatOn, chatSpawn, keepRow, rowOf, rowUuids, keeperStep } from './core/room-chat.ts';
 import {
   copyBook, copyTo, copyNews, copyChoiceOf, clipboardCommands, AUTO_COPIED, COPIED, NO_TOOL, GONE, NOT_COPIED,
   COPY_QUESTION, COPY_HEADER, COPY_OPTIONS, type CopyBook,
@@ -38,7 +40,7 @@ import {
   LEAVE_CARD_KEY, STAR_CHECK_MS, asLeaveCard, leaveCardDue, leaveCardShown, leaveCardStarred,
 } from './core/leave.ts';
 import { assertNever } from './core/never.ts';
-import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
+import type { AgentInfo, EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { JoinReply, Pulls, TailEvent, TailSeat } from './core/types.ts';
 
 /** The tail child as the module tracks it; stream: its $.process.spawn stream, as stopChild ends it. */
@@ -349,6 +351,13 @@ function roomRow($: EngineInterface): Promise<void> {
   })().catch(() => {}).finally(() => { rowing = null; rowAsked = false; });
   return rowing;
 }
+/** roomRow from a hook, not awaited; with room-chat on, waited on a moment (ROW_ASK_WAIT_MS; the run goes on past it):
+ * a row spawned once its hook's frame is over has every step skip this plugin's hooks (re-entry, live 2.1.296), so
+ * mod/chat.ts could not answer it (its own model would start its keeper). */
+async function rowNow($: EngineInterface): Promise<void> {
+  const run = roomRow($);
+  if (chatOn(asHello((await $.state.get(HELLO)).value))) await within($, run, ROW_ASK_WAIT_MS);
+}
 /** p's value, or undefined once it fails or ms pass first (no clock: no bound). */
 function within<T>($: EngineInterface, p: Promise<T>, ms: number): Promise<T | undefined> {
   return new Promise(resolve => {
@@ -367,26 +376,30 @@ async function rowOnce($: EngineInterface): Promise<string | null> {
   try {
     code = await rowCode($);
     if (!code) return null;
+    const sid = await $.session.id();
+    // room-chat: the row this session keeps, woken by a send when it idles with no keeper (mod/chat.ts)
+    const talk = chatOn(asHello((await $.state.get(HELLO)).value));
     const before = await $.agent.list();
-    const live = liveRow(before, code);
+    const live = talk ? null : liveRow(before, code);
     if (live) { rowFound(live, code); spawns = spawnLived(spawns, code, await $.clock.now()); return code; }
+    if (talk && (await chatRow($, sid, code, before))) return code;
     if (!(await $.mcp.connect(ROOM_SERVER)).isConnected) return code;
     const step = spawnStep(spawns, code, await $.clock.now());
     if (!step.spawn) return code;
     spawns = step.ledger;
     let started = false;
     try {
-      const r = await $.agent.spawn(rowSpawn(code));
+      const r = await $.agent.spawn(talk ? chatSpawn(code) : rowSpawn(code));
       // its id, for its hand-back: the answer's, else the list's new row of this room (an answer a hook gave carries none)
       const id = r.deny === undefined ? r.agentId ?? liveRow(await $.agent.list(), code, new Set(before.map(a => a.id))) : null;
       started = !!id;
-      if (id) { noteRow(id); $.ui.log(`rows: room row ${code} started`, { to: 'debug' }); }
+      if (id) { noteRow(id); if (talk) await chatSpawned($, sid, code, id); $.ui.log(`rows: room row ${code} started`, { to: 'debug' }); }
       else $.ui.log(`rows: room row ${code} not started${r.deny !== undefined ? `: ${r.deny}` : ''}`, { to: 'debug' });
-      if (!id && rowFallback(r.deny, facts.of(await $.session.id()).permission_mode)) {
+      if (!id && rowFallback(r.deny, facts.of(sid).permission_mode)) {
         // auto mode's classifier refused the module's own spawn: the model makes the call, told once as context. It
         // counts as this spawn (started: the next try waits its minute, and ROW_SPAWNS_MAX bounds the asks too)
         started = true;
-        ask = askFor(code);
+        ask = askFor(code, talk);
         offerRow(true);
         $.ui.log(`rows: room row ${code}: asking Claude for the Agent call`, { to: 'debug' });
         if (!holdAsk) void tellAsk($);
@@ -410,8 +423,8 @@ async function tellAsk($: EngineInterface): Promise<void> {
     if (!step.tell || !step.ask) return;
     ask = step.ask;
     const code = step.ask.code;
-    if (await appendRow($, rowAsk(code))) $.ui.log(`rows: asked Claude for room row ${code}`, { to: 'debug' });
-    else if (ask && ask.code === code) ask = { code, told: false }; // not stored: the next turn.start tries again
+    if (await appendRow($, rowAsk(code, step.ask.chat))) $.ui.log(`rows: asked Claude for room row ${code}`, { to: 'debug' });
+    else if (ask && ask.code === code) ask = { ...ask, told: false }; // not stored: the next turn.start tries again
   } catch { /* the next turn.start tries again */ }
 }
 /** The ask for the room the seat is in now, taken to ride on a context of the caller's (the join's expansion). */
@@ -420,8 +433,74 @@ async function takeAsk($: EngineInterface): Promise<string | null> {
   if (!step.tell || !step.ask) return null;
   ask = step.ask;
   $.ui.log(`rows: asked Claude for room row ${step.ask.code} (with the join)`, { to: 'debug' });
-  return rowAsk(step.ask.code);
+  return rowAsk(step.ask.code, step.ask.chat);
 }
+/** $.store: the room-chat row's agent id by session id (mod/core/room-chat.ts keepRow), so a reload or a --resume
+ * sends to it before a new row is spawned. */
+const CHAT_ROWS = 'chatRows';
+/**
+ * room-chat (mod/chat.ts answers the row): whether code's row is there for session sid (it runs, or idles with its
+ * keeper), or woken now by a send (it died, or a --resume left it on disk: its step starts the keeper again). False:
+ * spawn one (none kept, or the send was refused: Esc, x). A row of another session id (a /clear) or room is let go.
+ */
+async function chatRow($: EngineInterface, sid: string, code: string, list: readonly AgentInfo[]): Promise<boolean> {
+  const was = chat.row;
+  if (was && (was.sid !== sid || was.code !== code)) { chat.gone.add(was.id); chat.row = null; }
+  if (!chat.row) {
+    const kept = rowOf(await $.store.get(CHAT_ROWS).catch(() => null), sid);
+    if (!kept || kept.code !== code || chat.gone.has(kept.id)) return false;
+    chat.row = { sid, ...kept };
+    noteRow(kept.id);
+    void chatRefind($, sid, kept.id);
+  }
+  const id = chat.row.id;
+  const me = list.find(a => a.id === id);
+  if (me && (me.status === 'running' || keeperOf(list, id))) return true;
+  if (!keeperStep(chat.keepers, await $.clock.now()).spawn) return true; // its keepers keep dying: left alone a while
+  if (await chatSay($, id, chat.here || NOTHING)) return true;
+  chat.row = null;
+  return false;
+}
+/** The row spawned for sid (by the module, or the fallback's call), kept for a reload and a --resume. */
+async function chatSpawned($: EngineInterface, sid: string, code: string, id: string): Promise<void> {
+  chat.row = { sid, code, id };
+  chat.waiting.push({ line: chat.here || NOTHING });
+  try { await $.store.set(CHAT_ROWS, keepRow(await $.store.get(CHAT_ROWS), sid, { code, id })); } catch { /* this process still has it */ }
+  showStatus($);
+}
+/** A line for the row: it waits for the row's next step, which the send starts (the row idles between lines). */
+async function chatSay($: EngineInterface, id: string, line: string): Promise<boolean> {
+  chat.waiting.push({ line });
+  chat.echo.add(line); // its ❯ row is drawn as nothing (mod/chat.ts)
+  const r = await $.session.send({ to: { agentId: id }, text: line }).catch(() => null);
+  return !!r && r.isDelivered;
+}
+/** A room line the person sees: one more unread, and drawn in the row (main keeps it too, for now). The row is looked
+ * up first when this process does not know it yet (a reload). */
+async function chatLine($: EngineInterface, sid: string, code: string, text: string): Promise<void> {
+  if (!chat.row && chatOn(asHello((await $.state.get(HELLO)).value))) await chatRow($, sid, code, await $.agent.list());
+  const row = chat.row;
+  if (!row) return;
+  chat.unread++;
+  showStatus($);
+  await chatSay($, row.id, text);
+}
+/** After a reload or a --resume: the row's lines in its transcript are drawn as room lines again. */
+async function chatRefind($: EngineInterface, sid: string, id: string): Promise<void> {
+  try {
+    const main = facts.of(sid).transcript_path;
+    if (!main) return;
+    for (const u of rowUuids(await $.fs.read(`${main.replace(/\.jsonl$/, '')}/subagents/agent-${id}.jsonl`))) chat.lines.add(u);
+    $.ui.invalidate('ui.render');
+  } catch { /* drawn as the engine draws them */ }
+}
+/** The seat left: no row is wanted for it (its next step ends it). */
+function chatForget($: EngineInterface): void {
+  if (chat.row) chat.gone.add(chat.row.id);
+  chat.row = null;
+  showStatus($);
+}
+
 /** A room row of code runs (the module's, or the one the model's call started): noted, and the fallback is over. */
 function rowFound(id: string, code: string): void {
   noteRow(id);
@@ -436,11 +515,13 @@ async function rowCalled($: EngineInterface, input: unknown): Promise<void> {
     const id = liveRow(await $.agent.list(), want.code);
     if (!id) return;
     rowFound(id, want.code);
+    if (want.chat) await chatSpawned($, await $.session.id(), want.code, id);
     $.ui.log(`rows: room row ${want.code} started by Claude`, { to: 'debug' });
   } catch { /* the next turn's list finds it */ }
 }
 /** The seat this session holds changed (a leave, a take): the rooms' spawn counts start over, and an ask goes. */
 function seatChanged(...codes: (string | null | undefined)[]): void {
+  // (the room-chat row of another room is let go by chatRow; one of a seat that left, by chatForget)
   for (const code of codes) if (code) spawns = spawnForget(spawns, code);
   if (ask && codes.includes(ask.code)) { ask = null; offerRow(false); }
 }
@@ -533,6 +614,9 @@ async function toolDone<E extends { readonly agent_id?: string; readonly session
 /** One event's actions (mod/core/deliver.ts route). */
 async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   if (!ev || c.stopped) return;
+  // room-chat: what the person sees of the room is drawn in the row too (main keeps it for now)
+  const shown = ev.type === 'chat' ? ev.lines : ev.type === 'wake' ? visibleLines(ev.text) : [];
+  if (shown.length && c.seat) void chatLine($, c.sid, c.seat.code, shown.join('\n')).catch(() => {});
   const actions = route(ev, { turnRunning: turns.running !== null });
   for (const a of actions) {
     switch (a.do) {
@@ -548,6 +632,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-pull': if (!(await holdPullEvent($, a.text))) await noteError($); break; // neither held nor appended: lost
       case 'hold-reminders': await $.state.set(REMINDERS, a.text); break;
+      case 'here': chat.here = a.text; showStatus($); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'invites':
@@ -617,11 +702,20 @@ async function takeSeat($: EngineInterface, c: Child, a: { code: string; name: s
  * does a notice: cc CONTRACT module-ui-status-untranscribed), until the invite's life is over; a newer one replaces it.
  * Claude Code's debug log (--debug) does keep the status text. */
 let pinnedAt = 0;
+/** An invite's line holds the status line (pinStatus): the room row's (mod/chat.ts chatStatus) waits for it. */
+let pinned = false;
+/** mod/chat.ts: an invite's line holds the status line now. */
+export const statusPinned = (): boolean => pinned;
+/** The status line as it stands: the pinned invite's, else the room row's (none: cleared). */
+function showStatus($: EngineInterface): void {
+  if (!pinned) $.ui.status(chatStatus());
+}
 /** The pinned invite's ref: the tail's `invites` event (the room's open invites) takes it off once it is not open. */
 let pinnedRef: string | null = null;
 function pinStatus($: EngineInterface, { status, ms, ref }: { status: string; ms: number; ref?: string }): void {
   const mine = ++pinnedAt;
   pinnedRef = ref || null;
+  pinned = true;
   $.ui.status(status);
   // its life over while still pinned: it lapsed unused (a use or a cancel takes it off before)
   try { $.clock.after(ms, () => { if (mine === pinnedAt) { $.ui.log(INVITE_EXPIRED); unpin($); } }); } catch { /* it stays until the next one replaces it */ }
@@ -632,7 +726,8 @@ const INVITE_EXPIRED = 'invite expired; /sub-human invite for a new one';
 function unpin($: EngineInterface): void {
   ++pinnedAt;
   pinnedRef = null;
-  $.ui.status(undefined);
+  pinned = false;
+  showStatus($);
 }
 
 /** $.clock.now(), else the process's own clock (the copy book's times only compare with each other). */
@@ -950,10 +1045,10 @@ export function registerDeliver(on: On): void {
     if (!fresh) { try { await refresh($, sid); } catch { /* the next refresh tries again */ } }
     // a leave ends this session's delivery now, whatever the hello says: a room hosted elsewhere may still list the
     // seat for a moment (a session cut off kept its tail and heard "carol left" after its leave)
-    if (left || gone) { stopChild(sid); seatChanged(mine && mine.code); }
+    if (left || gone) { stopChild(sid); seatChanged(mine && mine.code); chatForget($); }
     else {
       try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
-      void roomRow($); // a join's row now: its turn started before the seat was taken, so turn.start found none
+      await rowNow($); // a join's row now: its turn started before the seat was taken, so turn.start found none
     }
     return result;
   }).catch((_$, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
@@ -991,7 +1086,7 @@ export function registerDeliver(on: On): void {
       // a notice for the person (a fork whose seat is in a sub-human folder this process does not have)
       if (said.systemMessage) for (const line of asNotice(said.systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
       try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
-      void roomRow($); // the room row back with no prompt (a resume or a fork lost it; after a /clear it may still run)
+      await rowNow($); // the room row back with no prompt (a resume or a fork lost it; after a /clear it may still run)
     }
     try {
       // this session's hello first: one not said yet (classic.SessionStart can run before session.start's) is no seat
@@ -1008,9 +1103,9 @@ export function registerDeliver(on: On): void {
     return next(e);
   });
 
-  on('turn.start', ($, e, next) => {
-    // the room row, unless it runs (not awaited: the turn never waits for it)
-    void roomRow($);
+  on('turn.start', async ($, e, next) => {
+    // the room row, unless it runs (rowNow)
+    await rowNow($);
     if (walkWait) walkWait.sawTurn = true; // the join's own turn: the question waits for its end
     // a wake nothing took before goes into this turn, as any wake that lands mid-turn
     for (const text of turns.start(e.turnId)) void midTurnWake($, text).catch(() => {});

@@ -70,7 +70,7 @@ export interface JoinPayload {
 
 /** One $ call an event maps to (mod/core/deliver.ts route). */
 export type DeliverAction =
-  | { do: 'log' | 'debug' | 'append' | 'mid-turn-wake' | 'hold-pull'; text: string }
+  | { do: 'log' | 'debug' | 'append' | 'mid-turn-wake' | 'hold-pull' | 'here'; text: string }
   | { do: 'submit'; text: string; seen: string[] }
   | { do: 'hold-reminders'; text: string | null }
   | { do: 'seat'; seat: TailSeat | null }
