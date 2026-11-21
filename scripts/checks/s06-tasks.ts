@@ -2,7 +2,7 @@
 // owner's done; the room session's native task list follows the log
 import { panelRows } from '../lib/panes.ts';
 import { clip } from '../lib/io.ts';
-import { toolResults } from './transcripts.ts';
+import { toolResults, isChatRow } from './transcripts.ts';
 import type { Ctx, Det } from './context.ts';
 import type { TaskRec } from './captures.ts';
 import type { Thresholds } from '../metrics.ts';
@@ -32,8 +32,10 @@ export function run(x: Ctx, { det }: { det: Det }, _T: Thresholds): void {
   det('The room session\'s native task list equals the fold (the plugin projects the log)', same,
     `native ${native.map(n => `#${n.id} ${n.status} ${n.owner ?? '-'}`).join(', ') || 'none'}; tasks.json ${l1.map(y => `#${y.id} ${y.status} ${y.owner ?? '-'}`).join(', ') || 'none'}`);
   const tid = t && t.id;
+  // room-chat off: the row's line (the hold's progress) carries the task summary; on, the row's label is fixed at
+  // spawn (its code) and says nothing of tasks
   const ar = panelRows(x.cap('S6', 'alice', 1)).find(r => r.label === code);
-  det('alice\'s room row shows the task summary', !!(ar && /tasks? \d+ open|#\d+ you/.test(ar.text)), ar ? ar.line : 'no room row');
+  if (!x.seatAgents('alice').some(a => a.first >= x.runStart && isChatRow(a, code))) det('alice\'s room row shows the task summary', !!(ar && /tasks? \d+ open|#\d+ you/.test(ar.text)), ar ? ar.line : 'no room row');
   const cli = x.stText('S6', 1, 'sub-human-tasks.txt') || '';
   det('`sub-human tasks` lists it', !!tid && new RegExp(`#${tid}\\b.*in progress.*alice`).test(cli), clip(cli, 200) || 'no output saved');
   // bob's done on alice's task: the tool refuses it at once, logs nothing, and the task stays in progress

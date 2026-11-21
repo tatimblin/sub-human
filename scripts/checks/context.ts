@@ -40,6 +40,8 @@ export const DEMO = {
   viewer9: "hi claude, what's next?",
   multi9b: 'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal',
   carol11: 'hello from the second home',
+  /** S7 (room-chat on): the line alice types into her room row */
+  row7: 'row check: "exact" bytes — 50/page & more',
   /** demo.sh --object-mode: the mode A objects from in S5 (auto, default, acceptEdits); '' when not set */
   objectMode: '',
 };

@@ -347,6 +347,9 @@ exit_seat() {
 ROOM=""
 room() { [ -n "$ROOM" ] || ROOM=$($LIB wait-room --timeout 5 2>/dev/null); echo "$ROOM"; }
 panel_row() { echo "^\s*(❯\s*)?(└\s*)?[⏺◯]\s+$1(\s|$)"; }   # a row line in the agent panel
+# here_line NAME — a line saying NAME is here: main's status line "CODE · [others, ]NAME[ (…)][, …] here" (room-chat
+# on: mod/chat.ts rowStatus), or the room row's line in the panel naming NAME (room-chat off: the hold's progress)
+here_line() { echo "(^\s*(⚠ )?(sub-human: )?$(room) · |$(panel_row "$(room)").*[ ,·])([^·]*, )?$1( \([^)]*\))?(, [^·]*)? here\b"; }
 CARD_RE='Agree to proposal [0-9a-f]{12}\?|Would you like to proceed\?'   # the fallback card, or the plan view a proposal opens in
 
 # wait_card SEAT WHAT — wait for SEAT's proposal to open (the plan view; the card as fallback); if its Claude has not
@@ -373,22 +376,23 @@ save_pane() {
   return 0
 }
 
-# show_room SEAT OTHER (film): the person opens the room row in their agent panel (↓ onto it, Enter): the row's view,
-# whose own line (the hold's, mcp/hold.ts) leads with who else is here ("OTHER here · …"; 0.6.0 has one row per session
-# and nothing nested in it). A 2 s look, then back: ↑ to main and Enter (the room view closes, the cursor stays on main),
-# then one ↑ to the prompt. One only: a second ↑ with the focus already on the prompt recalls the last prompt (S7, S8).
+# show_room SEAT OTHER (film): the person opens the room row in their agent panel (↓ onto it, Enter): the row's view
+# (room-chat on: the chat, its rule "─ @CODE ─", main's status line under it naming who else is here, "CODE · OTHER
+# here"; off: its own line, the hold's, leads with "OTHER here · …"; one row per session, only its keeper nested).
+# A 2 s look, then back: ↑ to main and Enter (the room view closes, the cursor stays on main), then one ↑ to the
+# prompt. One only: a second ↑ with the focus already on the prompt recalls the last prompt (S7, S8).
 show_room() {
   local s=$1 o=$2
   need $LIB wait-idle "sh-$s" --timeout 60 || return 1
   need $LIB select-row "sh-$s" "$(room)" || return 1
   keys "$s" Enter
-  need wait_pane "$s" "─ $(room) ─" 15 --what "$s's $(room) row view is open" || return 1
-  need wait_pane "$s" "^\s*⎿\s+$o( \([^)]*\))?(, [^·]*)? here\b" 15 --what "$s's room row line leads with \"$o here\"" || return 1
+  need wait_pane "$s" "─ @?$(room) ─" 15 --what "$s's $(room) row view is open" || return 1
+  need wait_pane "$s" "^\s*⎿\s+$o( \([^)]*\))?(, [^·]*)? here\b|$(here_line "$o")" 15 --what "$s's room row (or status line) names \"$o here\"" || return 1
   mkdir -p "$SNAP_DIR/state/$SCENE"; $LIB pane "sh-$s" > "$SNAP_DIR/state/$SCENE/panel-$s.txt"
   sleep 2   # the look (no paint wait: the row's view keeps a live spinner and token count)
   need $LIB select-row "sh-$s" main --key Up || return 1
   keys "$s" Enter
-  need wait_pane "$s" "─ $(room) ─" 10 --absent --what "$s's room view closed" || return 1
+  need wait_pane "$s" "─ @?$(room) ─" 10 --absent --what "$s's room view closed" || return 1
   need wait_pane "$s" "^❯\s+[⏺◯●]\s+main(\s|$)" 5 --what "$s's panel cursor stays on main" || return 1
   keys "$s" Up
   need wait_pane "$s" "^❯\s+(└\s*)?[⏺◯●]\s" 5 --absent --what "$s's focus is back on the prompt" || return 1
@@ -429,9 +433,10 @@ S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
   wait_pane "$a" "^\s*(⏺ |⎿ )?(sub-human: )?(room: )?$b joined(\s*$| from )" 60 --what "$a sees the chat line \"$b joined\"" && $LIB pane "sh-$a" > "$SNAP_DIR/state/S2/notice-$a.txt"
   need wait_pane "$b" "$(panel_row "$(room)")" 90 || return 1
   need $LIB wait-row "$b" --timeout 120 || return 1
-  # each one room row's line names who else is here (lib/rows.ts: the status line rereads presence every 5 s)
-  need wait_pane "$a" "$(panel_row "$(room)").*[ ,·]$b( \([^)]*\))?(, [^·]*)? here\b" 60 --what "$a's room row names $b" || return 1
-  need wait_pane "$b" "$(panel_row "$(room)").*[ ,·]$a( \([^)]*\))?(, [^·]*)? here\b" 60 --what "$b's room row names $a" || return 1
+  # who else is here (lib/rows.ts hereLine, reread every 5 s): room-chat on, main's status line under the prompt
+  # ("CODE · B here · …", here_line); off, the room row's own line in the panel
+  need wait_pane "$a" "$(here_line "$b")" 60 --what "$a's status line (or room row) names $b" || return 1
+  need wait_pane "$b" "$(here_line "$a")" 60 --what "$b's status line (or room row) names $a" || return 1
   settle "$a" "$b"
   snap "$b joins: one $(room) row in each panel, nothing nested; $a's row names $b, $b's names $a; the room's Claude runs no turn"
   if [ "$FILM" = 1 ]; then
@@ -493,6 +498,8 @@ else
   EDIT5A="update the room plan with my note: a cursor past the end must 400, with a test for it"
   EDIT5B="update the room plan: default page size 20, max 50"
 fi
+# S7's line typed into the row (room-chat on): quotes, an em dash and an ampersand, posted as typed
+ROW7='row check: "exact" bytes — 50/page & more'
 REPLY3="sure, once we've agreed how paging works"
 DWELL5="400"   # S5's latest version: the page with A's note (in his Claude's words)
 
@@ -742,20 +749,29 @@ S6b() {
   snap "$a and $b pull and run npm test in their own checkouts: both pass"
 }
 
-S7() { # stray typing into a row view: the hint is on the row's own progress line; the row answers in one line
-  # when its hold next returns (a join/rejoin; S8's resume brings one). Nothing is posted.
+S7() { # typing into the row view. room-chat on (its rule "─ @CODE ─"): the row is the room's chat, alice's line is
+  # posted as she typed it (via=human) and drawn "you: …" in the row. Off: the read-only hint on the row's own progress
+  # line; the row answers in one line when its hold next returns (a join/rejoin; S8's resume brings one); nothing posted.
   need $LIB wait-idle sh-alice --timeout 60 || return 1
   need $LIB select-row sh-alice "$(room)" || return 1
   keys alice Enter
-  need wait_pane alice "─ $(room) ─" 10 || return 1
+  need wait_pane alice "─ @?$(room) ─" 10 || return 1
   paint sh-alice   # the row view's first paint
-  submit alice "x"
-  wait_pane alice "read-only · talk in main" 20 --what "the row view shows the read-only hint where the text was typed"
-  sleep 15  # deliberate dwell: room for the row to answer (it may not; the S7 check takes either)
-  snap "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted"
+  if $LIB wait-pane sh-alice "─ @$(room) ─" --timeout 1 >/dev/null 2>&1; then
+    local before; before=$($LIB log-max)
+    submit alice "$ROW7"
+    need wait_log --kind say --from alice --after "$before" --timeout 30 --what "alice's line typed into the row is posted" || return 1
+    wait_pane alice "^\s*you: row check: " 20 --what "the row view draws alice's line as \"you: …\""
+    snap "alice types into her room row: her exact words go to the room (via=human) and the row draws them as you: …"
+  else
+    submit alice "x"
+    wait_pane alice "read-only · talk in main" 20 --what "the row view shows the read-only hint where the text was typed"
+    sleep 15  # deliberate dwell: room for the row to answer (it may not; the S7 check takes either)
+    snap "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted"
+  fi
   need $LIB select-row sh-alice main || return 1
   keys alice Enter
-  need wait_pane alice "─ $(room) ─" 10 --absent || return 1
+  need wait_pane alice "─ @?$(room) ─" 10 --absent || return 1
   keys alice Up Up   # focus back on the prompt: the panel cursor (❯ on a row) goes
   wait_pane alice "^❯\s+(└\s*)?[⏺◯●]\s" 5 --absent --what "alice's focus is back on the prompt"
 }
@@ -946,7 +962,7 @@ done
 fresh=(); [ "$RESET" = 1 ] && fresh=(--fresh)
 remote=(); [ "$REMOTE" = 1 ] && remote=(--remote "$SEAT_B=$LAPTOP/home")
 $LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" --seats "$SEAT_A $SEAT_B" ${remote[@]+"${remote[@]}"} ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
-$LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5" edit5a "$EDIT5A" edit5b "$EDIT5B"
+$LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5" edit5a "$EDIT5A" edit5b "$EDIT5B" row7 "$ROW7"
 # the mode S5 objects from (checks/s05-consent.ts): set by --object-mode; a fresh run without it records none
 { [ -n "$OBJECT_MODE" ] || [ "$RESET" = 1 ]; } && $LIB run-words "$SNAP_DIR/run.json" objectMode "$OBJECT_MODE"
 

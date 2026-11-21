@@ -47,14 +47,18 @@ const pullIn = <E extends TEntry>(es: E[]): E[] => es.filter(metrics.isPull);
 export const HOLD_TOOL = 'mcp__plugin_sub-human_room__hold';
 /** One hold call of a subagent: when, the room it names, and its result's text (null: still blocking, or never answered). */
 export interface HoldCall { at: string, room: string, result: string | null }
-/** A subagent of one session (PROJECT/SESSION/subagents/agent-ID.jsonl, its agentType from agent-ID.meta.json). */
-export interface SubAgent { session: string, file: string, agentType: string, first: string, prompt: string, holds: HoldCall[] }
+/**
+ * A subagent of one session (PROJECT/SESSION/subagents/agent-ID.jsonl, its agentType and parent from agent-ID.meta.json):
+ * `id` the agent id (ID), `parent` the agent that spawned it (meta parentAgentId: a keeper's is its room row), '' for
+ * main's own.
+ */
+export interface SubAgent { session: string, file: string, id: string, parent: string, agentType: string, first: string, prompt: string, holds: HoldCall[] }
 
 const textOfContent = (c: string | Block[] | undefined): string => (typeof c === 'string' ? c : (c || []).filter(b => b.type === 'text').map(b => b.text ?? '').join('\n'));
 
 /** One subagent transcript and its meta file, read. */
 function subagent(dir: string, session: string, f: string): SubAgent {
-  const meta = readJson<{ agentType?: unknown } | null>(path.join(dir, f.replace(/\.jsonl$/, '.meta.json')), null);
+  const meta = readJson<{ agentType?: unknown, parentAgentId?: unknown } | null>(path.join(dir, f.replace(/\.jsonl$/, '.meta.json')), null);
   const es = jsonl<TEntry>(path.join(dir, f));
   const results = new Map<string, string>();
   for (const e of es) {
@@ -64,7 +68,8 @@ function subagent(dir: string, session: string, f: string): SubAgent {
   const holds: HoldCall[] = es.filter(e => e.type === 'assistant').flatMap(e => blocksOf(e).filter(c => c.type === 'tool_use' && c.name === HOLD_TOOL)
     .map(c => ({ at: e.timestamp ?? '', room: typeof c.input?.room === 'string' ? c.input.room : '', result: (c.id ? results.get(c.id) : undefined) ?? null })));
   const u = es.find(e => e.type === 'user');
-  return { session, file: f, agentType: meta && typeof meta.agentType === 'string' ? meta.agentType : '', first: es.find(e => e.timestamp)?.timestamp ?? '',
+  return { session, file: f, id: f.replace(/^agent-/, '').replace(/\.jsonl$/, ''), parent: meta && typeof meta.parentAgentId === 'string' ? meta.parentAgentId : '',
+    agentType: meta && typeof meta.agentType === 'string' ? meta.agentType : '', first: es.find(e => e.timestamp)?.timestamp ?? '',
     prompt: textOfContent(u && u.message ? u.message.content : undefined), holds };
 }
 
@@ -85,10 +90,39 @@ export function subagents(projectDir: string, session?: string | null): SubAgent
   }
   return out.sort((a, b) => (a.first < b.first ? -1 : a.first > b.first ? 1 : 0));
 }
-/** A room row: the agent type the hooks module spawns (agents/room.md), or, with no meta file, the prompt "room: CODE". */
-export const isRoomRow = (s: SubAgent, code: string): boolean => s.agentType === 'sub-human:room' || (!s.agentType && s.prompt.trim() === `room: ${code}`);
-/** A room row of room code whose hold is blocking (its last hold call for code has no result). */
-export const holdingRow = (s: SubAgent, code: string): boolean => isRoomRow(s, code) && s.holds.filter(h => h.room === code).at(-1)?.result === null;
+/**
+ * A room row: the agent type the hooks module spawns (agents/room.md), or, with no meta file, its prompt: "chat: CODE"
+ * (0.8.0, room-chat on: the row idles, its keeper holds) or "room: CODE" (room-chat off: the row itself holds).
+ */
+export const isRoomRow = (s: SubAgent, code: string): boolean => s.agentType === 'sub-human:room' || (!s.agentType && (s.prompt.trim() === `room: ${code}` || s.prompt.trim() === `chat: ${code}`));
+/** A room row that is the room's chat (room-chat on): its prompt "chat: CODE". */
+export const isChatRow = (s: SubAgent, code: string): boolean => isRoomRow(s, code) && s.prompt.trim() === `chat: ${code}`;
+/** A chat row's keeper (agents/keeper.md, the row's background child): its type, or, with no meta file, "keep: CODE". */
+export const isKeeper = (s: SubAgent, code: string): boolean => s.agentType === 'sub-human:keeper' || (!s.agentType && s.prompt.trim() === `keep: ${code}`);
+/** Whether s's last hold call for code has no result (still blocking). */
+const blocking = (s: SubAgent, code: string): boolean => s.holds.filter(h => h.room === code).at(-1)?.result === null;
+/** A room row (room-chat off) or a keeper (on) of room code whose hold is blocking (its last hold call for code has no result). */
+export const holdingRow = (s: SubAgent, code: string): boolean => (isRoomRow(s, code) || isKeeper(s, code)) && blocking(s, code);
+/**
+ * Whether a session's subagents (subagents(dir, sid)) hold room code: room-chat off, a room row whose hold blocks;
+ * on, a chat row and, in the same session, a keeper of the room whose hold ({room, take}) blocks.
+ */
+export const rowHolds = (all: readonly SubAgent[], code: string): boolean => all.some(s => {
+  if (!isRoomRow(s, code)) return false;
+  if (!isChatRow(s, code) && blocking(s, code)) return true;
+  return all.some(k => k.session === s.session && isKeeper(k, code) && (!k.parent || k.parent === s.id) && blocking(k, code));
+});
+/** Whether room row `row` held code at all: its own hold call (room-chat off), or its keeper's (on). */
+export const rowHeld = (all: readonly SubAgent[], row: SubAgent, code: string): boolean =>
+  row.holds.some(h => h.room === code) || all.some(k => k.session === row.session && isKeeper(k, code) && (!k.parent || k.parent === row.id) && k.holds.some(h => h.room === code));
+/**
+ * What a session's room rows nest (room-chat on: each row's only child its keeper): the subagents whose parent is a
+ * room row of code and that are not its keeper. [] is right.
+ */
+export const rowStrays = (all: readonly SubAgent[], code: string): SubAgent[] => {
+  const rows = new Set(all.filter(s => isRoomRow(s, code)).map(s => s.id));
+  return all.filter(s => !!s.parent && rows.has(s.parent) && !isKeeper(s, code));
+};
 
 /** Each entry of a seat's row-subagent transcripts (…/SESSION/subagents/*.jsonl), with its file name. */
 function* rowEntries(seat: string): Generator<{ e: TEntry, file: string }> {

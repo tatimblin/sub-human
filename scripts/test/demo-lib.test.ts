@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { COMMANDS, opts, listsRoomClaude, keyDelays, paneBelow, newMatches, taskFor } from '../demo-lib.ts';
-import { panelRows, rowViewLine, hereNames, footerMode, subagentRows } from '../lib/panes.ts';
-import { subagents, holdingRow, isRoomRow } from '../checks/transcripts.ts';
+import { panelRows, rowViewLine, hereNames, footerMode, subagentRows, roomStatus, oneRoomRow } from '../lib/panes.ts';
+import { subagents, holdingRow, isRoomRow, isChatRow, isKeeper, rowHolds, rowHeld, rowStrays } from '../checks/transcripts.ts';
 import { runInfo } from '../checks/context.ts';
 import { parseJson } from '../lib/io.ts';
 
@@ -92,6 +92,21 @@ test('panes: an opened room row\'s own line and who it names; a Claude\'s own su
   assert.deepEqual(subagentRows(sub, 'egret-7989').map(r => [r.label, r.text.split('  ')[0]]), [['Explore', 'Explain GET /tasks flow']]);
 });
 
+test('panes: the 0.8.0 chat row: main\'s status line, one row with only its keeper nested (Claude Code 2.1.296)', () => {
+  const view = 'only you\nbob joined\nyou: row test one\n✻ Waiting for 1 background agent to finish\n────── @tapir-0763 ─\n❯ Message @tapir-0763…\n──────\n  ⚠ sub-human: tapir-0763 · bob here · 1 new\n  ↑/↓ to select · ctrl+x ctrl+k to stop all agents\n\n  ◯ main\n❯ ⏺ tapir-0763          type here                                    3s · ↓ 3.7k tokens\n  └ ◯ sub-human:keeper  Holding room row tapir-0763                  2m 9s · ↓ 8 tokens\n';
+  assert.equal(roomStatus(view, 'tapir-0763'), 'bob here · 1 new');
+  assert.deepEqual(hereNames(roomStatus(view, 'tapir-0763')), ['bob']);
+  assert.equal(roomStatus(view, 'swan-6397'), null);
+  assert.equal(roomStatus('  ⚠ sub-human: tapir-0763 · bob (working), carol here\n', 'tapir-0763'), 'bob (working), carol here');
+  assert.deepEqual(oneRoomRow(panelRows(view), 'tapir-0763'), { ok: true, why: '1 tapir-0763 row(s)' });
+  // collapsed: the keeper is the row's "(+1)"
+  assert.equal(oneRoomRow(panelRows('  ⏺ main\n  ◯ tapir-0763 (+1)  type here\n'), 'tapir-0763').ok, true);
+  assert.equal(oneRoomRow(panelRows(`${view}  └ ◯ bob  working\n`), 'tapir-0763').ok, false);
+  assert.equal(oneRoomRow(panelRows(`${view}  ◯ tapir-0763  type here\n`), 'tapir-0763').ok, false);
+  assert.equal(oneRoomRow(panelRows('  ⏺ main\n'), 'tapir-0763').ok, false);
+  assert.equal(rowViewLine(view, 'tapir-0763'), null); // no hold's line: the chat has none
+});
+
 test('panes footerMode: the permission mode a footer shows (default: none named, a prompt box drawn)', () => {
   const box = (foot: string): string => `⏺ done\n\n────────────────────\n❯ \n────────────────────\n  ${foot}\n`;
   assert.equal(footerMode(box('⏵⏵ auto mode on · ← 1 agent · ↓ to manage')), 'auto');
@@ -124,6 +139,41 @@ test('transcripts subagents: the room row, its blocking hold, and an old partici
   assert.deepEqual(all.map(s => holdingRow(s, 'egret-7989')), [false, true, false]);
   assert.equal(all.filter(s => holdingRow(s, 'swan-6397')).length, 0);
   assert.equal(subagents(d, 'sid-2').length, 0);
+});
+
+test('transcripts subagents: the 0.8.0 chat row holds through its keeper; nothing else nests under it', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-subagents-'));
+  const dir = path.join(d, 'sid-1', 'subagents');
+  fs.mkdirSync(dir, { recursive: true });
+  const line = (o: unknown): string => JSON.stringify(o) + '\n';
+  const put = (id: string, meta: unknown, ...ls: string[]): void => {
+    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), ls.join(''));
+    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify(meta));
+  };
+  const prompt = (t: string, at: string) => line({ type: 'user', timestamp: at, message: { content: t } });
+  const hold = (id: string, at: string) => line({ type: 'assistant', timestamp: at, message: { content: [{ type: 'tool_use', id, name: 'mcp__plugin_sub-human_room__hold', input: { room: 'tapir-0763', take: true } }] } });
+  // as 2.1.296 writes them (run tapir-0763): the row named the code, its keeper's meta naming it parent
+  put('row', { agentType: 'sub-human:room', name: 'tapir-0763', spawnDepth: 1 }, prompt('chat: tapir-0763', '2026-01-01T00:00:01Z'));
+  put('keep', { agentType: 'sub-human:keeper', parentAgentId: 'row', spawnDepth: 2 }, prompt('keep: tapir-0763', '2026-01-01T00:00:02Z'), hold('k1', '2026-01-01T00:00:03Z'));
+  let all = subagents(d);
+  const [row, keep] = all;
+  assert.ok(row && keep);
+  assert.deepEqual([row.id, keep.id, keep.parent], ['row', 'keep', 'row']);
+  assert.deepEqual([isRoomRow(row, 'tapir-0763'), isChatRow(row, 'tapir-0763'), isKeeper(keep, 'tapir-0763'), isRoomRow(keep, 'tapir-0763')], [true, true, true, false]);
+  assert.equal(holdingRow(keep, 'tapir-0763'), true);
+  assert.equal(holdingRow(row, 'tapir-0763'), false); // the row itself holds nothing
+  assert.equal(rowHolds(all, 'tapir-0763'), true);
+  assert.equal(rowHeld(all, row, 'tapir-0763'), true);
+  assert.deepEqual(rowStrays(all, 'tapir-0763'), []);
+  // the keeper's hold returned: the row holds no more
+  fs.appendFileSync(path.join(dir, 'agent-keep.jsonl'), line({ type: 'user', timestamp: '2026-01-01T00:01:00Z', message: { content: [{ type: 'tool_result', tool_use_id: 'k1', content: 'STOP: you left' }] } }));
+  assert.equal(rowHolds(subagents(d), 'tapir-0763'), false);
+  // a chat row with no keeper holds nothing; another agent under the row is a stray
+  put('keep', { agentType: 'sub-human:keeper', parentAgentId: 'other', spawnDepth: 2 }, prompt('keep: tapir-0763', '2026-01-01T00:00:02Z'), hold('k2', '2026-01-01T00:00:03Z'));
+  assert.equal(rowHolds(subagents(d), 'tapir-0763'), false); // a keeper of another row
+  put('x', { agentType: 'Explore', parentAgentId: 'row', spawnDepth: 2 }, prompt('read the store', '2026-01-01T00:00:04Z'));
+  all = subagents(d);
+  assert.deepEqual(rowStrays(all, 'tapir-0763').map(s => s.id), ['x']);
 });
 
 test('demo.sh: 0.6.0 rows: no holds document, each seat\'s row waited on, the objection mode opt-in', () => {

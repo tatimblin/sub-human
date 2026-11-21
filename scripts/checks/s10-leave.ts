@@ -2,7 +2,8 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as paths from '../lib/paths.ts';
-import { MAIN_ROW, panelRows } from '../lib/panes.ts';
+import { MAIN_ROW, panelRows, oneRoomRow } from '../lib/panes.ts';
+import { rowStrays } from './transcripts.ts';
 import { readJson, readText, clip, esc } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 import type { AgentRow, TaskRec } from './captures.ts';
@@ -61,16 +62,19 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   }
   det('No room entry ids (#N) in the members\' panes (task numbers aside)', hits.length === 0, hits.length ? `${hits.length} line(s): ${hits.slice(0, 4).join(' | ')}` : `none in ${memberCaps.length} captures`);
 
-  // run-wide, 0.6.0's rows: one room row per session (the hooks module's), nothing nested in it, no participant rows;
-  // the room session spawns none and runs only its launch turn
+  // run-wide, the rows: one room row per session (the hooks module's), its only nested row its keeper (room-chat on:
+  // drawn "(+1)" on the row, listed "└ ◯ sub-human:keeper" when the panel is open; off: nothing nested), no participant
+  // rows; the room session spawns none and runs only its launch turn
   const many: string[] = [];
   for (const r of memberCaps) {
     const rows = panelRows(readText(path.join(screens, r.txt)));
-    const n = rows.filter(y => y.label === code).length, nested = rows.filter(y => y.nested);
-    if (n > 1 || nested.length) many.push(`${r.txt}: ${n} ${code} row(s)${nested.length ? `, nested ${nested.map(y => y.label).join(',')}` : ''}`);
+    const one = oneRoomRow(rows, code);
+    if ((rows.some(y => y.label === code) || rows.some(y => y.nested)) && !one.ok) many.push(`${r.txt}: ${one.why}`);
   }
-  det(`One ${code} row per session and nothing nested in it, in every capture of ${A} and ${B}`, many.length === 0,
+  det(`One ${code} row per session, its only nested row its keeper, in every capture of ${A} and ${B}`, many.length === 0,
     many.length ? `${many.length} capture(s): ${many.slice(0, 3).join(' | ')}` : `${memberCaps.length} captures`);
+  const strays = [A, B].flatMap(n => rowStrays(x.seatAgents(n).filter(s => s.first >= x.runStart), code).map(s => `${n} ${s.agentType || '?'} ${s.file}`));
+  det('Nothing runs under a room row but its keeper (the row\'s subagents, all run)', strays.length === 0, strays.length ? strays.slice(0, 4).join('; ') : 'none');
   const agents = [A, B, 'claude'].flatMap(n => x.seatAgents(n).filter(s => s.first >= x.runStart).map(s => ({ n, s })));
   const part = agents.filter(({ s }) => s.agentType === 'sub-human:participant');
   const roomAgents = agents.filter(({ n, s }) => n === 'claude' || s.session === roomClaudeSid);

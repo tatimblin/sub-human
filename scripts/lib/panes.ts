@@ -46,13 +46,34 @@ export function hereNames(text: string | null | undefined): string[] | null {
  */
 export function rowViewLine(txt: string | null | undefined, code: string): string | null {
   const lines = String(txt || '').split('\n');
-  const rule = lines.findLastIndex(l => l.includes(`─ ${code} ─`));
+  const rule = lines.findLastIndex(l => l.includes(`─ ${code} ─`) || l.includes(`─ @${code} ─`));
   if (rule < 0) return null;
   const at = lines.slice(0, rule).findLastIndex(l => /^\s*⎿\s+\S/.test(l));
   if (at < 0) return null;
   const out = [(lines[at] ?? '').replace(/^\s*⎿\s+/, '').trim()];
   for (const l of lines.slice(at + 1, rule)) { if (!/^\s{3,}\S/.test(l) || /^\s*[❯⏺⎿─]/.test(l)) break; out.push(l.trim()); }
   return out.join(' ');
+}
+
+/**
+ * Main's status line for the room (room-chat on: mod/chat.ts rowStatus through $.ui.status, drawn under the prompt box
+ * as "⚠ sub-human: CODE · bob (working) here · 2 new"): what follows "CODE · " on the last such line, or null. Feed it
+ * to hereNames for who's here.
+ */
+export function roomStatus(txt: string | null | undefined, code: string): string | null {
+  const re = new RegExp(String.raw`^\s*(?:⚠\s+)?(?:sub-human:\s+)?${code.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)} · (.*\S)\s*$`);
+  const l = String(txt || '').split('\n').map(x => re.exec(x)).filter((m): m is RegExpExecArray => !!m).at(-1);
+  return l ? (l[1] ?? '') : null;
+}
+
+/**
+ * The panel's rows for room code, judged: one CODE row, and nothing nested in the panel but the row's keeper (room-chat
+ * on, drawn "(+1)" on the row and, when listed, a nested keeper row). {ok, why}.
+ */
+export function oneRoomRow(rows: readonly PanelRow[], code: string): { ok: boolean, why: string } {
+  const n = rows.filter(r => r.label === code && !r.nested).length;
+  const stray = rows.filter(r => r.nested && !/keeper/i.test(r.label));
+  return { ok: n === 1 && stray.length === 0, why: `${n} ${code} row(s)${stray.length ? `, nested ${stray.map(r => r.label).join(',')}` : ''}` };
 }
 
 /** A permission mode as a capture's footer shows it ('default': none named). */

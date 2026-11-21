@@ -33,8 +33,10 @@
  *                        with --quiet S, then keep at it until its background agents are done (only the room
  *                        row left in its panel) and no dialog has shown for S seconds
  *   demo-lib.ts wait-row <seat> [--timeout S]     wait until <seat>'s room row holds the room: in its session's
- *                                                  subagent transcripts, a room row (sub-human:room) whose hold call
- *                                                  for the room has no result yet (checks/transcripts.ts holdingRow)
+ *                                                  subagent transcripts, a room row (sub-human:room) and, room-chat
+ *                                                  on, its keeper (sub-human:keeper) whose hold call for the room has
+ *                                                  no result yet; room-chat off, the row's own hold call
+ *                                                  (checks/transcripts.ts rowHolds)
  *   demo-lib.ts set-mode <session> <auto|default|acceptEdits>   shift+tab until the footer shows that mode (the
  *                                                  person's own switch; --object-mode)
  *   demo-lib.ts member-field <name> <field>       print members.json[name][field] ('' if none)
@@ -101,7 +103,7 @@ import type { LogEntry } from './snap.ts';
 import * as paths from './lib/paths.ts';
 import { readJson, jsonl, esc } from './lib/io.ts';
 import { panelRows, subagentRows, cardState, planState, joinLineIn, pinIn, admitCardState, footerMode } from './lib/panes.ts';
-import { subagents, holdingRow } from './checks/transcripts.ts';
+import { subagents, rowHolds } from './checks/transcripts.ts';
 import type { DialogState } from './lib/panes.ts';
 
 /**
@@ -462,15 +464,16 @@ async function approveUntil(o: Opts, T: number): Promise<number> {
 
 /**
  * The seat's room row is live: in the seat's session (members.json session_id; any session of the seat's folder when
- * the host's record has none, as for a seat on another machine) a room-row subagent (agents/room.md) whose hold call
- * for this room is blocking, i.e. Claude Code wrote the call and no result yet (a duplicate or a stopped row has its
- * "STOP: …" result). This is the row the hooks module spawned holding, not just a panel line drawn while it starts.
+ * the host's record has none, as for a seat on another machine) a room-row subagent (agents/room.md) and the hold call
+ * that keeps it: room-chat on, its keeper's (agents/keeper.md, {room, take}); off, the row's own. Blocking means
+ * Claude Code wrote the call and no result yet (a duplicate or a stopped row has its "STOP: …" result). This is the
+ * row the hooks module spawned holding, not just a panel line drawn while it starts.
  */
 async function waitRow(o: Opts, T: number): Promise<number> {
   const seat = arg(o, 0), code = roomCode() ?? '';
   return exit(await until(o.what || `${seat}'s room row holds room ${code} (its hold call is blocking)`, T, () => {
     const sid = (readJson<Record<string, { session_id?: string } | undefined>>(roomFile('members.json'), {})[seat] || {}).session_id;
-    return subagents(paths.seatProjectDir(seat), sid || null).some(s => holdingRow(s, code));
+    return rowHolds(subagents(paths.seatProjectDir(seat), sid || null), code);
   }));
 }
 

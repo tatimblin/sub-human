@@ -1,9 +1,9 @@
 // S1: A (alice; --film: tristan) joins, no room open: the room is created and the headless room Claude spawned
 import fs from 'node:fs';
 import path from 'node:path';
-import { panelRows, joinNotices } from '../lib/panes.ts';
+import { panelRows, joinNotices, oneRoomRow } from '../lib/panes.ts';
 import { clip } from '../lib/io.ts';
-import { isRoomRow } from './transcripts.ts';
+import { isRoomRow, isKeeper, rowHeld, rowStrays } from './transcripts.ts';
 import type { Ctx, Det } from './context.ts';
 import type { AgentRow } from './captures.ts';
 import type { Thresholds } from '../metrics.ts';
@@ -28,18 +28,21 @@ export function run(x: Ctx, { det }: { det: Det }, T: Thresholds): void {
   det(`${A}'s join shows one line, "sub-human: Opened CODE as ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
     `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S1', A)}`);
   const ar = panelRows(x.cap('S1', A));
-  det(`${A}'s panel: one ${code} row`, ar.filter(r => !r.nested).length === 1 && ar[0]?.label === code, ar.map(r => r.line).join(' | ') || 'no rows');
+  const one = oneRoomRow(ar, code);
+  det(`${A}'s panel: one ${code} row, its only nested row its keeper`, one.ok && ar.filter(r => !r.nested).length === 1 && ar[0]?.label === code, `${ar.map(r => r.line).join(' | ') || 'no rows'} (${one.why})`);
   const orr = panelRows(oc);
   det('The room\'s Claude keeps no rows (each member\'s one room row is that member\'s hooks module\'s)', orr.length === 0,
     `claude rows: ${orr.map(r => r.line).join(' | ') || 'none'}`);
   // the row is the hooks module's (agents/room.md, spawned with $.agent.spawn): a room row in A's session holding this
-  // room, no participant row; the room session spawns no agent at all
+  // room (room-chat on: through its keeper child, agents/keeper.md; off: its own hold), nothing else nested in it, no
+  // participant row; the room session spawns no agent at all
   const s1 = x.span('S1');
   const mine = x.seatAgents(A).filter(s => s.session !== roomClaudeSid && !!s1 && s.first > s1.from && s.first <= s1.to);
   const rows = mine.filter(s => isRoomRow(s, code));
-  det(`${A}'s one room row is the hooks module's: a sub-human:room agent holding ${code} in ${A}'s session, no participant row`,
-    rows.length === 1 && rows[0]?.holds.some(h => h.room === code) && !mine.some(s => s.agentType === 'sub-human:participant'),
-    mine.map(s => `${s.agentType || '?'} "${clip(s.prompt, 30)}" holds ${s.holds.map(h => `${h.room}${h.result === null ? ' (blocking)' : ''}`).join(',') || 'none'}`).join('; ') || 'no subagent in S1');
+  const strays = rowStrays(mine, code);
+  det(`${A}'s one room row is the hooks module's: a sub-human:room agent holding ${code} in ${A}'s session (itself, or its keeper), nothing else nested, no participant row`,
+    rows.length === 1 && !!rows[0] && rowHeld(mine, rows[0], code) && strays.length === 0 && !mine.some(s => s.agentType === 'sub-human:participant'),
+    mine.map(s => `${s.agentType || '?'}${isKeeper(s, code) ? ` (of ${s.parent || '?'})` : ''} "${clip(s.prompt, 30)}" holds ${s.holds.map(h => `${h.room}${h.result === null ? ' (blocking)' : ''}`).join(',') || 'none'}`).join('; ') || 'no subagent in S1');
   const own = x.seatAgents('claude');
   det('The room session spawns no agent (no rows, no participants)', own.length === 0, own.map(s => `${s.agentType || '?'} ${s.file}`).join('; ') || 'none');
   // on disk at S1's snap (state/S1/1/tasks-dir.txt): the reaper deletes the folder when a run's S10 closes the room
