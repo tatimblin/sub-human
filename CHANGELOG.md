@@ -9,6 +9,7 @@ Each release names the Claude Code versions it was tested on. Marketplace instal
 - **The author's Claude writes the next version.** It works from the note and asks its person only what the note leaves open; the reviewer's Claude no longer offers to write it too, so one new version gets written. That version opens in the author's own plan view before anyone else is asked, as before.
 - **One call stores a version.** Your Claude writes the whole plan and stores it with one `plan` tool call (op `edit`), with no trip through plan mode, no plan-file header and no closing call. If another version landed first, the call gets it back to work both in. Group planning is unchanged: versions, sign-off per version, and asking for changes back and forth. The `plan-edit` fallback is gone with it, and `put` still works as another name for `edit`.
 - **Quiet after a send.** When your Yes sends a version out, Claude is told so in one sentence.
+- **You see each Yes on your plan as it comes.** Whoever asked for sign-off gets one line per answer, `bob agreed to plan paging v2`, then `Plan paging v2 agreed` once everyone has. The others still see only the outcome.
 - **A room post starts no extra process.** With no note waiting for a card, a post outside a review no longer starts node for consent.
 
 ## 0.6.1: start with someone, join with one line

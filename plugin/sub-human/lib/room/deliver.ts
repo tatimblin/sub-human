@@ -23,11 +23,11 @@
  *       (restart the old sessions), an agreed decision on a proposal I am in (its approvers and author: "Plan paging
  *       v2 agreed"; one not agreed is none, since each objection's own line said it: context only without the log),
  *       another approver's
- *       objection on a proposal I approve. A plan version is context (its request is what a person sees).
+ *       objection on a proposal I approve, and each sign-off on a proposal I asked ("bob agreed to plan paging v2"). A plan version is context (its request is what a person sees).
  *       Everything else that is not mine is context.
  *     the room's session (role claude) reads nothing: every entry is none (it keeps no rows; each member's room row
  *       is that member's hooks module's).
- *     card answers (both roles): a signoff is context (the decision carries it); an objection wakes the proposal's
+ *     card answers (both roles): a signoff is context, and a notice for the proposal's asker; an objection wakes the proposal's
  *       author only (to revise).
  *     decisions: an agreed one is a notice for the members in its proposal, context for everyone else; one not agreed
  *       is none once an objection on it is in the log (that objection was its one line: saidBefore); never a wake.
@@ -103,7 +103,7 @@ const saidBefore = (e: Entry, entries: readonly Readonly<Entry>[] | undefined): 
 
 /**
  * A pulled entry the person must see, though their Claude needs no wake: the agreed outcome of a proposal they are in
- * (its decision), and another approver's objection on a proposal they approve.
+ * (its decision), another approver's objection on a proposal they approve, and each sign-off on one they asked.
  */
 function personSees(name: string, e: Entry, entries: readonly Readonly<Entry>[] | undefined, trust: Trust): boolean {
   if (e.kind === 'plan') return false; // a new version of a room plan: the request on it is the person's line
@@ -111,8 +111,9 @@ function personSees(name: string, e: Entry, entries: readonly Readonly<Entry>[] 
   if (e.kind === 'decision' && notAgreed(e)) return false; // each objection's own line said it
   if (e.kind === 'decision' && approversOf(e).includes(name)) return true; // its approvers, even with no log to judge by
   if (!entries || !e.proposal_hash) return false;
-  if (e.kind !== 'decision' && e.kind !== 'objection') return false;
   const p = proposal(e.proposal_hash, entries, trust);
+  if (e.kind === 'signoff') return !!p && p.from === name; // the asker hears each Yes as it comes ("bob agreed to plan paging v2")
+  if (e.kind !== 'decision' && e.kind !== 'objection') return false;
   return e.kind === 'decision' ? inProposal(p, name) : !!p && approversOf(p).includes(name);
 }
 

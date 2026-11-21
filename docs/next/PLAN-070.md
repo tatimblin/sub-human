@@ -34,6 +34,10 @@ What a person sees after it:
 ### 4. Quiet after a send
 - `SAY.sent` and its siblings become one sentence. The plan file and the mode come back without a line (`fileBack`, `modeChanged` go to debug only where the model doesn't need them).
 
+### 4b. The asker sees each Yes (owner, 2026-11-21)
+- `lib/room/deliver.ts` personSees: a sign-off on a proposal I asked is a notice for me (`bob agreed to plan paging v2`); everyone else's Claude still reads it as context. The decision line follows as before.
+- Plain plan mode stays personal; a plan made in the room row being a room plan is 0.8.0 (PLAN-SMOOTH.md).
+
 ### 5. Release
 - `plugin.json` 0.7.0, CHANGELOG, README (plan feedback paragraph), `docs/ARCHITECTURE.md` (`npm run docs`), CLAUDE.md demo notes for S5.
 - **Wire protocol:** unchanged. The confirm document was only on the seat; objections already carry their note.

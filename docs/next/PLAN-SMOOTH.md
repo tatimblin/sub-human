@@ -76,6 +76,8 @@ Mechanism (`quiet/ROOM-ROW-SPIKE.md`, recommended):
 - Incoming lines drawn in the row with `$.session.send`; chrome hidden with `ui.render`.
 - New contract entries for each early-access surface, with a fallback: until it checks out, the row's label says `talk in main with @room`.
 
+**A plan made in the row is a room plan** (owner direction, 2026-11-21). Main is your space, so a plan made there stays personal (Claude Code's own plan mode, untouched); one asked for in the row is the room's. The row's Claude knows no code, so it hands the drafting to your main Claude, and the version still opens in your plan view first; your Yes sends it to the room. First step: a spike on plan mode inside a row (does a subagent's plan view draw in the row's view), with a contract entry. Until then a room plan is one you ask for in words ("let's write a room plan…").
+
 Limit: terminal only (the desktop app, VS Code and Remote Control can't type into a row).
 
 Open: a wake reaching a Claude mid-task. The interruption rule (Claude-to-Claude may wake) suggests the assistant answers at its next turn boundary, not by stopping work.
