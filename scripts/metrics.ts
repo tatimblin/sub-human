@@ -289,6 +289,25 @@ export function seatTranscriptMetrics(ts: Pick<Transcript, 'es'>[]): SeatMetrics
 
 const RED_256 = [1, 9, 124, 160, 161, 196, 197, 203, 204, 210];
 
+const plainLine = (l: string): string => l.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+
+/**
+ * Which lines are the plan view's body: from Claude Code's "Here is Claude's plan:" to its "Would you like to
+ * proceed?" (a view paged with PgDn has scrolled its start off the capture: from the top, then). The plan's text is
+ * the model's, syntax-highlighted (a JSON string value is drawn red), so a red line there is no error.
+ */
+export function planBody(lines: readonly string[]): boolean[] {
+  const START = /Here is Claude's plan:/, END = /Would you like to proceed\?/;
+  const out = lines.map(() => false);
+  let from: number | null = null;
+  lines.forEach((l, i) => {
+    if (START.test(l)) from = i;
+    else if (END.test(l)) { for (let j = from ?? 0; j <= i; j++) out[j] = true; from = null; }
+  });
+  if (from !== null) for (let j = from; j < lines.length; j++) out[j] = true;
+  return out;
+}
+
 /**
  * A line drawn in red: red (SGR 31/91, a 256-color red or a truecolor red) is the foreground of at least half its
  * visible non-space characters, as an error line is. Red tokens in syntax-highlighted code (a JSON string in a plan,
@@ -347,7 +366,8 @@ function noiseFor(screens: string | undefined, index: CaptureRec[], seat: string
     }
     let a: string | null = null;
     try { a = fs.readFileSync(path.join(screens || '', r.txt.replace(/\.txt$/, '.ansi')), 'utf8'); } catch { /* none */ }
-    for (const l of (a || t).split('\n')) if ((a && isRed(l)) || /hook error/i.test(l.replace(/\x1b\[[0-9;]*m/g, ''))) n.red++;
+    const ls = (a || t).split('\n'), inPlan = planBody(ls.map(plainLine));
+    ls.forEach((l, i) => { if ((a && !inPlan[i] && isRed(l)) || /hook error/i.test(plainLine(l))) n.red++; });
   }
   return {
     ...n, // captures, lines, receipts, red first: n's own key order

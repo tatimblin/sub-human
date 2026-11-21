@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { trigger, seatTranscriptMetrics, cardTurns, isRed } from '../metrics.ts';
+import { trigger, seatTranscriptMetrics, cardTurns, isRed, planBody } from '../metrics.ts';
 import type { Block, TEntry } from '../metrics.ts';
 
 const wake = (id: number): TEntry => ({ type: 'user', origin: { kind: 'plugin', name: 'sub-human' }, message: { content: `sub-human: room entry #${id}` } });
@@ -42,6 +42,16 @@ test('cardTurns: model calls from the waking notice to the card, and after the a
   const pv = [wake(1), a('p1', [tu('ToolSearch', { query: 'select:EnterPlanMode,ExitPlanMode' })]), toolRes, a('p2', [tu('EnterPlanMode', {})]), toolRes,
     a('p3', [tu('ExitPlanMode', { plan: 'proposal 54be84aa0011' })]), toolRes, a('p4', [tu('ExitPlanMode', {})]), toolRes, a('p5', [{ type: 'text', text: 'ok' }])];
   assert.deepEqual(cardTurns(pv).map(c => [c.hash, c.toCard, c.after]), [['54be84aa0011', 3, 2]]);
+});
+
+test('planBody: the plan view from "Here is Claude\'s plan:" to "Would you like to proceed?"; a red JSON value there is the plan\'s', () => {
+  const lines = ['❯ hi', '   Here is Claude\'s plan:', '   { "nextCursor": "eyJ0Ijoi" }', '   Claude has written up a plan and is ready to execute. Would you like to proceed?', '  ⎿  Error: boom'];
+  assert.deepEqual(planBody(lines), [false, true, true, true, false]);
+  assert.deepEqual(planBody(['  ⎿  Error: boom']), [false]);
+  // paged with PgDn: the start scrolled off, the view runs from the top to its question
+  assert.deepEqual(planBody(['   { "nextCursor": "x" }', '   Would you like to proceed?', '  ⎿  Error: boom']), [true, true, false]);
+  // the start with no question in view (paged to the top): to the bottom
+  assert.deepEqual(planBody(['  ⎿  Error: boom', '   Here is Claude\'s plan:', '   x']), [false, true, true]);
 });
 
 test('isRed: SGR 31/91, 256-color and truecolor reds; other colors are not', () => {
