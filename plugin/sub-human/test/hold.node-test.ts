@@ -73,7 +73,7 @@ const pending = async (p: Promise<unknown>, ms = 80) => (await Promise.race([p.t
 test('hold: tool definition and argument errors', async () => {
   const w = setup(['claude', 'alice'], 'alice');
   assert.deepEqual(w.plug.tools.map(t => t.name), ['hold']);
-  assert.deepEqual(Object.keys(must(w.plug.tools[0]).inputSchema.properties ?? {}), ['room'], 'the room row only');
+  assert.deepEqual(Object.keys(must(w.plug.tools[0]).inputSchema.properties ?? {}), ['room', 'take'], 'the room row and its keeper only');
   assert.equal(w.plug.call('nope', null, {}, {}), null);
   const bad = await w.call({}).p;
   assert.match(textOf(bad), /hold needs/);
@@ -89,11 +89,11 @@ test('hold {room}: blocks with progress, streams the room\'s latest line and its
   const r = w.call({ room: w.code });
   assert.ok(await pending(r.p), 'blocks');
   assert.equal(must(w.progress[0]).token, `t${r.id}`);
-  assert.equal(must(w.progress[0]).message, `bob here · bob: say 1${hold.HINT}`);
-  assert.match(hold.HINT, /read-only · talk in main \(@room\)$/);
+  assert.equal(must(w.progress[0]).message, `${hold.LEAD} · bob here · bob: say 1`);
+  assert.equal(hold.LEAD, 'type in main with @room');
   w.add('bob', 'say');
   await sleep(80);
-  assert.match(must(w.progress.at(-1)).message, /^bob here · bob: say 2/);
+  assert.match(must(w.progress.at(-1)).message, /^type in main with @room · bob here · bob: say 2/);
   const n = w.progress.length;
   await sleep(250);
   assert.ok(w.progress.length > n, 'heartbeat keeps the idle timeout away');
@@ -101,7 +101,7 @@ test('hold {room}: blocks with progress, streams the room\'s latest line and its
   w.add('carol', 'member_joined', { via: 'system' });
   await sleep(120);
   assert.ok(await pending(r.p), 'a join never ends the hold: no model turn for it');
-  assert.match(must(w.progress.at(-1)).message, /^bob, carol here · /, 'the row says who is here now (never the spawn\'s label)');
+  assert.match(must(w.progress.at(-1)).message, /^type in main with @room · bob, carol here · /, 'the row says who is here now (never the spawn\'s label)');
   w.leaveMe();
   assert.match(textOf(await r.p), /^STOP: alice is no longer in room/);
 });
@@ -112,15 +112,27 @@ test('hold: the row leads with who else is here and what their presence says; a 
   assert.equal(identity.writePresence(w.code, sn('carol'), { state: 'error', detail: 'rate_limit' }), true);
   const r = w.call({ room: w.code });
   assert.ok(await pending(r.p));
-  assert.equal(must(w.progress[0]).message, `bob (working), carol (stalled: rate_limit) here · room ${w.code}${hold.HINT}`);
+  assert.equal(must(w.progress[0]).message, `${hold.LEAD} · bob (working), carol (stalled: rate_limit) here · room ${w.code}`);
   // carol's presence is old: her name alone; bob back at his prompt (idle): his name alone
   const old = new Date(Date.now() - 7 * 60 * 60_000).toISOString();
   fs.writeFileSync(path.join(w.dir, 'presence', 'carol.json'), JSON.stringify({ state: 'error', at: old, detail: 'rate_limit' }));
   identity.writePresence(w.code, sn('bob'), { state: 'idle' });
   await sleep(120);
-  assert.match(must(w.progress.at(-1)).message, /^bob, carol here · /);
+  assert.match(must(w.progress.at(-1)).message, /^type in main with @room · bob, carol here · /);
   w.leaveMe();
   await r.p;
+});
+
+test('hold: a keeper\'s hold (take) replaces the room\'s older hold, which returns STOP (a /clear\'s new row ends the old)', async () => {
+  const w = setup(['claude', 'alice', 'bob'], 'alice');
+  const old = w.call({ room: w.code, take: true });
+  assert.ok(await pending(old.p));
+  const fresh = w.call({ room: w.code, take: true });
+  assert.match(textOf(await old.p), /^STOP: a newer row holds room marmot-2509/);
+  assert.ok(await pending(fresh.p), 'the newer one holds');
+  assert.ok(!must(w.progress.at(-1)).message.startsWith(hold.LEAD), 'a keeper\'s line has no lead: its row takes typing');
+  w.cancel(fresh.id);
+  await fresh.p;
 });
 
 test('hold: a second room row is refused; the first one stays', async () => {
@@ -137,7 +149,7 @@ test('hold: a second room row is refused; the first one stays', async () => {
   assert.match(textOf(await r2.p), /^STOP/);
 });
 
-test('hold: every progress line ends with the read-only hint and stays within 140 chars + hint', async () => {
+test('hold: every progress line leads with how to talk (the row is read-only) and stays within 140 chars + that lead', async () => {
   const w = setup(['claude', 'alice', 'bob'], 'alice');
   const r = w.call({ room: w.code });
   await sleep(30);
@@ -145,8 +157,8 @@ test('hold: every progress line ends with the read-only hint and stays within 14
   await sleep(200);
   assert.ok(w.progress.length > 0);
   for (const p of w.progress) {
-    assert.ok(p.message.endsWith(hold.HINT), p.message);
-    assert.ok(Array.from(p.message).length <= 140 + hold.HINT.length);
+    assert.ok(p.message.startsWith(`${hold.LEAD} · `), p.message);
+    assert.ok(Array.from(p.message).length <= 140 + hold.LEAD.length + 3);
   }
   w.leaveMe();
   await r.p;
@@ -158,7 +170,7 @@ test('hold: a post marked provisional (old logs) shows at once, like any other',
   assert.ok(await pending(r.p));
   w.add('alice', 'say', { provisional: true }); // #1
   await sleep(100);
-  assert.match(must(w.progress.at(-1)).message, /^alice here · alice: say 1/);
+  assert.match(must(w.progress.at(-1)).message, /^type in main with @room · alice here · alice: say 1/);
   w.leaveMe();
   await r.p;
 });

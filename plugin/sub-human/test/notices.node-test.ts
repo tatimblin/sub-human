@@ -169,7 +169,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   add('bob', 'member_joined', 'bob joined');
   // the line leads with who else is here (lib/rows.ts hereLine), then the notice
   assert.ok(until(() => progress.some(m => m.includes(' · bob joined')), 2000), progress.join('\n'));
-  assert.ok(progress.some(m => m === `bob here · bob joined${hold.HINT}`), progress.join('\n'));
+  assert.ok(progress.some(m => m === `${hold.LEAD} · bob here · bob joined`), progress.join('\n'));
   assert.ok(!progress.some(m => /member_joined/.test(m)), 'no raw member_joined line');
   const n = progress.length;
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
@@ -181,7 +181,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   tick(100);
   assert.ok(!progress.some(m => m.includes(' · bob left')), 'not before it settles');
   assert.ok(until(() => progress.some(m => m.includes(' · bob left')), 2000), progress.join('\n'));
-  assert.ok(progress.some(m => m === `only you · bob left${hold.HINT}`));
+  assert.ok(progress.some(m => m === `${hold.LEAD} · only you · bob left`));
   who = null; // this seat leaves: the hold ends
   until(() => false, 100);
   await Promise.resolve();

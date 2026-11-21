@@ -3,8 +3,10 @@
  * HoldServer (one per room server, i.e. per claude session) behind the plug-in contract.
  * It keeps the room row open in the agent panel at zero tokens.
  *
- *   hold({room: CODE})     the member's sub-human:room row (agents/room.md, spawned by the hooks module: mod/rows.ts).
- *       Blocks while this seat is in the room, streaming who else is here (lib/rows.ts hereLine: names and what
+ *   hold({room: CODE, take?})   the member's sub-human:room row (agents/room.md, spawned by the hooks module: mod/rows.ts),
+ *       or, with take, the room row's keeper (agents/keeper.md, room-chat: mod/chat.ts), whose hold replaces an older
+ *       keeper's of the room (that one returns STOP: a /clear's new row ends the old). Blocks while this seat is in the
+ *       room, streaming LEAD (the read-only row's label leads with how to talk; a keeper's has none), then who else is here (lib/rows.ts hereLine: names and what
  *       their presence says, read again every WHO_MS) then the room's latest line (or a fresh join / leave) as
  *       notifications/progress, re-sent every BEAT_MS so the MCP idle timeout never fires (cc CONTRACT
  *       mcp-progress-resets-idle-timeout). "STOP: ..." when this seat left (not on a kick: the row stays and shows it,
@@ -47,6 +49,8 @@ interface Hold {
   sentAt: number;
   code: RoomCode;
   started: number;
+  /** a keeper's hold: its line has no LEAD (its row takes typing) */
+  take: boolean;
   /** the joins and leaves this hold has shown */
   moves: Set<number>;
   resolve: (r: ToolResult) => void; // the blocked call's: set as the call blocks, before it is in holds
@@ -57,8 +61,8 @@ interface Seat { code: RoomCode; name: SeatName; pid?: number | null | undefined
 const { oneLine } = strs;
 const MSG_MAX = config.HOLD_MSG_MAX; // + HINT fits the two lines a row view shows at 120 columns (at 200 the hint was cut off)
 const END = 'End now without calling any tool.';
-// Shown on every progress line, right above the row view's input box: the row takes no input.
-const HINT = ' · read-only · talk in main (@room)';
+// Every progress line leads with it: the row (its label) takes no input.
+const LEAD = 'type in main with @room';
 const SEP = ' · ';
 
 const clip = (s: string, n = MSG_MAX) => strs.clip(s, n);
@@ -79,6 +83,7 @@ const TOOL: ToolDefinition = {
     type: 'object',
     properties: {
       room: { type: 'string', description: 'The room CODE from the row prompt "room: CODE".' },
+      take: { type: 'boolean', description: 'The room row\'s keeper: replace an older keeper\'s hold of the room.' },
     },
     additionalProperties: false,
   },
@@ -143,7 +148,7 @@ class HoldServer {
     h.sentAt = Date.now();
     if (h.token == null) return;
     h.n++;
-    try { this.ctx.progress(h.token, h.n, this.line(h) + HINT); } catch { /* client gone */ }
+    try { this.ctx.progress(h.token, h.n, h.take ? this.line(h) : `${LEAD}${SEP}${this.line(h)}`); } catch { /* client gone */ }
   }
 
   finish(h: Hold, s: string): void {
@@ -234,9 +239,10 @@ class HoldServer {
     const roomCode = typeof args.room === 'string' ? args.room.trim() : '';
     if (!roomCode) return this.text('hold needs {room: CODE} (the room row).', true);
     if (roomCode !== code) return early(`STOP: you are in room ${code}, not ${roomCode}. ${END}`);
-    if (this.roomHolds(code).length) return early(`STOP: duplicate row: room ${code} already has its row. ${END}`);
+    if (args.take === true) for (const old of this.roomHolds(code)) this.finish(old, `STOP: a newer row holds room ${code}. ${END}`);
+    else if (this.roomHolds(code).length) return early(`STOP: duplicate row: room ${code} already has its row. ${END}`);
     const now = Date.now();
-    const h: Hold = { id: meta.id, token: meta.progressToken, n: 0, msg: '', here: '', hereAt: 0, sentAt: 0, code, started: now, moves: new Set(), resolve: (_r: ToolResult): void => {} };
+    const h: Hold = { id: meta.id, token: meta.progressToken, n: 0, msg: '', here: '', hereAt: 0, sentAt: 0, code, started: now, take: args.take === true, moves: new Set(), resolve: (_r: ToolResult): void => {} };
     h.here = this.hereFor(h, now);
     const last = this.readEntries(code).entries.findLast((e: Entry) => e.kind !== 'member_joined' && e.kind !== 'member_left');
     const move = this.newMove(h, now);
@@ -263,4 +269,4 @@ function create(ctx: HoldContext): PluginApi & { server: HoldServer; _state: Pic
   };
 }
 
-export { create, TOOL, HINT };
+export { create, TOOL, LEAD };
