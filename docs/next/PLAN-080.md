@@ -31,6 +31,24 @@ The spike proved the core: words arrive via `session.append`, `turn.step` answer
 Each surface the design relies on gets a contract entry (search string, `feature: room-chat`, a new gated feature) before Phase 1 uses it.
 - **Fallback while `room-chat` is off:** today's hold-row, labelled `type in main with @room`.
 
+**Results of spikes 1, 2 and 6** (2026-11-21, ROOM-ROW-SPIKE.md "0.8.0 spikes"):
+- **Lifecycle holds.**
+  - The keeper respawns with no model call.
+  - The row survives `/compact`, and comes back after `--resume` by sending to the stored id.
+  - Esc or `x` stops it, and typing revives it.
+  - `/clear` re-lists it as `general-purpose (resumed)`, so on `/clear` the old row ends and a new one is spawned.
+- **Auto mode.** The module's spawn is allowed: only `autoMode` soft or hard deny rules refuse it, so the `auto-mode-module-spawn-deny` entry is reworded. The keeper needs extra steps:
+  - its `Agent` call from a synthesized step is denied, so it is made by the room's model, one small call per spawn;
+  - its synthesized `hold` is denied without an allow rule, so it is a model step too;
+  - respawns are hard-capped (an unchecked loop made about 200 calls in 25 s).
+- **The label.** An idle row's label is fixed at spawn (`name` + `description`) and nothing can update it; the keeper shows as `(+1)` and can't be hidden.
+
+### Phase 1 changes from the spikes
+- `sub-human:room` and `sub-human:keeper` stay offered to the model: hiding them breaks the resume. Main's model is kept from spawning them with a fixed `tool.call` deny, except in the auto fallback.
+- Row steps are answered by the stored agent id, not by type. The id is persisted per session so a resume sends to it before spawning anew. The spawn's `name` is the room code.
+- **Label (owner decision 1A):** the row reads the room code. Who's here and the unread count go on one `$.ui.status` line under main's prompt: `panda-0976 · maya, dev here · 2 new`.
+- **`(+1)`:** the owner doesn't want it. The plugin can't hide it, so it goes in a Claude Code request (a hook to draw or hide panel rows) and stays until then. The other keeper (a background shell) has no `(+1)`, but it draws a blank row in main per room stop, so it is not used.
+
 ## Phase 1: the row takes typing and draws the room
 - `sub-human:room` becomes idle and resumable.
   - Its first synthesized step spawns `sub-human:keeper` (background), which does the blocking `hold` with no tick.
@@ -38,7 +56,7 @@ Each surface the design relies on gets a contract entry (search string, `feature
   - The participant agent is already gone (0.6.0).
 - Typed input (`session.append`, door `prompt`, origin `composer`) is unwrapped and posted verbatim (`via=human`, signed). Signing happens in the module, which has no seat key, so it goes through node (the same signer path as `@room`). The step answers `✓` or nothing (no echo: the `❯` row is the person's words).
 - Incoming lines are drawn with `$.session.send` to the row plus a synthesized step that shows the line with its author. The `❯` echo is hidden (`ui.render UserMessage`, origin `coordinator`), and so is the chrome (spawn prompt, keeper rows, `TurnDuration`, main's "Waiting for 2 background agents").
-- The label leads with who's here, then the unread count (`maya, dev · 2 new`). Its source is spike 6.
+- The label is the room code (the spawn's `name`); who's here and the unread count are on main's status line (1A above).
 
 ## Phase 2: your Claude is your assistant
 - **A line naming a person** (`NAME, …`, `@NAME`) wakes that person's main Claude with the line, and one `member.md` rule: answer as `NAME's Claude` when you're sure of the fact, else leave it for NAME. Its answer is posted to the room as `NAME's Claude: …` and drawn in the row.
