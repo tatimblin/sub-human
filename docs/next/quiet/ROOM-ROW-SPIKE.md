@@ -203,3 +203,139 @@ Each `⏺` line is a synthesized reply. Each `❯` line is the person's own word
 6. **Reach.** `@room` posts from main without leaving the conversation. The row needs ↓ Enter ↑ to get in and back. Some people will want both.
 
 Once 2 and 4 are covered by contract entries and a two-person live run (Phase 5), `@room` can be demoted: it becomes a hint in the row ("type here") and stays wired only as the fallback for non-terminal surfaces and for when the contract check fails.
+
+---
+
+## 0.8.0 spikes (Phase 0: 1, 2, 6)
+
+Claude Code 2.1.296, 2026-11-21. These are PLAN-080's spikes 1 (lifecycle), 2 (auto mode) and 6 (the idle row's label).
+
+**Verdict: the idle room with a keeper child holds up, with five changes to PLAN-080.**
+
+1. **The row types must stay offered.** Claude Code resumes an idle room only if its type is offered. 0.6.0's `agent.offer {isOffered: false}` on `sub-human:room` makes every typed line fail with `Failed to resume agent: Agent type 'rr:room' is not offered in this session`. Hiding the keeper type makes the room's Agent call fail too.
+2. **Answer the row's steps by agent id, not by type.** After `/clear`, the first resume re-lists the room as `general-purpose (resumed)`. A `turn.step` hook that matches on type then misses it, and the model answers.
+3. **Auto mode on the Anthropic API refuses every synthesized tool call.** That covers the keeper's `Agent` call and its `hold`. The keeper's spawn has to go through the room's own model once (one model call per keeper spawn). Its `hold` needs a permission rule or a model step too. Respawns must be rate-limited: a keeper that died at once looped about 200 requests in 25 s.
+4. **The label can't be updated live without `subagentStatusLine`.** A spawn-time `name` and `description` give `◯ panda-0976 (+1)  maya, dev here · 2 new`, fixed for the row's life.
+5. **The keeper's nested row can't be hidden.** It shows as `(+1)` on the room's row in main, and as `└ ◯ rr:keeper <summary>` inside the room's view. No hook draws it.
+
+Everything else in PLAN-080's mechanism worked: Esc and `x` recover, a dead keeper comes back quietly, and the row survives compaction. A row lost to a restart can be resumed with its history.
+
+### Evidence
+
+- **The probe** is in `/tmp/probe-row080/`. It is not committed.
+- **The plugin** is `plugin/`:
+  - a hooks module, `mod/register.ts`, which logs to `log/mod.log`. Its switches are files under `mode/`, and the ids it knows are in `state/ids.json`.
+  - classic hooks, which log to `log/classic.log`.
+  - a stub MCP server, `mcp.mjs`, whose `hold` blocks until `mode/release` exists. Its progress text is `mode/progress`, and it logs to `log/mcp.log`.
+  - the agents `rr:room` and `rr:keeper`.
+  - no `subagentStatusLine`.
+- **The mock API** is `mock.mjs` on `127.0.0.1:8767`. It logs one line per request to `log/mock.log` and dumps each body to `log/req-N.json`.
+  - It answers summarizer, compaction, title and classifier requests (`<severity>0`).
+  - It returns tool calls on cue, with a `safeguard_results` verdict in `message_delta`. That verdict is the server classifier's, as the binary parses it.
+  - `FIRSTPARTY=1` launches with `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL=1`, so Claude Code treats the mock as api.anthropic.com (server-classifier "arbiter" mode). Without it the mock counts as a third-party gateway ("arbiterWithLocalFallback").
+- **Launch:** `run.sh` (`env -i`, `CLAUDE_CONFIG_DIR=/tmp/probe-row080/cfg`, `HOME=/tmp/probe-row080/home`, `--debug-file log/debug.log`). `t.sh` drives the tmux sessions `rr080-a` to `rr080-f`, all killed.
+- **Pane captures:** `caps/NN-*.txt` (and `.ansi`).
+- **Transcripts:** `cfg/projects/-private-tmp-probe-row080-work/`.
+- **Binary strings:** `strings.txt`.
+- **A gap in `mod.log`:** it starts at 16:27:50. A module reload overwrote the first run's lines (Esc, `x`, the keeper's death, `/compact`). Those events are in `log/debug.log`, the transcripts and the captures. Quoted log lines below are from the live run.
+- **Permission settings:** `cfg/settings.json` allows `mcp__plugin_rr_stub__hold`, as a person who picked "don't ask again" would have. Without that rule, default mode asks once on main, `Tool use · from the rr plugin … Do you want to proceed?` (`02-spawn`), even with `readOnlyHint: true`.
+
+### Spike 1: lifecycle
+
+| Question | Result | Evidence |
+|---|---|---|
+| **Esc in the room's view, room idle** | **Stops the room and its keeper.** The keeper's `hold` is interrupted (`turn.complete … reason=aborted`). The room becomes `killed` ("Agent "the room" was stopped by user"), and **main gets a task notification and wakes** (`<status>killed</status>`, a model turn). The row stays listed as `◯ rr:room (+N)` with its dead keepers. | `10-esc-idle`, `13-main-after-esc`; transcript `b974401e….jsonl` |
+| **`x` on the room's row in main's panel** | **The same as Esc.** Room and keeper are killed and main wakes. A second `x` ("x to clear") removes the row, after which `$.session.send` is refused: `was stopped by the user and won't be resumed`. The dead keeper is then left as a top-level `◯ rr:keeper` for some seconds. | `16-after-x`, `17-after-x-clear`, `18-send-after-clear` |
+| **`x` on the keeper's nested row, inside the room's view** | **Only the keeper stops.** The room gets the keeper's notification as a turn of its own (door `prompt`, origin `task-notification`). Its synthesized step respawns the keeper, with no model call, and main doesn't wake. The dead keeper's row stays (`├ ◯ rr:keeper` / `└ ◯ rr:keeper`) until it is evicted. | `21-x-keeper` |
+| **Bringing a killed room back** | `$.session.send` to it is refused: `was stopped by the user and was not resumed`. **Typing into it works:** the turn resumes it, the step respawns the keeper, and there is no model call. A killed or notified row is evicted after `PI=30000` ms (binary `var ykt=3000,PI=30000`). After that only a fresh spawn brings it back, which is 0.6.0's "comes back at your next prompt". | `14-type-after-esc`, `22-send-after-esc`; debug.log 16:26:22 |
+| **The keeper dies (its `hold` returns)** | **Main doesn't wake.** The keeper's end reaches the room as a `task-notification` turn, and the room's synthesized step respawns the keeper (`Agent(rr:keeper)`) with no model call. If the step doesn't respawn it, the room stops with no child and main wakes ("Agent "the room" finished", a model turn). | debug.log 16:25:39; `32-room-ended` |
+| **A finished room with no child** | **Not drawn in the panel at all.** `$.agent.list()` still lists it as `completed`, and it can still be resumed by `$.session.send`. | `32-room-ended` (footer only `/tasks to see subagents`) |
+| **`/compact`** (the mock answered the compaction) | **The row survives**, still holding. Main gains two lines, `Task "the room" completed in background` and `Task "keeper" still running in background` (the compaction's task-status attachment). | `23-compact` |
+| **`/clear`** | **The row survives and keeps holding**, on the same MCP server. But the first resume after it (a typed line) reads `[resumeAgentBackground …] disk transcript missing; using 38 in-memory messages`: the new session's directory has no meta for the room. The room is then listed as **`general-purpose`, description `(resumed)`, composer `Message @general-purpose…`**. A `turn.step` hook matching `rr:room` misses it, and **the model answered** (`⏺ ok.`, one mock call). Keyed by the stored id, the step is synthesized again (`26-…-byid`), but the label stays `general-purpose (resumed)`. | `24-clear`, `25-room-after-clear`, `26-room-after-clear-byid`; debug.log 16:27:14 |
+| **`--continue` / `--resume`** | **Rows don't survive a restart.** On exit Claude Code asks `The following will stop when you exit: subagent · keeper` (`27-exit-dialog`). After `--continue` the panel is empty, and `$.agent.spawn` starts a new row (`29-continue-ensure`). After `--resume` of the same session id, **`$.session.send({agentId: oldRoomId})` resumes the old room from disk**, keeping its type, its description and the history in its view. Its step respawns the keeper with no model call, and the row is back as `rr:room (+1)  the room` (`31-resume-sendto`). | `28`–`31`; debug.log 16:29:37 |
+
+What this means for Phase 1:
+- Persist the room's agent id per session. On resume, send to that id first, and spawn only if the send is refused.
+- After `/clear`, end the old row and spawn a new one, rather than resuming it as `general-purpose (resumed)`. To end it: the old keeper's `hold` returns STOP, the room's step lets the keeper go, and the module drops the room's "finished" notification. Its pieces were each seen working; the whole sequence was not run.
+- Drop the room's `killed`/`finished` task notifications. They arrive as `prompt.submit` with origin `task-notification` (0.6.0's `rows.ts` already does this). `session.receive` never fired for them.
+- Rate-limit keeper respawns, as 0.6.0's spawn ledger does.
+
+### Spike 2: auto mode
+
+The binary picks a classifier per call:
+- **A plugin's main-loop call** (`$.agent.spawn`, `$.tool.call`) skips the classifier: `Skipping auto mode classifier for Agent: called by plugin rr`. That holds only when the call has no `agentId` (`Pvr`: `e.agentId===void 0 ? e.hookCaller : void 0`), and `nMe()` is false. `nMe()` is true when the user, flag or managed settings have `autoMode.soft_deny` or `hard_deny` rules.
+- **Any other call**, a subagent's synthesized tool call included, goes to the server classifier. Its verdict rides on the model response (`message_delta.delta.safeguard_results`, `dangerous_tool_use` per `tool_use` id). A step a hook made has no request behind it, so the verdict is `server_not_requested`.
+
+| Question | Anthropic API (`FIRSTPARTY=1`, arbiter) | Third-party base URL (arbiter with local fallback) | Evidence |
+|---|---|---|---|
+| Module `$.agent.spawn(rr:room)`, no `autoMode` rules | **Allowed**: `Skipping auto mode classifier for Agent: called by plugin rr`. This was so at `prompt.submit` and at `turn.start` alike. | allowed | debug.log 16:36:53, 16:38:26 |
+| The same spawn with `autoMode: {soft_deny: ["$defaults"]}` in settings | **Denied**, exactly as 0.6.0 saw it: `…gave no verdict for Agent: the request that produced this action did not ask for one…`, `Agent answered in 21ms, 406 chars, denied`. So the 0.6.0 deny depends on the person's `autoMode` rules (or a policy's). It is not a property of auto mode itself. | not run | debug.log 16:38:51 |
+| **The keeper's `Agent` call from the room's synthesized `turn.step`** | **Always denied** (`server_not_requested`), rules or none. In auto mode the room that has no keeper then ends, and `[handback-send-enforce] … Call SubagentHandback` makes it run 3 more synthesized steps, so the step's text goes into its transcript 4 times. | **Allowed after one local classifier call** (`claude-sonnet-5`, stage `xml_s1`, `classifierChars=139966`, `<severity>N</severity>`). | mod.log 16:36:53, 16:42:36 |
+| The keeper's synthesized `hold` call | **Allowed with an allow rule** for the tool. **Denied without one**: `gave no verdict for mcp__plugin_rr_stub__hold`, with `readOnlyHint: true` making no difference. | not run without the rule | mod.log 16:40:12, 16:42:06 |
+| A keeper that the module spawns from inside the room's step | It starts, but its parent is **main** (`parentId` absent), so the room still has no child. Its steps also skip the module's `turn.step` hook and go to the model (4 model calls). | not run | mod.log 16:43:41 |
+| **Fallback: main's model makes `Agent(rr:room)`** (0.6.0's way) | **Allowed** by the server verdict. | not run | mod.log 16:39:30 |
+| **Fallback: the room's first step goes to its model** (`next(e)`), which calls `Agent(rr:keeper)` | **Allowed.** That is one request in the room's own small context (`nmsgs=2, ntools=4`). The keeper's `hold`, synthesized, is then allowed by the rule. After that, typed lines cost **0** calls (`57-auto-room-typed`), and no handback review runs while the keeper lives. | not run | mod.log 16:39:54, 16:42:06, 16:44:07 |
+| **Cost** | Each keeper death in auto mode costs one handback-review classifier call: `Subagent has finished and is handing back control to the main agent. Review the subagent's work…`. A keeper whose `hold` is denied dies at once, so the room respawns it (1 model call + 1 review) in a loop: **about 200 mock requests in about 25 s**, stopped by hand (mock n=8 to 215, after a mock restart). | same | `log/mock.log` 16:40:12–16:40:39 |
+
+The fallback for Phase 1, in auto mode on the Anthropic API:
+1. The module's own `$.agent.spawn` of the room, or main's Agent call when the person has `autoMode` rules (0.6.0's `rowAsk`).
+2. The room's first step passes to its model for the `Agent(sub-human:keeper)` call (one call per keeper spawn).
+3. The keeper's `hold`: either the person's allow rule, or a model step as well (a second call per keeper spawn).
+4. A hard cap on respawns.
+
+The cap matters most in auto mode, where a keeper that dies at once costs a model call and a classifier call every time.
+
+Caveats:
+- These verdicts come from a mock that adds `safeguard_results` itself; the real server's verdicts weren't seen.
+- Feature flags were left at their defaults (`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, so no flag fetch).
+
+### Spike 6: the idle row's label and the nested keeper
+
+With no `subagentStatusLine`, main's panel draws the row as `◯ <type or name> (+1)  <description>`. Inside the room's view, the panel expands to show `└ ◯ rr:keeper <keeper's label>`.
+
+| Try | Result | Evidence |
+|---|---|---|
+| (1) The keeper's `hold` progress as the room's label | **No.** Progress notifications (`maya, dev here #6`) are drawn only in the keeper's own view, as `⎿ maya, dev here #6` under the call. Neither the room's row nor the keeper's row shows them. 0.6.0's line came from the room's own running `hold`, and an idle room runs nothing. | `34`–`37` |
+| (2) Updating the description from the module | **No API.** `$.agent` has only `spawn`, `list` and `register`, and `AgentInfo.description` is "as an `agent.spawn` hook left it". **At spawn** it works, and so does `name`: `$.agent.spawn({name: "panda-0976", description: "maya, dev here · 2 new"})` draws `◯ panda-0976 (+1)  maya, dev here · 2 new`, frames the composer as `@panda-0976`, and gives the placeholder `Message @panda-0976…` in place of `Message @rr:room…`. It stays fixed for the row's life. Changing it means a new row: a respawn, which loses the view's history, and the old row lingers until evicted. | `58-spawn-named`, `59-named-view` |
+| (3) A synthesized step's text, then the summarizer | **No.** The summarizer forks only while an agent runs (every 30 s, `[AgentSummary] Timer fired`). The room runs about 50 ms a turn (`Stopping summarization for <room>`), so its label stays its description. The keeper runs, so it gets **one summarizer call about 30 s after each spawn**. That call bypasses `turn.step` (none logged) and its words become the keeper's nested label (`└ ◯ rr:keeper ok.` = the mock's reply). | debug.log `Summary result for … ok.` (×7) |
+| Hiding the keeper's nested row | **No surface.** `RenderComponent` has no panel row. Main shows `◯ rr:room (+1)`, and the room's view shows the keeper's row expanded. | `07-room-view`, `37-main-collapsed` |
+| A keeper that isn't an agent: a background `Bash` (`sleep 86400`, `run_in_background`) from the room's step | **It removes the nesting and the summarizer call.** The row reads `◯ rr:room  the room`, and default mode allows `sleep` with no prompt. **But main is told of every room stop**: `This agent stopped with background work of its own still running…`. Only agent children are `parked on keepalive`. Each told stop can be dropped, but the drop leaves a blank `⏺` row in main per room turn, and the footer gains `· N shells` and `N shells still running`. **Not recommended.** | `40`–`43`; transcript note |
+
+For Phase 1, the label "who's here · N new" can't be live. The choices are:
+1. A fixed `name` (the room code) and `description` at spawn: `◯ panda-0976 (+1)  type here`.
+2. The live text drawn inside the row's view as synthesized lines.
+3. The live line in the opt-in `subagentStatusLine` from the README, which stays the only live label.
+4. The unread count elsewhere, such as `$.ui.status` under main's prompt.
+
+The rule "one room row, nothing nested" can be met in main only as `(+1)`; inside the row's view the keeper is drawn. That needs an owner call: accept `(+1)` and the nested keeper, or ask Claude Code for a way to hide a child row or set a row's label.
+
+### Changes to PLAN-080's phases
+
+- **Phase 1:**
+  - `sub-human:room` and `sub-human:keeper` stay offered: `mod/rows.ts`'s `isOffered: false` breaks the room's resume, and hiding the keeper breaks its spawn. Keep the model from spawning them another way, for example a fixed `tool.call` deny of a main-loop `Agent(sub-human:room|keeper)` outside the auto fallback. An offer window that opens only while the room's own Agent call dispatches works for the keeper, but not for the room's resume: the resume's `agent.offer` carries nothing that tells it apart.
+  - Every row step is keyed by the stored id.
+  - The spawn uses `name` (the code) and a fixed `description`.
+  - Respawns are capped.
+- **Spike 6 replaces Phase 1's label line:** no live label without the opt-in status line.
+- **The 0.8.0 contract entries** (search strings checked in `strings.txt`):
+  - `parked on keepalive`
+  - `is not offered in this session` (resume refused for a hidden type)
+  - `disk transcript missing; using` (`/clear` re-lists the agent as `(resumed)`)
+  - `was stopped by the user and was not resumed`
+  - `called by plugin` (the plugin skip, and its `nMe` rule condition)
+  - `This agent stopped with background work of its own still running`
+  - `Subagent has finished and is handing back control to the main agent` (the auto-mode handback review)
+  - `handback-send-enforce`
+- **Refine `auto-mode-module-spawn-deny`:** the deny depends on the person's `autoMode` deny rules, and a synthesized subagent call is always denied on the Anthropic API.
+
+### Not tested
+
+- Real models and the real server classifier. Its verdicts were mocked from the binary's parser.
+- Feature flags beyond their defaults.
+- The `/clear` recipe end to end (old row ended and a new one spawned), and the old room's eviction after it.
+- `ctrl+x ctrl+k` (stop all agents).
+- Esc while the room is in the middle of its ~50 ms turn.
+- Auto mode with a third-party base URL plus `autoMode` rules.
+- Plan mode, wakes mid-task and provenance (spikes 3–5).
+- The desktop app and VS Code.
+- The real plugin.
