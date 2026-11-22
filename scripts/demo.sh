@@ -819,11 +819,9 @@ S7() { # typing into the row view. room-chat on (its rule "─ @CODE ─"): the 
     sleep 15  # deliberate dwell: room for the row to answer (it may not; the S7 check takes either)
     snap "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted"
   fi
-  need $LIB select-row sh-alice main || return 1
-  keys alice Enter
-  need wait_pane alice "─ @?$(room) ─" 10 --absent || return 1
-  keys alice Up Up   # focus back on the prompt: the panel cursor (❯ on a row) goes
-  wait_pane alice "^❯\s+(└\s*)?[⏺◯●]\s" 5 --absent --what "alice's focus is back on the prompt"
+  # back to main with one ↑ to the prompt (row_close): S7's old "Up Up" recalled the last prompt into the box when the
+  # focus was already there, and S8's /clear was then sent inside it as text (run dolphin-4819)
+  row_close alice || return 1
 }
 
 S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows return with no prompt; the room still reaches him
