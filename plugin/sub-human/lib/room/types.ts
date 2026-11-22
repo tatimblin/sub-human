@@ -292,6 +292,12 @@ export interface Member {
    * writable, ...): the tasks stay in the log, nothing is projected; cleared when the check passes again. Host only,
    * never streamed */
   tasks_off?: string;
+  /** the claude binary that started the job, an absolute path (the starter's PATH found it), and the starter's
+   * CLAUDE_CONFIG_DIR ('' when it had none): the bg daemon that owns the job is that config dir's, so stop and rm
+   * use both even from a process whose PATH or env differs (a remote member's leave runs under the host's ssh login,
+   * lib/room-claude.ts clientFor). Host only, never streamed */
+  claude_bin?: string;
+  config_dir?: string;
 }
 
 /** The members document: name -> seat record. */

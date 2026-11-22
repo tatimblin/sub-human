@@ -8,6 +8,7 @@ import path from 'node:path';
 import { spawnSync, spawn as sp } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as identity from '../lib/identity.ts';
+import * as membersLib from '../lib/room/members.ts';
 import * as roomClaude from '../lib/room-claude.ts';
 import * as cc from '../lib/cc/bg.ts';
 import * as env from '../lib/env.ts';
@@ -200,6 +201,32 @@ test('room-claude: reap waits the grace, marks closing, completes the room task 
     assert.equal(idx[code], undefined, JSON.stringify(idx));
     assert.deepEqual(identity.openRooms(), []);
   });
+  o.kill();
+});
+
+test('room-claude: reap from a process with another PATH and config dir (a remote leave under the host\'s ssh login) still stops and removes the job', async () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cfg-'));
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cfg-other-'));
+  const s = stubClaude({ out: `backgrounded · 0b500131 · claude.${code}` });
+  // started from a member's session: claude found on its PATH (no SUB_HUMAN_CLAUDE), its config dir
+  const r = withEnv({ SUB_HUMAN_CLAUDE: undefined, SUB_HUMAN_PLUGIN_DIR: '', PATH: `${s.dir}${path.delimiter}${process.env.PATH ?? ''}`, CLAUDE_CONFIG_DIR: cfg },
+    () => roomClaude.spawn({ code, cwd: os.tmpdir() }));
+  assert.deepEqual(r, { ok: true, job: '0b500131' });
+  const started = s.calls().length;
+  const o = h.spawnSleeper();
+  identity.join({ code, name: sn('claude'), role: 'claude', pid: o.pid, session_id: 'so' });
+  // reaped from the serve shim: sshd's plain PATH (no claude on it), and not the starter's config dir
+  await withEnv({ SUB_HUMAN_CLAUDE: undefined, PATH: '/usr/bin:/bin:/usr/sbin:/sbin', CLAUDE_CONFIG_DIR: other, SUB_HUMAN_REAP_STOP_MS: '100' }, async () => {
+    assert.equal(await roomClaude.reap(code, { graceMs: 0 }), 'stopped');
+  });
+  const after = s.calls().slice(started);
+  assert.deepEqual(after.map(c => c.argv), [['stop', '0b500131'], ['agents', '--json', '--all'], ['rm', '0b500131']], 'stop and rm ran');
+  assert.ok(after.every(c => c.env.CLAUDE_CONFIG_DIR === cfg), 'each against the starter\'s config dir (its bg daemon)');
+  const rec = must(identity.readMembers(code).claude);
+  assert.deepEqual([rec.claude_bin, rec.config_dir], [s.bin, cfg], 'recorded at the start, kept across the bind');
+  assert.equal(membersLib.publicView(identity.readMembers(code)).claude?.claude_bin, undefined, 'host only');
   o.kill();
 });
 
