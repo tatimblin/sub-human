@@ -18,9 +18,18 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   det(`member_joined ${B} (via system)`, j && j.via === 'system', x.fmt(j));
   // since 0.5.0-beta.7 a join that works shows one dim notice from the hooks module (command.run), no hook frame
   const jn = joinNotices(x.cap('S2', B, 'last'));
-  const want = new RegExp(`^⏺ sub-human: Joined ${code} as ${B} with ${A}$`);
-  det(`${B}'s join shows one line, "sub-human: Joined CODE as ${B} with ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
-    `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
+  if (x.remote && x.remote[B]) {
+    // --film: B joins over the link, and her session takes its seat on its own: the take's "You're in room CODE as B"
+    // prompt row (mod/deliver.ts takeSeat), no join line of /sub-human's, no hook frame
+    const bt = x.cap('S2', B, 'last') || '';
+    const take = new RegExp(`^\\s*❯ You're in room ${code} as ${B}\\b`, 'm').exec(bt);
+    det(`${B}'s session takes its seat on its own: "You're in room CODE as ${B}", and no "blocked by hook" frame`, !!take && !jn.frame,
+      `${take ? `"${take[0].trim()}"` : 'no take line'}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
+  } else {
+    const want = new RegExp(`^⏺ sub-human: Joined ${code} as ${B} with ${A}$`);
+    det(`${B}'s join shows one line, "sub-human: Joined CODE as ${B} with ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
+      `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
+  }
   // one CODE row; room-chat on, its keeper child is drawn "(+1)" on it (and nested, if listed), nothing else nested
   for (const who of [B, A]) {
     const rs = panelRows(x.cap('S2', who, 'last'));
@@ -82,7 +91,8 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   // the copy for A's Claude is held by the hooks module and rides as context beside A's next prompt (mod/deliver.ts
   // holdPullEvent, mod/prompt.ts: "room since your last turn"), so it lands at A's next turn, after S2 when A is idle;
   // an isMeta row is the fallback when it cannot be held
-  const joinedLine = new RegExp(`^${esc(B)} joined$`, 'm');
+  // "B joined", or over a link "B joined (B-laptop)" (the host's room line names the machine)
+  const joinedLine = new RegExp(`^${esc(B)} joined(?: \\([^()]*\\))?$`, 'm');
   const afterJoin = (es: TEntry[]): TEntry[] => (j ? es.filter(e => e.timestamp !== undefined && e.timestamp > j.at) : []);
   const pulls = afterJoin(x.pullIn(x.entries(A))).filter(e => joinedLine.test(x.textOf(e.message && e.message.content)));
   const held = afterJoin(x.entries(A)).filter(e => e.attachment && e.attachment.type === 'hook_additional_context'

@@ -93,8 +93,8 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   // call may go to the row's model, in auto mode), and a keeper is started again at most KEEPERS_MAX times in 10 min
   const chatRows = [A, B].flatMap(n => { const all = x.seatAgents(n).filter(s => s.first >= x.runStart); return all.filter(s => isChatRow(s, code)).map(r => ({ n, r, ...rowKeepers(all, r, code) })); });
   if (chatRows.length) {
-    det(`Each room row starts its keeper again at most ${KEEPERS_MAX} times in any 10 minutes (the cap; all run)`, chatRows.every(c => c.peak <= KEEPERS_MAX),
-      chatRows.map(c => `${c.n}: ${c.keepers.length} keeper(s), at most ${c.peak} in 10 min (${c.r.file})`).join('; '));
+    det(`Each room row starts its keeper again at most ${KEEPERS_MAX} times in any 10 minutes after one died (the cap; one after a WAKE, a line for the row, is its job; all run)`, chatRows.every(c => c.peak <= KEEPERS_MAX),
+      chatRows.map(c => `${c.n}: ${c.keepers.length} keeper(s), ${c.woke} after a WAKE, at most ${c.peak} others in 10 min (${c.r.file})`).join('; '));
     const wrote = chatRows.filter(c => c.r.modelText.length);
     det('No room row writes text of its model\'s (every line it shows is the module\'s answer)', wrote.length === 0,
       wrote.length ? wrote.map(c => `${c.n}: ${c.r.modelText.length} text block(s), first "${clip(c.r.modelText[0], 100)}" (${c.r.file})`).join('; ') : `${chatRows.length} row(s): none`);

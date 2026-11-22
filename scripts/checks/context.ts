@@ -32,7 +32,7 @@ import type { Members } from '../../plugin/sub-human/lib/room/types.ts';
  * bob's; a run's own (say3, plan4, note5, edit5a, edit5b: --film's tristan and jess say other things) are in screens/run.json "words".
  */
 export const DEMO = {
-  say3: "I'll take the handler in src/server.js; the parser tests are up for grabs",
+  say3: "I'll take the handler in src/server.js, and the parser tests are up for grabs",
   reply3: "sure, once we've agreed how paging works",
   plan4: "let's write a room plan for cursor paging on GET /tasks: ?limit&after, opaque cursor, newest first. you draft it", // to B's own Claude: not in the log
   note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',

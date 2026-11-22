@@ -138,13 +138,19 @@ export const rowHeld = (all: readonly SubAgent[], row: SubAgent, code: string): 
   row.holds.some(h => h.room === code) || all.some(k => k.session === row.session && isKeeper(k, code) && (!k.parent || k.parent === row.id) && k.holds.some(h => h.room === code));
 /** The cap on a row's keepers (mod/core/room-chat.ts KEEPER_MAX in KEEPER_WINDOW_MS): the most started in any window. */
 export const KEEPERS_MAX = 5, KEEPERS_WINDOW_MS = 10 * 60_000;
-/** The keepers room row `row` started (meta parentAgentId), oldest first, and the most of them in any KEEPERS_WINDOW_MS. */
-export function rowKeepers(all: readonly SubAgent[], row: SubAgent, code: string): { keepers: SubAgent[], peak: number } {
-  const keepers = all.filter(k => k.session === row.session && isKeeper(k, code) && k.parent === row.id);
-  const ts = keepers.map(k => Date.parse(k.first)).filter(t => !Number.isNaN(t)).sort((a, b) => a - b);
+/**
+ * The keepers room row `row` started (meta parentAgentId), oldest first; `woke` how many followed a keeper whose hold
+ * ended on a WAKE (a room line for the row: its job, mcp/hold.ts), and `peak` the most of the others (spawns after a
+ * death, the first one included) in any KEEPERS_WINDOW_MS: the cap counts those only (mod/chat.ts).
+ */
+export function rowKeepers(all: readonly SubAgent[], row: SubAgent, code: string): { keepers: SubAgent[], woke: number, peak: number } {
+  const keepers = all.filter(k => k.session === row.session && isKeeper(k, code) && k.parent === row.id).sort((a, b) => (a.first < b.first ? -1 : a.first > b.first ? 1 : 0));
+  const afterWake = (i: number): boolean => i > 0 && /^\s*WAKE\b/.test(keepers[i - 1]?.holds.filter(h => h.room === code).at(-1)?.result ?? '');
+  const counted = keepers.filter((_k, i) => !afterWake(i));
+  const ts = counted.map(k => Date.parse(k.first)).filter(t => !Number.isNaN(t)).sort((a, b) => a - b);
   let peak = 0;
   for (const [i, t] of ts.entries()) peak = Math.max(peak, ts.slice(i).filter(u => u - t < KEEPERS_WINDOW_MS).length);
-  return { keepers, peak };
+  return { keepers, woke: keepers.length - counted.length, peak };
 }
 /**
  * What a session's room rows nest (room-chat on: each row's only child its keeper): the subagents whose parent is a

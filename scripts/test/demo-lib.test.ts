@@ -208,6 +208,15 @@ test('transcripts rowKeepers and modelText: a row that respawns its keeper past 
   assert.deepEqual([rowKeepers(all, row, 'vole-7874').keepers.length, rowKeepers(all, row, 'vole-7874').peak], [7, 6]);
   assert.ok(rowKeepers(all, row, 'vole-7874').peak > KEEPERS_MAX);
   assert.deepEqual(row.modelText, ["I've started the background keeper again"]);
+  // 0.8.0-beta.2: a keeper whose hold ended on a WAKE (a line for the row) did its job; its successor is not counted
+  const hold = (id: string, s: number, res: string) => line({ type: 'assistant', timestamp: at(s), message: { content: [{ type: 'tool_use', id, name: 'mcp__plugin_sub-human_room__hold', input: { room: 'vole-7874', take: true } }] } })
+    + line({ type: 'user', timestamp: at(s + 1), message: { content: [{ type: 'tool_result', tool_use_id: id, content: res }] } });
+  for (let i = 0; i < 7; i++) put(`k${i}`, { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(2 + i * 60), message: { content: 'keep: vole-7874' } }), hold(`h${i}`, 3 + i * 60, 'WAKE: a new line in room vole-7874. End now.'));
+  all = subagents(d);
+  row = all.find(x => x.id === 'row');
+  assert.ok(row);
+  const k = rowKeepers(all, row, 'vole-7874');
+  assert.deepEqual([k.keepers.length, k.woke, k.peak], [7, 6, 1]);
 });
 
 test('demo.sh: 0.6.0 rows: no holds document, each seat\'s row waited on, the objection mode opt-in', () => {

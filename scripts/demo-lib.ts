@@ -185,7 +185,8 @@ async function typeHuman(session: string, text: string): Promise<void> {
   const ds = keyDelays(text);
   const chars = [...text];
   for (const [i, ch] of chars.entries()) {
-    tmux('send-keys', '-c', c, '-l', '-t', tgt(session), '--', ch);
+    // a lone ";" argument is tmux's command separator (run bison-8521 typed "paging the" for "paging; the"): escape it
+    tmux('send-keys', '-c', c, '-l', '-t', tgt(session), '--', ch === ';' ? '\\;' : ch);
     await sleep(ds[i] ?? 0);
   }
 }

@@ -521,14 +521,14 @@ S2_ssh() {
 # The people's scripted words. The checks compare the log against them byte for byte: demo.sh writes them into
 # screens/run.json ("words"; checks/context.ts reads them there, alice and bob's are its defaults).
 if [ "$FILM" = 1 ]; then
-  SAY3="I'll do the store side of paging; the HTTP side is up for grabs"
+  SAY3="I'll do the store side of paging, and the HTTP side is up for grabs"
   ASK3="ask $SEAT_A's Claude how createTask in store.js picks ids. just ask, change nothing"
   PLAN4="let's write a room plan for cursor paging on GET /tasks: $SEAT_A does the store, I do the HTTP side. you draft it"
   NOTE5='a garbled cursor like `after=zzz` must 400, not 500 — add a test for it'
   EDIT5A="update the room plan with my note: a garbled cursor must 400, with a test for it"
   EDIT5B="update the room plan: the HTTP side returns {items, nextCursor}, default 20, max 50"
 else
-  SAY3="I'll take the handler in src/server.js; the parser tests are up for grabs"
+  SAY3="I'll take the handler in src/server.js, and the parser tests are up for grabs"
   ASK3="ask $SEAT_A's Claude how createTask in src/store.js picks ids. just ask, change nothing"
   PLAN4="let's write a room plan for cursor paging on GET /tasks: ?limit&after, opaque cursor, newest first. you draft it"
   NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
