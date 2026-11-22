@@ -45,13 +45,14 @@ import * as s08 from './checks/s08-resilience.ts';
 import * as s09 from './checks/s09-claude-typing.ts';
 import * as s09b from './checks/s09b-multiline.ts';
 import * as s11 from './checks/s11-remote.ts';
+import * as s12 from './checks/s12-assistant.ts';
 import * as s10 from './checks/s10-leave.ts';
 import * as runMetrics from './checks/run-metrics.ts';
 
 export { panelRows, statusLine } from './lib/panes.ts'; // kept for callers of the old exports
 
-export const SCENES: readonly SceneModule[] = [s01, s02, s03, s04, s05, s06, s06b, s07, s08, s09, s09b, s11, s10, runMetrics];
-export const ORDER = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S6b', 'S7', 'S8', 'S9', 'S9b', 'S11', 'S10'];
+export const SCENES: readonly SceneModule[] = [s01, s02, s03, s12, s04, s05, s06, s06b, s07, s08, s09, s09b, s11, s10, runMetrics];
+export const ORDER = ['Metrics', 'S1', 'S2', 'S3', 'S12', 'S4', 'S5', 'S6', 'S6b', 'S7', 'S8', 'S9', 'S9b', 'S11', 'S10'];
 
 /** One check's verdict in checks.json. */
 export interface CheckResult {

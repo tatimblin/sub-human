@@ -1,9 +1,8 @@
 // S8: resilience: /clear keeps rows; /exit + --continue brings the row back with no prompt; the room still reaches bob
-// TODO(0.8.0 Phase 3, not in the gate): with room-chat on, alice's words after the resume are drawn in bob's room row
-// (transcripts.ts drawnIn), not as a chat row in his main; the last check still reads main.
 import * as metrics from '../metrics.ts';
 import { panelRows } from '../lib/panes.ts';
 import { esc } from '../lib/io.ts';
+import { drawnIn, isChatRow } from './transcripts.ts';
 import type { Ctx, Det } from './context.ts';
 import type { Members } from '../../plugin/sub-human/lib/room/types.ts';
 
@@ -32,11 +31,15 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     ev = `${call ? `an Agent call ${call.timestamp?.slice(11, 19)}` : 'no Agent call'}; ${prompts.length} prompt(s) from bob; rows ${b2.map(r => r.line).join(' | ') || 'none'}`;
   }
   det('bob\'s room row is back with no prompt and no model turn (the hooks module spawns it), no duplicate rows', ok, ev);
-  const say = log.find(e => e.kind === 'say' && e.from === 'alice' && e.via === 'human' && back && e.id > back.id);
-  // the tail child came back with the resumed session: alice's words reach bob (a chat row and his Claude's copy)
+  const say = log.find(e => e.kind === 'say' && e.from === 'alice' && e.via === 'human' && e.text === x.DEMO.back8 && back && e.id > back.id);
+  // the tail child came back with the resumed session: alice's words (naming nobody) reach bob: room-chat on, drawn in
+  // his room row (the resumed one, or the one spawned anew); off, a chat row in his main; and his Claude's copy
+  const want = `alice: ${say?.text}`;
+  const agents = x.seatAgents('bob').filter(a => a.first >= x.runStart);
+  const chat = agents.some(a => isChatRow(a, code));
   const after = say ? x.entries('bob').filter(e => e.timestamp !== undefined && e.timestamp > say.at) : [];
-  const rows = after.filter(e => metrics.isChatNotice(e) && e.content === `sub-human: alice: ${say?.text}`);
-  const copies = after.filter(e => metrics.isPull(e) && x.textOf(e.message?.content).includes(String(say?.text)));
-  det('The room still reaches bob after the resume (his tail child is back)', rows.length >= 1 && copies.length >= 1,
-    say ? `${x.fmt(say)} → ${rows.length} chat row(s) and ${copies.length} isMeta copy(ies) in bob's transcript` : 'no alice @room after the resume');
+  const rows = !say ? [] : chat ? drawnIn(agents, code).filter(l => l.at >= say.at && l.text.trim() === want) : after.filter(e => metrics.isChatNotice(e) && e.content === `sub-human: ${want}`);
+  const c = say ? x.copiesOf('bob', want, say.at) : { pulls: 0, held: 0, prompted: false };
+  det(`The room still reaches bob after the resume (his tail child is back): ${chat ? 'drawn in his room row' : 'a chat row'}, his Claude's copy`, rows.length >= 1 && (c.pulls + c.held >= 1 || !c.prompted),
+    say ? `${x.fmt(say)} → ${rows.length} ${chat ? 'line(s) drawn in bob\'s row' : 'chat row(s)'}; copies ${c.pulls} isMeta, ${c.held} held${c.pulls + c.held === 0 && !c.prompted ? ' (none yet: no prompt of bob\'s since)' : ''}` : `no alice @room "${x.DEMO.back8}" after the resume`);
 }

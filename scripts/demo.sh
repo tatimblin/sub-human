@@ -27,7 +27,7 @@
 #                   Checks run at the end; their verdict goes in run.json.
 #   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones), stop a capture and the film's sshd
 #
-# Seats: SEAT_A opens the room, SEAT_B joins: alice and bob (--film: tristan and jess). S6–S9, S9b and S11 never run
+# Seats: SEAT_A opens the room, SEAT_B joins: alice and bob (--film: tristan and jess). S6–S9, S9b, S11 and S12 never run
 # in --film and keep alice and bob.
 # The room's Claude has no tmux seat: the first /sub-human starts it as a `claude --bg` job (claude.CODE). Its "pane" in
 # the captures is `claude logs <job>` running in a tmux session sh-claude (read-only: never typed into). Nothing is ever typed into the room's Claude, except in S9, where a viewer runs
@@ -40,7 +40,7 @@
 #           S11's carol has her own home, SUB_HUMAN_HOME=/tmp/sh-demo/home2: another machine, on this one.
 # screens/run.json lists the scenes this run planned ({scenes, partial}; a resume adds to it): checks.ts skips the
 # checks of scenes no invocation planned, and still fails a planned scene with no evidence.
-# Scenes: S1–S9, S9b (a multi-line post stays nested), S11 (a seat from a second home over the pipe link), S10
+# Scenes: S1–S9, S9b (a multi-line post stays nested), S12 (your Claude answers for you; runs after S3), S11 (a seat from a second home over the pipe link), S10
 # (S11 runs before S10, which closes the room).
 # Waits: every wait is recorded in screens/waits.jsonl. A wait the scene depends on (`need …`) aborts the scene
 # on timeout: the panes are snapped as "aborted", the run stops and prints how to resume (--from SCENE). Settles
@@ -413,12 +413,7 @@ show_room() {
   need wait_pane "$s" "^\s*⎿\s+$o( \([^)]*\))?(, [^·]*)? here\b|$(here_line "$o")" 15 --what "$s's room row (or status line) names \"$o here\"" || return 1
   mkdir -p "$SNAP_DIR/state/$SCENE"; $LIB pane "sh-$s" > "$SNAP_DIR/state/$SCENE/panel-$s.txt"
   sleep 2   # the look (no paint wait: the row's view keeps a live spinner and token count)
-  need $LIB select-row "sh-$s" main --key Up || return 1
-  keys "$s" Enter
-  need wait_pane "$s" "─ @?$(room) ─" 10 --absent --what "$s's room view closed" || return 1
-  need wait_pane "$s" "^❯\s+[⏺◯●]\s+main(\s|$)" 5 --what "$s's panel cursor stays on main" || return 1
-  keys "$s" Up
-  need wait_pane "$s" "^❯\s+(└\s*)?[⏺◯●]\s" 5 --absent --what "$s's focus is back on the prompt" || return 1
+  row_close "$s" || return 1   # ↓ from the view's prompt box (↑ there recalls a prompt), ↑ from the panel
 }
 
 # ---------- scenes ------------------------------------------------------------------------------
@@ -526,14 +521,14 @@ S2_ssh() {
 # The people's scripted words. The checks compare the log against them byte for byte: demo.sh writes them into
 # screens/run.json ("words"; checks/context.ts reads them there, alice and bob's are its defaults).
 if [ "$FILM" = 1 ]; then
-  SAY3="$SEAT_B, can you take the HTTP side of paging? I'll do the store"
+  SAY3="I'll do the store side of paging; the HTTP side is up for grabs"
   ASK3="ask $SEAT_A's Claude how createTask in store.js picks ids. just ask, change nothing"
   PLAN4="let's write a room plan for cursor paging on GET /tasks: $SEAT_A does the store, I do the HTTP side. you draft it"
   NOTE5='a garbled cursor like `after=zzz` must 400, not 500 — add a test for it'
   EDIT5A="update the room plan with my note: a garbled cursor must 400, with a test for it"
   EDIT5B="update the room plan: the HTTP side returns {items, nextCursor}, default 20, max 50"
 else
-  SAY3="$SEAT_B, can you take the parser tests? handler's in src/server.js"
+  SAY3="I'll take the handler in src/server.js; the parser tests are up for grabs"
   ASK3="ask $SEAT_A's Claude how createTask in src/store.js picks ids. just ask, change nothing"
   PLAN4="let's write a room plan for cursor paging on GET /tasks: ?limit&after, opaque cursor, newest first. you draft it"
   NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
@@ -545,6 +540,12 @@ ROW7='row check: "exact" bytes — 50/page & more'
 # S2's line A types into the room row (room-chat on): it names nobody and asks nothing, so it wakes no Claude
 ROW2='row check: the paging notes are in docs/paging.md'
 REPLY3="sure, once we've agreed how paging works"
+# S12 (room-chat on): alice in her row asks bob a fact (his Claude answers for him, "bob's Claude: …"), then an opinion
+# (his Claude leaves it for him); bob answers it in his row himself. Outside --film the seats are no git checkouts, so
+# the fact is one in the code (src/server.js listens on 3000), not a branch
+FACT12="bob, which port does the server in src/server.js listen on?"
+OPINION12="bob, do you prefer cursor or offset paging?"
+ANSWER12="cursor: offsets skip tasks when new ones arrive"
 DWELL5="400"   # S5's latest version: the page with A's note (in his Claude's words)
 
 S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
@@ -553,15 +554,20 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   mark talk "$a asks $b in the room, in plain words"
   submit "$a" "@room $SAY3"
   need wait_log --kind say --from "$a" --via human --after "$before" --timeout 30 || return 1
-  wait_pane "$a" "✓ sent" 15
-  # the first words of it (no regex characters in them)
-  need wait_pane "$b" "$a: ${SAY3:0:30}" 60 --what "$b's pane shows $a's exact words as a chat line" || return 1
+  # the first words of it (no regex characters in them): room-chat on, drawn in B's room row (it names nobody and
+  # asks nothing: no Claude is woken); off, a chat line in B's main pane
+  if [ "$($LIB row-kind "$b")" = chat ]; then
+    need $LIB wait-row-line "$b" "^$a: ${SAY3:0:30}" --timeout 60 --what "$b's room row draws $a's exact words" || return 1
+  else
+    need wait_pane "$b" "$a: ${SAY3:0:30}" 60 --what "$b's pane shows $a's exact words as a chat line" || return 1
+  fi
   need $LIB wait-idle "sh-$b" --timeout 90 || return 1
   settle "$a"
-  snap "$a posts with @room: one receipt line for $a (✓ sent), $b's pane shows \"$a: …\" with the exact words"
+  snap "$a posts with @room: one receipt line for $a (✓ sent); $b's room row draws \"$a: …\" with the exact words, no Claude woken"
   mark reply "$b answers: once they agree how paging works"
   submit "$b" "@room $REPLY3"
   need wait_log --kind say --from "$b" --via human --after "$before" --timeout 30 || return 1
+  [ "$($LIB row-kind "$a")" = chat ] && { need $LIB wait-row-line "$a" "^$b: ${REPLY3:0:20}" --timeout 60 --what "$a's room row draws $b's reply" || return 1; }
   need $LIB wait-idle "sh-$a" --timeout 90 || return 1
   mark claudes "$b's Claude asks $a's Claude directly"
   submit "$b" "$ASK3"
@@ -841,12 +847,17 @@ S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows re
   settle alice bob
   snap "bob is back with --continue: the hooks module brings his room row back with no typing"
   local b2; b2=$($LIB log-max)
-  submit alice "@room bob, are you back? the parser tests are done"
+  # a line naming nobody and asking nothing (S12 is the naming one): room-chat on, drawn in bob's room row
+  submit alice "@room $BACK8"
   need wait_log --kind say --from alice --via human --after "$b2" --timeout 30 || return 1
-  need wait_pane bob "alice: bob, are you back" 60 --what "alice's words still reach bob's pane after the resume (the tail child came back)" || return 1
+  if [ "$($LIB row-kind bob)" = chat ]; then
+    need $LIB wait-row-line bob "^alice: ${BACK8:0:24}" --timeout 60 --what "alice's words still reach bob's room row after the resume (the tail child came back)" || return 1
+  else
+    need wait_pane bob "alice: ${BACK8:0:24}" 60 --what "alice's words still reach bob's pane after the resume (the tail child came back)" || return 1
+  fi
   need $LIB wait-idle sh-bob --timeout 90 || return 1
   settle alice
-  snap "After the resume the room still reaches bob: alice's words as a chat line"
+  snap "After the resume the room still reaches bob: alice's words in his room row"
 }
 
 S9() { # the room's Claude refuses typed input: a viewer attaches and types one line
@@ -868,6 +879,7 @@ S9() { # the room's Claude refuses typed input: a viewer attaches and types one 
 
 # The S9b post: later lines that read like a decision and a sign-off. Typed as one paste with real newlines
 # (paste-buffer -r keeps LF: the prompt box takes them as line breaks, Enter then submits the whole prompt).
+BACK8="the parser tests are done, all green"
 MULTI9b=$'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal'
 
 S9b() { # a multi-line @room post: its later lines show nested under alice ("  │ "), never as bare room lines
@@ -875,12 +887,20 @@ S9b() { # a multi-line @room post: its later lines show nested under alice ("  �
   need $LIB wait-idle sh-alice --timeout 60 || return 1
   submit alice "@room $MULTI9b"
   need wait_log --kind say --from alice --via human --after "$before" --text-has "notes from the paging spike" --timeout 30 || return 1
-  wait_pane alice "✓ sent" 15
-  need wait_pane bob "alice: notes from the paging spike:" 60 --what "bob's pane shows the post's first line under alice's name" || return 1
-  need $LIB wait-idle sh-bob --timeout 90 || return 1
-  mkdir -p "$SNAP_DIR/state/S9b"; $LIB pane sh-bob > "$SNAP_DIR/state/S9b/pane-bob.txt"
+  mkdir -p "$SNAP_DIR/state/S9b"
+  if [ "$($LIB row-kind bob)" = chat ]; then   # room-chat on: drawn in bob's room row; the pane is his open row view
+    need $LIB wait-row-line bob "^alice: notes from the paging spike:" --timeout 60 --what "bob's room row draws the post's first line under alice's name" || return 1
+    row_open bob || return 1
+    need wait_pane bob "alice: notes from the paging spike:" 15 --what "bob's open row view shows the post" || return 1
+    $LIB pane sh-bob > "$SNAP_DIR/state/S9b/pane-bob.txt"
+    row_close bob || return 1
+  else
+    need wait_pane bob "alice: notes from the paging spike:" 60 --what "bob's pane shows the post's first line under alice's name" || return 1
+    need $LIB wait-idle sh-bob --timeout 90 || return 1
+    $LIB pane sh-bob > "$SNAP_DIR/state/S9b/pane-bob.txt"
+  fi
   settle alice bob
-  snap "alice posts three lines with @room; bob's pane nests lines 2 and 3 under \"alice: …\" (│), so they can't pass as a decision or a sign-off"
+  snap "alice posts three lines with @room; bob's room row nests lines 2 and 3 under \"alice: …\" (│), so they can't pass as a decision or a sign-off"
 }
 
 S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
@@ -916,6 +936,49 @@ S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
 # S11: what carol says, and the plan alice's Claude writes and asks her alone to sign off on
 SAY11="hello from the second home"
 PLAN11=$'# Carol reviews the parser tests\n\n1. carol reads the parser tests\n2. she adds one case for an empty body\n'
+
+S12() { # your Claude is your assistant (room-chat on): alice asks bob in her row; bob's Claude answers the fact for
+  # him ("bob's Claude: …" in alice's row), leaves the opinion for him (it waits in his row, "1 new" on his status line),
+  # and bob answers it in his row himself ("bob: …" in alice's row). No model step in either row.
+  [ "$($LIB row-kind alice)" = chat ] || { record "S12 needs room-chat (the row is the chat)" fail; return 0; }
+  mkdir -p "$SNAP_DIR/state/S12"
+  local before; before=$($LIB log-max)
+  mark ask "alice asks bob a fact in her row; his Claude answers for him"
+  row_open alice || return 1
+  submit alice "$FACT12"
+  need wait_log --kind say --from alice --via human --after "$before" --timeout 30 --what "alice's question is posted" || return 1
+  # bob's main Claude is woken at its turn's end; when it is sure of the fact it posts one line (behavioural: the check warns)
+  $LIB wait-log --kind say --from bob --via agent --after "$before" --timeout 180 --what "bob's Claude answers the fact for bob"
+  $LIB wait-row-line alice "^bob's Claude( \\([^)]*\\))?: " --timeout 30 --save "$SNAP_DIR/state/S12/fact-alice.txt" --what "alice's row draws bob's Claude's answer"
+  need $LIB wait-idle sh-bob --timeout 120 --quiet 3 || return 1
+  # bob looks at his row (its unread count starts over), so the opinion is the one new line
+  row_open bob || return 1
+  row_close bob || return 1
+  local mid; mid=$($LIB log-max)
+  mark opinion "alice asks bob's opinion; his Claude leaves it for him"
+  submit alice "$OPINION12"
+  need wait_log --kind say --from alice --via human --after "$mid" --timeout 30 --what "alice's opinion question is posted" || return 1
+  need $LIB wait-row-line bob "^alice: ${OPINION12:0:24}" --timeout 30 --what "bob's row draws alice's opinion question" || return 1
+  # the wake's prompt row in bob's main, then his Claude's turn ends (it writes nothing to the room: behavioural)
+  need wait_pane bob "${OPINION12:0:24}" 60 --what "bob's Claude is woken with the question (its prompt row in main)" || return 1
+  need $LIB wait-idle sh-bob --timeout 120 --quiet 5 || return 1
+  need wait_pane bob "^\s*(⚠ )?(sub-human: )?$(room) · .*\b[0-9]+ new\b" 20 --what "bob's status line counts the new line (the check wants exactly 1)" || return 1
+  save_pane bob "status-bob"
+  mark answer "bob answers in his row himself"
+  row_open bob || return 1
+  need wait_pane bob "^\s*alice: ${OPINION12:0:24}" 15 --what "bob's open row view shows the question" || return 1
+  save_pane bob "row-bob"
+  local ans; ans=$($LIB log-max)
+  submit bob "$ANSWER12"
+  need wait_log --kind say --from bob --via human --after "$ans" --timeout 30 --what "bob's answer is posted" || return 1
+  row_close bob || return 1
+  need $LIB wait-row-line alice "^bob: ${ANSWER12:0:20}" --timeout 30 --what "alice's row draws bob's answer" || return 1
+  need wait_pane alice "^\s*bob: ${ANSWER12:0:20}" 15 --what "alice's open row view shows bob's answer" || return 1
+  save_pane alice "row-alice"
+  row_close alice || return 1
+  settle alice bob
+  snap "alice asks bob in her row: bob's Claude answers the fact as bob's Claude, leaves the opinion for bob (1 new in his row), and bob answers it himself"
+}
 
 S11() { # remote: carol joins from a second home (another machine, on this one) over the pipe link; @room; a signoff
   local before; before=$($LIB log-max)
@@ -979,8 +1042,8 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
   snap "carol exits: the host logs her leave; her link daemon stops on its own once no seat of her home is left"
 }
 
-ALL=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S9b S11 S10)
-# --film: the story only (S6–S9, S9b and S11 show mechanics; S6b builds what was agreed)
+ALL=(S1 S2 S3 S12 S4 S5 S6 S7 S8 S9 S9b S11 S10)
+# --film: the story only (S6–S9, S9b, S11 and S12 show mechanics; S6b builds what was agreed)
 [ "$FILM" = 1 ] && ALL=(S1 S2 S3 S4 S5 S6b S10)
 
 # ---------- main --------------------------------------------------------------------------------
@@ -1011,7 +1074,7 @@ done
 fresh=(); [ "$RESET" = 1 ] && fresh=(--fresh)
 remote=(); [ "$REMOTE" = 1 ] && remote=(--remote "$SEAT_B=$LAPTOP/home")
 $LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" --seats "$SEAT_A $SEAT_B" ${remote[@]+"${remote[@]}"} ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
-$LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5" edit5a "$EDIT5A" edit5b "$EDIT5B" row7 "$ROW7" row2 "$ROW2"
+$LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5" edit5a "$EDIT5A" edit5b "$EDIT5B" row7 "$ROW7" row2 "$ROW2" back8 "$BACK8" fact12 "$FACT12" opinion12 "$OPINION12" answer12 "$ANSWER12"
 # the mode S5 objects from (checks/s05-consent.ts): set by --object-mode; a fresh run without it records none
 { [ -n "$OBJECT_MODE" ] || [ "$RESET" = 1 ]; } && $LIB run-words "$SNAP_DIR/run.json" objectMode "$OBJECT_MODE"
 

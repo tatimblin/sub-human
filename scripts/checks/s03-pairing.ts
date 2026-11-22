@@ -1,8 +1,10 @@
-// S3: pairing with no plan: @room both ways, then Claude-to-Claude SendMessage
-// TODO(0.8.0 Phase 2/3, not in the gate): SAY3 names B ("bob, …"), so it now wakes B's Claude, and with room-chat on
-// A's words are drawn in B's room row, not as a chat row in main (drawnIn); this scene's checks still encode 0.7.0.
+// S3: pairing with no plan: @room both ways, then Claude-to-Claude SendMessage. A's line names nobody and asks nothing
+// (0.8.0 Phase 2: a line naming a person wakes their Claude; that is S12's), so it is plain group chat: drawn in B's
+// room row (Phase 3; off, a chat row in B's main), one copy for B's Claude, no Claude woken
 import { clip } from '../lib/io.ts';
+import { drawnIn, isChatRow } from './transcripts.ts';
 import type { Ctx, Det } from './context.ts';
+import type { LogEntry } from './log.ts';
 
 export const scene = 'S3';
 
@@ -13,23 +15,18 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const anyA = log.find(y => y.kind === 'say' && y.from === A && y.via === 'human');
   det(`${A}'s @room text byte-exact, via=human`, !!e, e ? `#${e.id} === typed (${Buffer.byteLength(String(e.text))} bytes)` : `first ${A} say: ${x.fmt(anyA)}`);
   const t = x.cap('S3', A) || '';
-  // the session's first receipt names the room; a later one is "⏺ ✓ sent" (0.5.0-beta.24)
-  const receipt = `⏺ ✓ sent to room ${code} (Claude wasn't asked)`;
-  const rc = e && t.split('\n').some(l => l.trimEnd() === receipt || l.trimEnd() === '⏺ ✓ sent');
-  det(`One receipt line "${receipt}" (no id); no "Operation stopped by hook", no "blocked by hook"`, rc && !/stopped by hook|blocked by hook/.test(t) && !/✓ posted|as #\d/.test(t), rc ? `receipt for #${e.id} in ${x.capName('S3', A)}` : `no receipt in ${x.capName('S3', A)}`);
+  // the quiet receipt: the person's own "❯ @room …" row is it (the stop row is drawn blank, its words go to the debug
+  // log: mod/core/prompt.ts isSent); no hook frame, no id
+  const own = !!e && t.split('\n').some(l => l.trim() === `❯ @room ${e.text}`);
+  det(`${A}'s own "@room …" row is the receipt: no receipt text, no "Operation stopped by hook", no "blocked by hook", no id`, own && !/stopped by hook|blocked by hook/.test(t) && !/✓ posted|as #\d/.test(t),
+    own ? `"❯ @room …" for #${e.id} in ${x.capName('S3', A)}, no frame` : `no "❯ @room ${clip(e?.text, 40)}" row in ${x.capName('S3', A)}`);
   const turn = x.noModelTurn(A, e);
   det(`${A}'s @room ran no model turn`, turn.pass, turn.evidence);
-  // a person's words to the room are group chat: bob sees them as a row, his Claude gets a copy, no wake
-  const want = e ? `${A}: ${e.text}` : '';
-  const bes = x.inSpan(x.entries(B), s);
-  const notes = x.chatIn(bes).filter(y => e && y.content === `sub-human: ${want}`);
-  const pulls = x.pullIn(bes).filter(y => e && x.textOf(y.message?.content).split('\n').includes(want));
-  det(`${B} gets ${A}'s exact words once: a chat row "${A}: <the words>" for ${B}, one copy for ${B}'s Claude`, notes.length === 1 && pulls.length === 1,
-    `${notes.length} chat row(s) and ${pulls.length} isMeta copy(ies) in ${B}'s transcript carrying "${clip(want, 70)}" verbatim`);
-  const woke = x.wakeIn(bes).filter(y => e && x.textOf(y.message?.content).includes(String(e.text)));
-  const ct = notes[0] ? x.chatTurn(B, notes[0]) : null;
-  det(`${A}'s words cost ${B}'s Claude no model turn (no wake, nothing to repeat)`, woke.length === 0 && ct && !ct.woke,
-    `${woke.length} wake(s) carrying #${e ? e.id : '?'}; ${ct ? ct.evidence : 'no chat row'}`);
+  // a person's words to the room are group chat, both ways: the other sees them once, their Claude gets one copy,
+  // nothing wakes it
+  const r = log.find(y => y.kind === 'say' && y.from === B && y.via === 'human' && y.text === DEMO.reply3);
+  chatLine(x, det, A, B, e);
+  chatLine(x, det, B, A, r);
   const sm = x.toolUses(x.inSpan(x.entries(B), s), 'SendMessage').filter(c => String((c.input || {}).to || '') === `${A}.${code}`);
   det(`${B}'s Claude calls SendMessage to ${A}.${code}`, sm.length >= 1, sm.length ? `SendMessage {to: "${sm[0]?.input?.to}", message: "${clip(sm[0]?.input?.message || sm[0]?.input?.content, 80)}"}` : `no SendMessage to ${A}`);
   const pe = x.peerIn(x.inSpan(x.entries(A), s), B);
@@ -43,4 +40,26 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   // zero is the contract (the room's Claude wakes only when addressed), not a budget: deterministic
   const n = x.roomClaudeTurns(s);
   det('The room\'s Claude was not woken', n === 0, `${n} claude assistant messages in S3 (${s ? s.from.slice(11, 19) + '–' + s.to.slice(11, 19) : 'no window'})`);
+}
+
+/** `from`'s @room line `e` as `to` gets it: once as a chat line (room-chat on: drawn in to's room row; off: a chat row in
+ * to's main), one copy for to's Claude, no wake and no model turn of to's for it. */
+function chatLine(x: Ctx, det: Det, from: string, to: string, e: LogEntry | undefined): void {
+  const s = x.span('S3');
+  const want = e ? `${from}: ${e.text}` : '';
+  const agents = x.seatAgents(to).filter(a => a.first >= x.runStart);
+  const chat = agents.some(a => isChatRow(a, x.code));
+  const tes = x.inSpan(x.entries(to), s);
+  const mains = x.chatIn(tes).filter(y => e && y.content === `sub-human: ${want}`);
+  const rows = chat ? drawnIn(agents, x.code).filter(l => e && l.text.trim() === want && l.at >= e.at) : [];
+  const c = e ? x.copiesOf(to, want, e.at) : { pulls: 0, held: 0, prompted: false };
+  const copies = c.pulls + c.held;
+  const lineOk = chat ? rows.length === 1 && mains.length === 0 : mains.length === 1;
+  det(`${to} gets ${from}'s exact words once: ${chat ? `drawn in ${to}'s room row` : `a chat row for ${to}`} "${from}: <the words>", one copy for ${to}'s Claude`,
+    !!e && lineOk && (copies === 1 || (copies === 0 && !c.prompted)),
+    `${chat ? `${rows.length} line(s) drawn in ${to}'s row, ${mains.length} chat row(s) in main` : `${mains.length} chat row(s)`} carrying "${clip(want, 70)}" verbatim; copies for ${to}'s Claude: ${c.pulls} isMeta, ${c.held} held${copies === 0 && !c.prompted ? ` (none yet: ${to} has had no prompt since, so a held copy has not ridden)` : ''}`);
+  const woke = x.wakeIn(tes).filter(y => e && x.textOf(y.message?.content).includes(String(e.text)));
+  const ct = !chat && mains[0] ? x.chatTurn(to, mains[0]) : null;
+  det(`${from}'s words cost ${to}'s Claude no model turn (no wake, nothing to repeat)`, !!e && woke.length === 0 && (chat || (!!ct && !ct.woke)),
+    `${woke.length} wake(s) carrying #${e ? e.id : '?'}${ct ? `; ${ct.evidence}` : chat ? '; drawn by the module in the row (no model)' : ''}`);
 }

@@ -252,8 +252,12 @@ export function transcripts({ roomClaudeSid, projects }: { roomClaudeSid: string
       const es = jsonl<TEntry>(f);
       const q = es.find(x => x.type === 'queue-operation' && x.operation === 'remove' && x.reason === 'dropped_by_hook' && typeof x.content === 'string' && x.content.endsWith(String(e.text)));
       if (q) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: queued prompt removed by the hook (#${e.id}); it never reached the model` };
-      // the receipt carries no id: the first "✓ sent" system line at or after the entry (within 10 s)
-      const i = es.findIndex(x => x.type === 'system' && typeof x.content === 'string' && /✓ sent/.test(x.content) && !!x.timestamp && x.timestamp >= new Date(Date.parse(e.at) - 2000).toISOString() && x.timestamp <= new Date(Date.parse(e.at) + 10_000).toISOString());
+      // the receipt carries no id: the first receipt at or after the entry (within 10 s): a "✓ sent" system line (before
+      // the quiet release), or the model's copy of the stop, "sub-human: @room message sent. No reply." (mod/core/prompt.ts
+      // RECEIPT_FOR_MODEL; the drawn stop row is QUIET_ROW, the person's own row being the receipt)
+      const near = (t: string | undefined): boolean => !!t && t >= new Date(Date.parse(e.at) - 2000).toISOString() && t <= new Date(Date.parse(e.at) + 10_000).toISOString();
+      const i = es.findIndex(x => near(x.timestamp) && ((x.type === 'system' && typeof x.content === 'string' && /✓ sent/.test(x.content))
+        || (x.type === 'user' && !!x.isMeta && /^sub-human: @room message sent\b/.test(textOfContent(x.message?.content)))));
       if (i < 0) continue;
       for (const x of es.slice(i + 1)) {
         // the next prompt: a typed one, a wake, or a peer message (written isMeta, origin peer)
@@ -264,10 +268,23 @@ export function transcripts({ roomClaudeSid, projects }: { roomClaudeSid: string
     }
     return { pass: false, evidence: `no hook receipt for #${e.id} in ${seat}'s transcripts` };
   }
+  /**
+   * The copies for seat's Claude of room text `want` (a whole line of it) after `at`: isMeta rows (pulls) and contexts
+   * held for its next prompt (mod/deliver.ts holdPullEvent: "room since your last turn"), and whether the seat has had a
+   * main prompt since (`prompted`: false, a held copy has not ridden yet, so none can be seen).
+   */
+  function copiesOf(seat: string, want: string, at: string): { pulls: number, held: number, prompted: boolean } {
+    const es = entries(seat).filter(e => !e.isSidechain && e.timestamp !== undefined && e.timestamp > at);
+    const has = (t: string): boolean => t.split('\n').some(l => l === want || l.endsWith(want));
+    const pulls = es.filter(e => metrics.isPull(e) && has(textOfContent(e.message?.content))).length;
+    const held = es.filter(e => e.attachment && e.attachment.type === 'hook_additional_context' && [e.attachment.content].flat().some(c => typeof c === 'string' && has(c))).length;
+    const prompted = es.some(e => e.type === 'user' && !isToolResults(e) && (!e.isMeta || metrics.trigger(e) === 'plugin'));
+    return { pulls, held, prompted };
+  }
   /** A seat's subagents ('claude': the room session's, in whichever project dir its session is). */
   const seatAgents = (seat: string): SubAgent[] => (seat === 'claude'
     ? seatFiles('claude').flatMap(f => subagents(path.dirname(f), roomClaudeSid))
     : subagents(paths.seatProjectDir(seat)));
-  return { seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn, pullIn, chatTurn, roomClaudeTurns, replyAfter, noModelTurn, rowUserText, rowReply, seatAgents };
+  return { seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn, pullIn, chatTurn, roomClaudeTurns, replyAfter, noModelTurn, rowUserText, rowReply, seatAgents, copiesOf };
 }
 

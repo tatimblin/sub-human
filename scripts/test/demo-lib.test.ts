@@ -226,8 +226,13 @@ test('demo.sh --film: the panel beat opens the room row and comes back with one 
   const sh = fs.readFileSync(DEMO_SH, 'utf8');
   const show = (/^show_room\(\) \{\n([\s\S]*?)\n\}/m.exec(sh) ?? [])[1] ?? '';
   assert.match(show, /select-row "sh-\$s" "\$\(room\)"/);
-  assert.match(show, /select-row "sh-\$s" main --key Up/);
-  assert.equal((show.match(/keys "\$s" Up/g) || []).length, 1);
+  assert.match(show, /row_close "\$s"/);
+  // row_close: onto main with ↓ from the view's prompt box (↑ there recalls a prompt) or ↑ from the panel, then one ↑
+  const close = (/^row_close\(\) \{\n([\s\S]*?)\n\}/m.exec(sh) ?? [])[1] ?? '';
+  assert.match(close, /local k=Down/);
+  assert.match(close, /&& k=Up/);
+  assert.match(close, /select-row "sh-\$1" main --key "\$k"/);
+  assert.equal((close.match(/keys "\$1" Up/g) || []).length, 1);
   assert.match(sh, /mark panel "Everyone in the room shows up in your agent panel"/);
   const s6b = (/^S6b\(\) \{\n([\s\S]*?)\n\}/m.exec(sh) ?? [])[1] ?? '';
   const prompts = [...s6b.matchAll(/submit "\$[ab]" "([^"]*)"/g)].flatMap(m => m[1] ?? []);
