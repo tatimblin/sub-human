@@ -813,7 +813,7 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   // the line and the PIN are pinned (the module's status line: no transcript row holds them); the notices say where
   assert.doesNotMatch(must(inv.say), new RegExp(`[0-9a-z]{39}`));
   assert.doesNotMatch(must(inv.say), /: \d{4}\b/);
-  assert.match(must(inv.say), /^Invite ready until \d\d:\d\d · line and PIN below the prompt$/, 'one line');
+  assert.match(must(inv.say), /^Invite ready until \d\d:\d\d$/, 'one line');
   // item 2 (D): the PIN first and short, then the line; nothing before it that costs width
   assert.match(must(inv.pinned).status, new RegExp(`^PIN \\d{4} · /sub-human join pipe:\\S+/${w.code}#[0-9a-z]{39}$`));
   assert.ok(must(inv.pinned).ms > 14 * 60_000 && must(inv.pinned).ms <= 15 * 60_000);

@@ -129,10 +129,10 @@ On the host, in a session that is in the room:
 ```
 
 ```
-sub-human: Invite ready until 14:05 · line and PIN below the prompt
+sub-human: Invite ready until 14:05
 ```
 
-That is the whole invite: one line. With the room's first invite over the web it can add the certificate's first wait (`The first connection to a new ts.net name can take ~20 s …`), the pointer to `--public` (off your tailnet) and, with `--public`, Funnel's warning that the name is public; and, over ssh, what would make their join fail (Remote Login off on this Mac). An invite works once, for 15 minutes. What to tell the other person:
+That is the whole invite: one line, with the line and its PIN under the prompt. With `--public`, the room's first invite adds Funnel's warning that the name is public; and, over ssh, what would make their join fail (Remote Login off on this Mac). An invite works once, for 15 minutes. What to tell the other person:
 
 - **The rules.** They type the PIN after the line. The line alone asks you on a card, the PIN alone gets nobody in, and 5 wrong PINs end the invite. The right PIN lets them in with no card: the room shows who joined, and `/sub-human who` their check and the kick.
 - **The install,** if they have no sub-human yet: the copied line carries it above the join line (below); or, in Claude Code there, `/plugin marketplace add tatimblin/sub-human`, then `/plugin install sub-human@sub-human`, and restart it.
@@ -238,7 +238,7 @@ For friends who have no SSH account on your machine. The host runs [Tailscale](h
 /sub-human invite --stop           # stop serving this room over the web
 ```
 
-The line is `/sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#SECRET`: the URL names the room, and the SECRET in its `#` fragment names this machine's listener key. The joiner types it with the PIN after it, as in [Joining](#joining-sub-human-join-line-pin). A tailnet invite ends with `Off your tailnet? /sub-human invite --public`; when a joiner's machine can't reach a ts.net name, their join says to ask you for an SSH line.
+The line is `/sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126#SECRET`: the URL names the room, and the SECRET in its `#` fragment names this machine's listener key. The joiner types it with the PIN after it, as in [Joining](#joining-sub-human-join-line-pin). For someone off your tailnet, `/sub-human invite --public`; when a joiner's machine can't reach a ts.net name, their join says to ask you for an SSH line.
 
 What happens:
 

@@ -187,12 +187,13 @@ test('no question in a session nobody types in (-p, the SDK)', async ($, on) => 
   expect(seen.prompts).toEqual([])
 })
 
-test('noise pass H: an invite that lapses unused tells its maker in one line', async ($, on) => {
+test('an invite that lapses unused leaves the status line; only the debug log says so (0.8.1)', async ($, on) => {
   const ref = 'c0ffee000005'
   const seen = world(on, { ref, noCard: true })
   await start($)
   await typed($, 'invite')
   await seen.advance(900_000)
-  await until(() => seen.logs.includes('invite expired; /sub-human invite for a new one'))
-  expect(seen.logs.filter(l => l.startsWith('invite expired')).length).toBe(1)
+  await until(() => debugLines.includes('invite expired; /sub-human invite for a new one'))
+  expect(debugLines.filter(l => l.startsWith('invite expired')).length).toBe(1)
+  expect(seen.logs.filter(l => /expired/.test(l))).toEqual([])
 })

@@ -47,28 +47,24 @@ function stub(t: TestContext, { up, mode = 'tailscale', fail = null, state = { r
   return calls;
 }
 
-test('invite: no way named and Tailscale up here: the tailnet (never Funnel), with the pointer to --public', t => {
+test('invite: no way named and Tailscale up here: the tailnet (never Funnel), with no pointer to --public (0.8.1)', t => {
   const w = new World({ alice: 'sleep' }, { t });
   const calls = stub(t, { up: true });
   const a = run(w, 'invite');
   assert.equal(a.kind, 'secret');
   assert.deepEqual(calls.web, [{ funnel: false }], 'Serve, not Funnel');
   assert.match(text(a), /^WEB tailscale\n/);
-  assert.ok(text(a).endsWith(`\n${inviteMod.OFF_TAILNET}`), text(a));
-  assert.equal(inviteMod.OFF_TAILNET, 'Off your tailnet? /sub-human invite --public');
+  assert.doesNotMatch(text(a), /Off your tailnet/, text(a));
   const p = pinnedOf(a);
   assert.ok(p, 'pinned for the module');
-  assert.ok(p.text.endsWith(`\n${inviteMod.OFF_TAILNET}`), 'the pinned text says it too');
-  if (p.cut !== undefined) assert.ok(p.cut.endsWith(`\n${inviteMod.OFF_TAILNET}`), 'and the cut one');
+  assert.doesNotMatch(p.text, /Off your tailnet/);
   assert.doesNotMatch(p.text, /PIN \d{4}/, 'the pinned text still holds no PIN');
-  // noise pass C: once per room
-  assert.doesNotMatch(text(run(w, 'invite')), /Off your tailnet/, 'the room\'s next invite leaves it out');
 });
 
-test('invite: --web is tailnet-only too (the pointer); --public is Funnel (none)', t => {
+test('invite: --web is tailnet-only too; --public is Funnel', t => {
   const w = new World({ alice: 'sleep' }, { t });
   stub(t, { up: false });
-  assert.ok(text(run(w, 'invite --web')).endsWith(inviteMod.OFF_TAILNET));
+  assert.match(text(run(w, 'invite --web')), /^WEB tailscale/);
   const calls = stub(t, { up: false, mode: 'funnel' });
   const pub = run(w, 'invite --public');
   assert.deepEqual(calls.web, [{ funnel: true }]);
