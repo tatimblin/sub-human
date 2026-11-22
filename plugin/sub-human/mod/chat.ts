@@ -55,8 +55,9 @@ export const chat: {
   /** the keeper ended on a WAKE: its next spawn is no death (not counted), and the lines it woke for may be a moment
    * behind (the tail's batch) */
   woke: boolean;
-  /** the row's turn that asked for its keeper last */
+  /** the row's turn that asked for its keeper last, and the one that asked again after a refused call */
   keeperTurn: string | null;
+  keeperRetry: string | null;
   /** rows no longer wanted: their next step ends them, with no keeper */
   gone: Set<string>;
   /** what the row's next text step draws, in order: a typed line (posted then) or a room line */
@@ -77,7 +78,7 @@ export const chat: {
   /** the row opened before who's here was known: the first here event draws it as the row's first line */
   rosterDue: boolean;
   unread: number;
-} = { row: null, woke: false, keeperTurn: null, gone: new Set(), waiting: [], lines: new Set(), quiet: new Set(), echo: new Set(), planAsks: [], keepers: [], modelHolds: 0, here: '', rosterDue: false, unread: 0 };
+} = { row: null, woke: false, keeperTurn: null, keeperRetry: null, gone: new Set(), waiting: [], lines: new Set(), quiet: new Set(), echo: new Set(), planAsks: [], keepers: [], modelHolds: 0, here: '', rosterDue: false, unread: 0 };
 
 /** The status line under main's prompt, or undefined (no row). */
 export const chatStatus = (): string | undefined => (chat.row ? rowStatus(chat.row.code, chat.here, chat.unread) : undefined);
@@ -88,6 +89,9 @@ export const quietCall = (id: string): void => { chat.quiet.add(id); };
 export const keeperOf = (list: readonly Pick<AgentInfo, 'type' | 'parentId' | 'status'>[], id: string): boolean =>
   list.some(a => a.type === KEEPER_AGENT && a.parentId === id && a.status === 'running');
 
+/** A keeper call's result that started no keeper: an error (auto mode's refusal: "…gave no verdict for Agent…", or its
+ * classifier's block). */
+const refused = (r: { text: string; isError: boolean } | undefined): boolean => !!r && (r.isError || /no verdict|denied|blocked/i.test(r.text));
 const nowOf = ($: EngineInterface): Promise<number> => $.clock.now().catch(() => Date.now());
 const autoMode = async ($: EngineInterface): Promise<boolean> => facts.of(await $.session.id()).permission_mode === 'auto';
 /** The status line again, unless an invite's line holds it (mod/deliver.ts). */
@@ -163,6 +167,19 @@ export function registerChat(on: On): void {
           chat.keepers = k.times;
           chat.keeperTurn = e.turnId;
           if (await autoMode($)) return yield* next(e); // auto mode denies a synthesized call: the row's model makes it
+          return yield* call(e, 'Agent', keeperCall(row.code));
+        }
+      }
+      // its keeper call this turn was refused (auto mode's classifier: "no verdict … Issue the action again once"): once
+      // more, within the cap, never twice in a turn; a call that started one ("Async agent launched") is left alone
+      if (chat.keeperTurn === e.turnId && chat.keeperRetry !== e.turnId && !keeperOf(await $.agent.list(), id)) {
+        const read = await $.session.messages({ agentId: id });
+        const result = (Array.isArray(read) ? read : []).findLast(x => x.toolResults?.length)?.toolResults?.at(-1);
+        const k = keeperStep(chat.keepers, await nowOf($));
+        if (refused(result) && k.spawn) {
+          chat.keepers = k.times;
+          chat.keeperRetry = e.turnId;
+          if (await autoMode($)) return yield* next(e);
           return yield* call(e, 'Agent', keeperCall(row.code));
         }
       }

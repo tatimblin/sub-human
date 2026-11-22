@@ -438,6 +438,8 @@ async function takeAsk($: EngineInterface): Promise<string | null> {
 /** $.store: the room-chat row's agent id by session id (mod/core/room-chat.ts keepRow), so a reload or a --resume
  * sends to it before a new row is spawned. */
 const CHAT_ROWS = 'chatRows';
+/** How long chatRow waits to look again at a wake row found idle with no keeper. */
+const ROW_IDLE_RECHECK_MS = 1000;
 /**
  * room-chat (mod/chat.ts answers the row): whether code's row is there for session sid (it runs, or idles with its
  * keeper), or woken now by a send (it died, or a --resume left it on disk: its step starts the keeper again). False:
@@ -457,6 +459,19 @@ async function chatRow($: EngineInterface, sid: string, code: string, list: read
   const id = chat.row.id;
   const me = list.find(a => a.id === id);
   if (me && (me.status === 'running' || keeperOf(list, id))) return true;
+  if (chat.row.wake) {
+    // a row nothing may send to, idle with no keeper (its keeper call was refused twice, or it was stopped): nothing
+    // would ever wake it again, so it is let go and a new one spawned (rowOnce's ledger bounds that: never a loop).
+    // Looked at again a moment later: a keeper ending on a WAKE leaves it so for a few ms before its turn starts
+    await $.clock.sleep(ROW_IDLE_RECHECK_MS).catch(() => {});
+    const again = await $.agent.list();
+    const now = again.find(a => a.id === id);
+    if (now && (now.status === 'running' || keeperOf(again, id))) return true;
+    chat.gone.add(id);
+    chat.row = null;
+    $.ui.log(`rows: room row ${code} had no keeper; a new one`, { to: 'debug' });
+    return false;
+  }
   if (!keeperStep(chat.keepers, await $.clock.now()).spawn) return true; // its keepers keep dying: left alone a while
   if (await chatSay($, id, chat.here || NOTHING)) return true;
   chat.row = null;

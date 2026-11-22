@@ -202,6 +202,37 @@ test('room-chat (Phase 4): "plan …" typed in the row is not posted; once the r
   expect(seen.model).toBe(0)
 })
 
+test('room-chat: a keeper call that was refused (auto mode\'s "no verdict") is made once more in that turn, never a third time', async ($, on) => {
+  const seen = world(on)
+  await start($)
+  await turn($)
+  expect(toolOf(await step($, 'row1', 0, 'tr'))?.name).toBe('Agent')
+  const refusal = 'The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one. Issue the action again once, as-is'
+  seen.messages = [{ role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'a', text: refusal, isError: true }] }]
+  expect(toolOf(await step($, 'row1', 1, 'tr'))?.name).toBe('Agent') // once more
+  expect(toolOf(await step($, 'row1', 2, 'tr'))).toBeUndefined() // refused again: the turn ends, no loop
+  seen.messages = [{ role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'b', text: 'Async agent launched successfully', isError: false }] }]
+  expect(toolOf(await step($, 'row1', 1, 'tl'))).toBeUndefined() // a call that started one is never repeated
+  expect(seen.model).toBe(0)
+})
+
+test('room-chat: a row nothing sends to, left idle with no keeper, is replaced at main\'s next turn (the spawn ledger bounds it)', async ($, on) => {
+  const seen = world(on)
+  seen.store.set('chatRows', { [SID]: { code: CODE, id: 'w1', wake: true } })
+  seen.agents.push({ id: 'w1', type: 'sub-human:room', status: 'completed', description: 'type here', name: CODE })
+  seen.agents.push({ id: 'k1', type: 'sub-human:keeper', status: 'running', description: 'keeper', parentId: 'w1' })
+  await start($)
+  await turn($)
+  expect(seen.spawns).toEqual([]) // it idles with its keeper: kept
+  seen.agents = seen.agents.filter(a => a.id !== 'k1') // its keeper ended and none came back
+  await turn($)
+  expect(seen.spawns).toEqual([{ subagentType: 'sub-human:room', name: CODE, description: 'type here', prompt: `chat: ${CODE}` }])
+  for (const a of seen.agents) a.status = 'completed'
+  seen.agents = seen.agents.filter(a => a.type !== 'sub-human:keeper')
+  await turn($)
+  expect(seen.spawns.length).toBe(1) // the new row has its own keeper to start; and a minute must pass between spawns
+})
+
 test('room-chat off (the verdict, or SUB_HUMAN_CC_OFF): the row is 0.7.0\'s read-only hold-row, and its steps are the model\'s', async ($, on) => {
   const seen = world(on, { off: ['room-chat'] })
   await start($)
@@ -298,6 +329,7 @@ test('room-chat: a row main\'s model started (the fallback) is never sent to: it
     expect(textOf(await step($, `kx${i}`, 1))).toBe('left') // each keeper ends on a WAKE: never counted against the cap
     seen.agents = seen.agents.filter(a => a.id !== `kx${i}`)
   }
+  seen.messages = [{ role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'a', text: 'Async agent launched successfully', isError: false }] }]
   expect(textOf(await step($, 'w1', 1, 'wake5'))).toBe('bob: hi')
   expect(seen.model).toBe(0)
 })

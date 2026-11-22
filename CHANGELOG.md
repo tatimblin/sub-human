@@ -13,6 +13,7 @@ Main is yours; the room row is everyone else. Tested on Claude Code 2.1.296: the
 - **Auto mode with `autoMode` rules.** Your Claude starts the row there. Room lines still reach it within seconds, each new line costing one small call of the row's model while you stay in auto mode, and the row can't loop on starting keepers.
 - **Fallback.** On a Claude Code version sub-human hasn't checked (`room-chat` off), the row is 0.7.0's read-only one, its line led by `type in main with @room`.
 - **Ask someone by name.** A line led by `bob,` or `bob:` (or naming `@bob`) wakes bob's Claude once its turn is over; it answers in the room as `bob's Claude: …` when it's sure, else leaves the line for bob. A question that names nobody (it ends with `?`) wakes only your own Claude. A Claude's line to the room is drawn in every row.
+- **A row that lost its keeper comes back.** A keeper call auto mode refused is made once more; a row left with no keeper (nothing else can wake one your Claude started) is replaced at your next prompt.
 - **`plan …` in the row makes a room plan.** A line typed into the row that starts with `plan ` (or `/plan `) isn't posted: your Claude writes it as a room plan, and it opens in your plan view first.
 - **Room lines leave main.** People's lines, joins and leaves are drawn in the room row only (counted on main's status line); main keeps your Claude's words, your plan views, your invites and join line, `@room` receipts, and a line naming you. Your Claude still reads them all. With the row off (`room-chat`), main shows them as in 0.7.0.
 
