@@ -272,20 +272,28 @@ The host's machine holds the room's log and serves the links, so while it sleeps
 
 ## Rows
 
-Your agent panel gets one row, named after the room. sub-human starts it itself when you join (your Claude never spawns it). The panel no longer lists people one row each: the room row's own line says who else is here, and what each is doing when their session says so (`working`; `needs them` while their Claude waits on them; `stalled` when it stopped on an error), then the room's latest line. No settings change is needed:
+Your agent panel gets one row, named after the room. sub-human starts it itself when you join (your Claude never spawns it), and the panel lists no person per row. The row is the room's group chat:
 
 ```
 ● main
-◯ vole-8126
-  bob (working), carol here · carol: pushed the store · read-only · talk in main (@room)
+◯ vole-8126 (+1)  type here
 ```
 
-- **Enter** on the room row opens it: who else is here and the room's latest line, or a join or a leave, as it happens.
-- **↑ then Enter** goes back to main.
-- The row is a read-only view. If you type into it, it answers `read-only row — type in main with @room` and nothing is posted.
-- The row's end (you left the room) draws an empty warning row (Claude Code keeps one where its hand-back was dropped; "row closed" is in the debug log).
-- After `--resume`, `--continue` or `/clear`, the row comes back by itself (no line, no turn); one that stopped (Esc on it) comes back at your next prompt.
-- The row is a background agent, so Claude Code's line after each turn reads **"Waiting for 1 background agent to finish"** in place of "Worked for 12s". This is expected: your prompt is free and nothing is stuck. `"showTurnDuration": false` in your own settings hides both.
+- **↓ onto the row, then Enter** opens it. Type there and press Enter: your exact words go to the room, as `@room` posts them (signed as yours), and no Claude reads or answers them. Your line is drawn as `you: …`.
+- Room lines come in there with who said them: `carol: pushed the store`, `bob's Claude: tests pass`, `bob joined`, and only there: main shows no room lines. Main keeps what is yours: your Claude's own words (and a line it judges urgent), your plan views and reviews, your invites and `You're in room …` when you join, an `@room` receipt, and a line naming you (as the prompt your Claude answers). Your Claude still reads every room line.
+- **Name someone to ask them:** `bob, which branch are you on?` (or `bob: …`, or `@bob` anywhere). Bob's own Claude gets your line once its current turn is over, never in the middle of it, and answers in the room as `bob's Claude: …` when it's sure of the fact; otherwise it leaves the line for bob, who sees it in his row. Bob's main shows your line as one prompt line.
+- **`plan …` in the row** (a line that starts with `plan ` or `/plan `, like `plan cursor paging for GET /tasks`) isn't posted: your own Claude writes it as a room plan, and your check opens in your plan view first, as for any room plan. Plan mode in main stays your own.
+- **A question that names nobody** (your line ends with `?`, like `anyone seen the CI failure?`) goes to your own Claude only, which answers in the room if it can. Any other line (`ok merging`) wakes no Claude. This is a fixed rule on the `?`, not your Claude guessing what you meant.
+- **↓ then Enter** (on `main`) goes back to main.
+- Under main's prompt, one line says the room, who else is here and what each is doing when their session says so (`working`; `needs them` while their Claude waits on them; `stalled` when it stopped on an error), and how many lines came in since you last opened the row or typed in it: `vole-8126 · bob (working), carol here · 2 new`.
+- **`(+1)`** on the row is its keeper, a small background child that keeps the row open without waking your Claude. Claude Code draws it and gives plugins no way to hide it.
+- **In auto mode with `autoMode` rules of your own**, Claude Code refuses sub-human's own start of the row, so your Claude starts it (one short call). sub-human can't send to a row started that way, so each new room line ends the keeper to wake the row, and while you're still in auto mode starting the next keeper takes one small call of the row's model.
+- **The lines in the row are sub-human's, not a model's.** No model runs for them, but Claude Code's transcript files each as an assistant line under your session's model name (ctrl+o heads them with it). The transcript marks each `answeredWithoutRequest`: no request was made.
+- **The desktop app, VS Code and Remote Control can't type into a row** (Claude Code doesn't support it there yet): the row is read-only there, and `@room` in main is the way to talk. `@room` works everywhere, the terminal included.
+- After `--resume` the row comes back with its lines; after `/clear` a new row starts; one you stopped (Esc on it, or `x`) comes back at your next prompt.
+- The row is a background agent, so Claude Code's line after each turn reads **"Waiting for 1 background agent to finish"** in place of "Worked for 12s", in main and in the row. This is expected: your prompt is free and nothing is stuck. `"showTurnDuration": false` in your own settings hides both.
+
+On a Claude Code version sub-human hasn't checked, the row may be the read-only one of 0.7.0 (one line says so): its line leads with `type in main with @room`, then who else is here and the room's latest line, and anything typed into it gets `read-only row — type in main with @room`.
 
 ### The row status (opt-in)
 

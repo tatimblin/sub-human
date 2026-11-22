@@ -2,8 +2,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as paths from '../lib/paths.ts';
-import { panelRows, joinNotices, hereNames } from '../lib/panes.ts';
-import { isRoomRow } from './transcripts.ts';
+import { panelRows, joinNotices, hereNames, roomStatus, oneRoomRow } from '../lib/panes.ts';
+import { isRoomRow, isChatRow, rowHeld, rowStrays, drawnIn } from './transcripts.ts';
 import { readJson, readText, jsonl, esc } from '../lib/io.ts';
 import type { Ctx, Det } from './context.ts';
 import type { LogEntry } from './log.ts';
@@ -18,54 +18,108 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   det(`member_joined ${B} (via system)`, j && j.via === 'system', x.fmt(j));
   // since 0.5.0-beta.7 a join that works shows one dim notice from the hooks module (command.run), no hook frame
   const jn = joinNotices(x.cap('S2', B, 'last'));
-  const want = new RegExp(`^⏺ sub-human: Joined ${code} as ${B} with ${A}$`);
-  det(`${B}'s join shows one line, "sub-human: Joined CODE as ${B} with ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
-    `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
-  const br = panelRows(x.cap('S2', B, 'last'));
-  det(`${B}'s panel: one row, ${code}, and nothing nested in it`, br.length === 1 && br[0]?.label === code && !br[0]?.nested, br.map(r => r.line).join(' | ') || 'no rows');
-  const ar = panelRows(x.cap('S2', A, 'last'));
-  det(`${A}'s panel: one row, ${code}, and nothing nested in it`, ar.length === 1 && ar[0]?.label === code && !ar[0]?.nested, ar.map(r => r.line).join(' | ') || 'no rows');
+  if (x.remote && x.remote[B]) {
+    // --film: B joins over the link, and her session takes its seat on its own: the take's "You're in room CODE as B"
+    // prompt row (mod/deliver.ts takeSeat), no join line of /sub-human's, no hook frame
+    const bt = x.cap('S2', B, 'last') || '';
+    const take = new RegExp(`^\\s*❯ You're in room ${code} as ${B}\\b`, 'm').exec(bt);
+    det(`${B}'s session takes its seat on its own: "You're in room CODE as ${B}", and no "blocked by hook" frame`, !!take && !jn.frame,
+      `${take ? `"${take[0].trim()}"` : 'no take line'}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
+  } else {
+    const want = new RegExp(`^⏺ sub-human: Joined ${code} as ${B} with ${A}$`);
+    det(`${B}'s join shows one line, "sub-human: Joined CODE as ${B} with ${A}", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0] ?? '') && !jn.frame,
+      `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
+  }
+  // one CODE row; room-chat on, its keeper child is drawn "(+1)" on it (and nested, if listed), nothing else nested
+  for (const who of [B, A]) {
+    const rs = panelRows(x.cap('S2', who, 'last'));
+    const one = oneRoomRow(rs, code);
+    det(`${who}'s panel: one row, ${code}, its only nested row its keeper`, one.ok && rs.filter(r => !r.nested).length === 1 && rs[0]?.label === code,
+      `${rs.map(r => r.line).join(' | ') || 'no rows'} (${one.why})`);
+  }
   // 0.6.0: the room session spawns no rows and runs no rows turn on a join (it runs only its launch turn, S1)
   const n = x.roomClaudeTurns(x.span('S2'));
   det('The room\'s Claude runs no turn on the join (no rows turn: it runs only its launch)', n === 0, `${n} claude assistant message(s) in S2`);
-  // each person's one row names who else is here (lib/rows.ts hereText, on the status line the demo turns on)
+  // who else is here (lib/rows.ts hereText): room-chat on, on main's status line ("CODE · bob here · …", mod/chat.ts
+  // rowStatus); off, on the one row's own line (the row status line the demo turns on)
+  const chat = (who: string): boolean => x.seatAgents(who).some(s => s.first >= x.runStart && isChatRow(s, code));
   for (const [who, other] of [[A, B], [B, A]] as const) {
-    const row = panelRows(x.cap('S2', who, 'last')).find(r => r.label === code);
-    const names = row ? hereNames(row.text) : null;
-    det(`${who}'s room row names who else is here: ${other}`, !!names && names.includes(other) && !names.includes(who) && !names.includes('claude'),
-      row ? `"${row.line}" (${names ? `names ${names.join(', ') || 'only you'}` : 'no "… here"'})` : `no ${code} row in ${x.capName('S2', who, 'last')}`);
+    const cap = x.cap('S2', who, 'last');
+    const on = chat(who);
+    const row = panelRows(cap).find(r => r.label === code);
+    const text = on ? roomStatus(cap, code) : row ? row.text : null;
+    const names = hereNames(text);
+    det(`${who}'s ${on ? 'status line' : 'room row'} names who else is here: ${other}`, !!names && names.includes(other) && !names.includes(who) && !names.includes('claude'),
+      text !== null ? `"${on ? `${code} · ${text}` : row?.line}" (${names ? `names ${names.join(', ') || 'only you'}` : 'no "… here"'})` : `no ${on ? `"${code} · …" status line` : `${code} row`} in ${x.capName('S2', who, 'last')}`);
   }
-  // B's row is the hooks module's too: one sub-human:room agent in B's session holding the room, no participant row
+  // B's row is the hooks module's too: one sub-human:room agent in B's session holding the room (itself, or through its
+  // keeper), nothing else nested, no participant row
   const s2 = x.span('S2');
   const bs = x.seatAgents(B).filter(s => s.session !== x.roomClaudeSid && !!s2 && s.first > s2.from && s.first <= s2.to);
-  det(`${B}'s one room row: a sub-human:room agent holding ${code}, no participant row; ${A}'s session spawned no new row`,
-    bs.filter(s => isRoomRow(s, code) && s.holds.some(h => h.room === code)).length === 1 && !bs.some(s => s.agentType === 'sub-human:participant')
+  const brows = bs.filter(s => isRoomRow(s, code));
+  det(`${B}'s one room row: a sub-human:room agent holding ${code} (itself, or its keeper), nothing else nested, no participant row; ${A}'s session spawned no new row`,
+    brows.length === 1 && !!brows[0] && rowHeld(bs, brows[0], code) && rowStrays(bs, code).length === 0 && !bs.some(s => s.agentType === 'sub-human:participant')
       && !x.seatAgents(A).some(s => s.session !== x.roomClaudeSid && !!s2 && s.first > s2.from && s.first <= s2.to && (isRoomRow(s, code) || s.agentType === 'sub-human:participant')),
     bs.map(s => `${s.agentType || '?'} holds ${s.holds.map(h => h.room).join(',') || 'none'}`).join('; ') || `no subagent of ${B} in S2`);
-  // the join as a group-chat line in A's pane: the hooks module's $.ui.log row "sub-human: B joined"
-  const jt = readText(x.stateFile('S2', `notice-${A}.txt`)) || '';
-  const jl = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(B)} joined\\s*$`, 'm').exec(jt);
+  // the join as a group-chat line for A. room-chat on (Phase 3): drawn in A's room row only (its transcript; A's open
+  // row view, state/S2/row-A, as drawn) and in no row of main's; off: the hooks module's $.ui.log row in A's pane
   const via = j && x.shownVia(A, j.id);
-  det(`${A} sees the chat line "${B} joined" (a lasting line, no room code, no ids)`, jl && via === 'mod',
-    `${jl ? `"${jl[0].trim()}" in ${A}'s pane (state/S2/notice-${A}.txt)` : `not seen in ${A}'s pane`}; ${A}'s session document: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+  const joinRe = new RegExp(`^\\s*${esc(B)} joined(?: \\([^()]*\\))?\\s*$`);
+  const aDrawn = chat(A) ? drawnIn(x.seatAgents(A).filter(s => s.first >= x.runStart), code) : [];
+  if (chat(A)) {
+    const inRow = aDrawn.filter(l => joinRe.test(l.text));
+    const view = (readText(x.stateFile('S2', `row-${A}.txt`)) || '').split('\n').some(l => joinRe.test(l));
+    const inMain = x.chatIn(x.entries(A)).filter(e => j && e.timestamp !== undefined && e.timestamp > j.at && new RegExp(`^sub-human: ${esc(B)} joined`).test(String(e.content)));
+    det(`${A} sees the chat line "${B} joined" in the room row only (a lasting line, no room code, no ids; none in main)`, inRow.length === 1 && view && inMain.length === 0 && via === 'mod',
+      `${inRow.length} line(s) drawn in ${A}'s row${inRow[0] ? ` (${inRow[0].at.slice(11, 19)})` : ''}; ${view ? 'shown' : 'not shown'} in ${A}'s open row view (state/S2/row-${A}.txt); ${inMain.length} in main; ${A}'s session document: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+  } else {
+    const jt = readText(x.stateFile('S2', `notice-${A}.txt`)) || '';
+    const jl = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(B)} joined\\s*$`, 'm').exec(jt);
+    det(`${A} sees the chat line "${B} joined" (a lasting line, no room code, no ids)`, jl && via === 'mod',
+      `${jl ? `"${jl[0].trim()}" in ${A}'s pane (state/S2/notice-${A}.txt)` : `not seen in ${A}'s pane`}; ${A}'s session document: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+  }
+  // room-chat off: the row's line (the hold's progress) leads with the join; on, the row's label is fixed at spawn (its
+  // code) and the join is the chat line above
   const arow = panelRows(x.cap('S2', A, 'last')).find(r => r.label === code);
-  det(`${A}'s room row reads "+${B} joined"`, !!(arow && arow.text.includes(`+${B} joined`)), arow ? arow.line : `no ${code} row in ${x.capName('S2', A, 'last')}`);
+  if (!chat(A)) det(`${A}'s room row reads "+${B} joined"`, !!(arow && arow.text.includes(`+${B} joined`)), arow ? arow.line : `no ${code} row in ${x.capName('S2', A, 'last')}`);
   // a join is group chat: the person sees the row, the model gets a copy, nothing wakes it
   const s2end = x.span('S2')?.to;
   const inS2 = (es: TEntry[]): TEntry[] => (j ? es.filter(e => e.timestamp !== undefined && e.timestamp > j.at && s2end !== undefined && e.timestamp <= s2end) : []);
-  const notes = inS2(x.chatIn(x.entries(A))).filter(e => e.content === `sub-human: ${B} joined`);
+  // the person's line: room-chat on, the row's (drawn by the module, no model); off, main's chat row
+  const notes = chat(A) ? [] : inS2(x.chatIn(x.entries(A))).filter(e => e.content === `sub-human: ${B} joined`);
+  const rowNotes = aDrawn.filter(l => joinRe.test(l.text));
   // the copy for A's Claude is held by the hooks module and rides as context beside A's next prompt (mod/deliver.ts
   // holdPullEvent, mod/prompt.ts: "room since your last turn"), so it lands at A's next turn, after S2 when A is idle;
   // an isMeta row is the fallback when it cannot be held
-  const joinedLine = new RegExp(`^${esc(B)} joined$`, 'm');
+  // "B joined", or over a link "B joined (B-laptop)" (the host's room line names the machine)
+  const joinedLine = new RegExp(`^${esc(B)} joined(?: \\([^()]*\\))?$`, 'm');
   const afterJoin = (es: TEntry[]): TEntry[] => (j ? es.filter(e => e.timestamp !== undefined && e.timestamp > j.at) : []);
   const pulls = afterJoin(x.pullIn(x.entries(A))).filter(e => joinedLine.test(x.textOf(e.message && e.message.content)));
   const held = afterJoin(x.entries(A)).filter(e => e.attachment && e.attachment.type === 'hook_additional_context'
     && [e.attachment.content].flat().some(c => typeof c === 'string' && joinedLine.test(c)));
   const woke = inS2(x.wakeIn(x.entries(A))).filter(e => x.textOf(e.message && e.message.content).includes(`${B} joined`));
   const ct = notes[0] ? x.chatTurn(A, notes[0]) : null;
-  det(`The join reached ${A} as one chat row and one copy for ${A}'s Claude, with no model turn`, notes.length === 1 && pulls.length + held.length === 1 && woke.length === 0 && ct && !ct.woke,
-    `${notes.length} chat row(s) "sub-human: ${B} joined"; ${held.length} held cop${held.length === 1 ? 'y' : 'ies'} (context on ${A}'s next prompt${held[0]?.timestamp ? `, ${held[0].timestamp.slice(11, 19)}` : ''}), ${pulls.length} isMeta; ${woke.length} wake(s) carrying it; ${ct ? ct.evidence : 'no chat row'}`);
+  const rowOk = chat(A) ? rowNotes.length === 1 : notes.length === 1 && !!ct && !ct.woke;
+  det(`The join reached ${A} as one chat line (${chat(A) ? 'the row\'s' : 'main\'s'}) and one copy for ${A}'s Claude, with no model turn`, rowOk && pulls.length + held.length === 1 && woke.length === 0,
+    `${chat(A) ? `${rowNotes.length} line(s) drawn in ${A}'s row (the module's answer, no model)` : `${notes.length} chat row(s) "sub-human: ${B} joined"`}; ${held.length} held cop${held.length === 1 ? 'y' : 'ies'} (context on ${A}'s next prompt${held[0]?.timestamp ? `, ${held[0].timestamp.slice(11, 19)}` : ''}), ${pulls.length} isMeta; ${woke.length} wake(s) carrying it${ct ? `; ${ct.evidence}` : ''}`);
+  // room-chat on: the row is the room's chat. A's line typed into her row (state/S2: row-A before it) is posted as
+  // typed and reaches B's row, drawn "A: …" (B's row transcript, and B's open row view, state/S2/row-B), and wakes no
+  // Claude (it names nobody and asks nothing)
+  if (chat(A)) {
+    const want = x.DEMO.row2;
+    const said = x.logIn(x.span('S2')).filter(e => e.kind === 'say' && e.from === A);
+    const p = said[0];
+    det(`${A}'s line typed into the row is posted once, with her exact bytes, via=human`, said.length === 1 && !!p && p.via === 'human' && p.text === want,
+      p ? `${said.map(x.fmt).join('; ')}; text ${p.text === want ? 'byte-exact' : `"${p.text}" (want "${want}")`}` : `no say from ${A} in S2`);
+    const line = `${A}: ${want}`;
+    const got = drawnIn(x.seatAgents(B).filter(s => s.first >= x.runStart), code).find(l => l.text.trim() === line);
+    const lag = got && p ? (Date.parse(got.at) - Date.parse(p.at)) / 1000 : null;
+    const view = (readText(x.stateFile('S2', `row-${B}.txt`)) || '').split('\n').some(l => l.trim() === line);
+    det(`${B}'s row draws it as "${A}: …" within 30 s (B's open row view shows it)`, !!got && lag !== null && lag <= 30 && view,
+      `${got ? `drawn ${got.at.slice(11, 19)}, ${lag?.toFixed(1)} s after the post` : `not drawn in ${B}'s row`}; ${view ? 'shown' : 'not shown'} in ${B}'s open row view (state/S2/row-${B}.txt)`);
+    const wakes = [A, B].flatMap(n => x.wakeIn(x.inSpan(x.entries(n), x.span('S2'))).filter(e => x.textOf(e.message && e.message.content).includes(want)).map(() => n));
+    det(`${A}'s row line wakes no Claude (it names nobody and asks nothing)`, wakes.length === 0, wakes.length ? `woke ${wakes.join(', ')}` : 'no wake carrying it');
+  }
   const rh = x.remote && x.remote[B];
   if (rh) remoteJoin(x, det, j, rh);
 }

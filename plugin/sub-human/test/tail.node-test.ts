@@ -112,7 +112,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   say(code, 'bob', 'bob says hi');                                                        // #3 others' human words: push
   inRoom(code, r => r.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' })); // #4 pull
   inRoom(code, r => r.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #5 push
-  say(code, 'claude', 'claude to the room', {}, 'agent');                                     // #6 pull
+  say(code, 'claude', 'claude to the room', {}, 'agent');                                     // #6 a Claude's say to the room: chat (0.8.0)
   say(code, 'claude', 'claude to bob only', { to: 'bob' }, 'agent');                          // #7 pull
   inRoom(code, r => r.append({ kind: 'status', text: 'alice claude own' }, { via: 'agent', from: 'alice' })); // #8 own: none
   say(code, 'alice', 'alice own words');                                                  // #9 own: none
@@ -132,6 +132,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   // group chat (people's words, joins): the person sees it, no wake
   assert.deepEqual(t.of('chat').flatMap(x => x.lines), [
     'bob: bob says hi',
+    'claude: claude to the room', // a Claude's line in the group chat: drawn for people (0.8.0)
     'carol joined',
     '"claude proposes" (abcdef) decided (room decision)', // the decision names its proposal; one speaker, no "room:"
     'bob: words an old retract names',
@@ -609,6 +610,43 @@ test('tail: rows says the pending reminders at start and when they change (never
   prop(code, 'claude', H2, ['alice']);
   t.advance(FAST.healthMs);
   assert.match(must(must(t.of('reminders').at(-1)).text), new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
+});
+
+test('tail (0.8.0): "alice, …" from bob and alice\'s own untagged question wake alice\'s Claude as chat wakes (submitted for the turn\'s end); "ok merging" wakes nobody', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  h.register('bob', 'member', 1, code);
+  sys(code, 'member_joined', 'bob');
+  const t = startNd({ sid: 's' });
+  t.advance(300);
+  say(code, 'bob', 'alice, which branch are you on?');
+  t.advance(2000);
+  const named = t.of('wake');
+  assert.deepEqual(named.map(x => [x.text.split('\n')[0], x.chat]), [['bob: alice, which branch are you on?', true]]);
+  say(code, 'alice', 'anyone seen the CI failure?');
+  t.advance(2000);
+  assert.equal(t.of('wake').length, 2);
+  assert.equal(must(t.of('wake').at(-1)).chat, true);
+  say(code, 'alice', 'ok merging');
+  t.advance(2000);
+  assert.equal(t.of('wake').length, 2, 'a line that names nobody and asks nothing wakes nobody');
+  t.stop();
+});
+
+test('tail: who else is here goes to the module at start and when it changes (the room row\'s status line)', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');                                                  // #1
+  const t = startNd({ sid: 's' });
+  t.advance(300);
+  assert.deepEqual(t.of('here').map(x => x.text), ['only you']);
+  t.advance(FAST.healthMs + 100);
+  assert.equal(t.of('here').length, 1, 'unchanged: not sent again');
+  h.register('bob', 'member', 1, code);
+  t.advance(FAST.healthMs + 100);
+  assert.equal(must(t.of('here').at(-1)).text, 'bob here');
+  t.stop();
 });
 
 test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the room\'s Claude\'s keeps them', () => {

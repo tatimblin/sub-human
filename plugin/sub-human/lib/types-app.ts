@@ -149,8 +149,9 @@ export type TailEvent =
   | { type: 'seat', seat: TailSeat | null }
   | { type: 'chat', lines: string[] }
   | { type: 'pull', text: string }
-  | { type: 'wake', text: string }
+  | { type: 'wake', text: string; chat?: true }
   | { type: 'reminders', text: string | null }
+  | { type: 'here', text: string }
   | { type: 'health', text: string; quiet?: true }
   | { type: 'invites', open: string[], expired?: string[] }
   | { type: 'take', code: string, name: string, text: string, check?: string };

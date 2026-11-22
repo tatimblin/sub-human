@@ -32,7 +32,8 @@ import type { Members } from '../../plugin/sub-human/lib/room/types.ts';
  * bob's; a run's own (say3, plan4, note5, edit5a, edit5b: --film's tristan and jess say other things) are in screens/run.json "words".
  */
 export const DEMO = {
-  say3: "bob, can you take the parser tests? handler's in src/server.js",
+  say3: "I'll take the handler in src/server.js, and the parser tests are up for grabs",
+  reply3: "sure, once we've agreed how paging works",
   plan4: "let's write a room plan for cursor paging on GET /tasks: ?limit&after, opaque cursor, newest first. you draft it", // to B's own Claude: not in the log
   note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',
   edit5a: 'update the room plan with my note: a cursor past the end must 400, with a test for it',
@@ -40,6 +41,16 @@ export const DEMO = {
   viewer9: "hi claude, what's next?",
   multi9b: 'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal',
   carol11: 'hello from the second home',
+  /** S7 (room-chat on): the line alice types into her room row */
+  row7: 'row check: "exact" bytes — 50/page & more',
+  /** S8: alice's @room line after bob's resume (names nobody, asks nothing) */
+  back8: 'the parser tests are done, all green',
+  /** S12 (room-chat on): alice's fact and opinion questions to bob in her row, and bob's own answer in his */
+  fact12: 'bob, which port does the server in src/server.js listen on?',
+  opinion12: 'bob, do you prefer cursor or offset paging?',
+  answer12: 'cursor: offsets skip tasks when new ones arrive',
+  /** S2 (room-chat on): the line A types into her room row */
+  row2: 'row check: the paging notes are in docs/paging.md',
   /** demo.sh --object-mode: the mode A objects from in S5 (auto, default, acceptEdits); '' when not set */
   objectMode: '',
 };

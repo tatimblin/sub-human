@@ -12,6 +12,8 @@
  *                               quiet-plan  sub-human's own plan-mode rows drawn as nothing (mod/core/quiet.ts)
  *                               keep-mode   a review's closing call keeps the person's mode
  *                               room-row    the one room row, spawned by the module (mod/deliver.ts roomRow)
+ *                               room-chat   the row takes typing and draws the room (mod/chat.ts); off: the 0.7.0
+ *                                           hold-row, read-only
  *   isGated(v)                v is one of them
  *   closeOff(features) -> Gated[]   features, deduplicated in GATED order
  *   FALLBACK                  gated feature -> what runs instead, in the person's words
@@ -26,7 +28,7 @@ export const isCcVersion = (v: unknown): v is string => typeof v === 'string' &&
 /** types/index.d.ts SubHumanGated, the one list's type (a hello's cc.off). */
 export type Gated = NonNullable<Hello['cc']>['off'][number];
 /** Every Gated, in the order closeOff keeps (FALLBACK, a Record over Gated, holds each one too). */
-export const GATED: readonly Gated[] = ['tasks', 'sign-off', 'reap-rm', 'quiet-plan', 'keep-mode', 'room-row'];
+export const GATED: readonly Gated[] = ['tasks', 'sign-off', 'reap-rm', 'quiet-plan', 'keep-mode', 'room-row', 'room-chat'];
 export type Cc = NonNullable<Hello['cc']>;
 
 export const isGated = (v: unknown): v is Gated => GATED.some(g => g === v);
@@ -43,6 +45,7 @@ export const FALLBACK: Readonly<Record<Gated, string>> = Object.freeze({
   'quiet-plan': 'plan mode draws its own rows for a room review and a plan save',
   'keep-mode': 'asking for changes on a room plan returns you to manual mode',
   'room-row': 'the agent panel shows no room row (@room and messages to other Claudes still work)',
+  'room-chat': 'the room row is read-only (type in main with @room)',
 });
 
 export function parseCc(v: unknown): Cc | null {

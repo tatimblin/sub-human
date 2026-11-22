@@ -1,6 +1,8 @@
-// S7: stray typing in a row view: the read-only hint; nothing is posted
+// S7: typing into the room row's view. room-chat on (the view's rule "─ @CODE ─"): the row is the room's chat, so
+// alice's line is posted with her exact bytes (via=human) and drawn "you: …" in the row. Off (0.7.0's hold-row): the
+// read-only hint; nothing is posted.
 import { clip, esc } from '../lib/io.ts';
-import { rowViewLine, hereNames } from '../lib/panes.ts';
+import { rowViewLine, hereNames, roomStatus } from '../lib/panes.ts';
 import type { Ctx, Det } from './context.ts';
 
 export const scene = 'S7';
@@ -9,6 +11,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const { code } = x;
   const s = x.span('S7');
   const t = x.cap('S7', 'alice') || '';
+  if (t.includes(`─ @${code} ─`)) return chat(x, det, t);
   const viewing = new RegExp(`─ ${esc(code)} ─`).test(t);
   const hint = /read-only · talk in main \(@room\)/.test(t);
   det('alice\'s room row view shows the read-only hint where she typed', viewing && hint && /❯ x\b/.test(t), `${viewing ? `viewing ${code}` : 'not in the row view'}; hint ${hint ? 'shown' : 'missing'}; typed x ${/❯ x\b/.test(t) ? 'shown' : 'missing'} (${x.capName('S7', 'alice')})`);
@@ -29,4 +32,21 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     got ? !!reply : !reply,
     got ? (reply ? `"x" reached row ${got.file} at ${got.at.slice(11, 19)}; reply ${reply.at.slice(11, 19)} "${clip(reply.text, 80)}"` : `"x" reached row ${got.file} at ${got.at.slice(11, 19)} but no read-only reply`)
       : (reply ? `a read-only reply with no "x" delivered: ${clip(reply.text, 80)}` : 'the "x" never reached alice\'s row model by the end of the run (its hold did not return); no reply, nothing posted'));
+}
+
+/** room-chat on: the typed line is posted as typed and drawn as hers. */
+function chat(x: Ctx, det: Det, t: string): void {
+  const want = x.DEMO.row7;
+  const posted = x.logIn(x.span('S7')).filter(e => e.from === 'alice' && e.kind === 'say');
+  const p = posted[0];
+  det('alice\'s line typed into the row is posted once, with her exact bytes, via=human',
+    posted.length === 1 && !!p && p.via === 'human' && p.text === want,
+    p ? `${posted.map(x.fmt).join('; ')}; text ${p.text === want ? 'byte-exact' : `"${clip(p.text, 80)}" (want "${want}")`}` : 'no say from alice in S7');
+  const drawn = t.split('\n').some(l => l.trim() === `you: ${want}`);
+  det('The row draws it as "you: …" (no ❯ echo of it)', drawn && !t.split('\n').some(l => /^\s*❯\s/.test(l) && l.includes(want)),
+    `${drawn ? `"you: ${clip(want, 60)}"` : 'no "you: …" line'} in ${x.capName('S7', 'alice')}`);
+  // who's here is on main's status line under the row's view, not the row's label
+  const names = hereNames(roomStatus(t, x.code));
+  det('Main\'s status line under the row names who else is here: bob', !!names && names.includes('bob'),
+    `"${roomStatus(t, x.code) ?? 'no status line'}" (${x.capName('S7', 'alice')})`);
 }

@@ -34,6 +34,8 @@ import { facts, asks } from './deliver.ts';
 import { keepQuiet, quietOn, quietRow } from './core/quiet.ts';
 import { ROOM_AGENT } from './core/rows.ts';
 import { rowOffered } from './rows.ts';
+import { isChatRow, quietCall, keeperOf } from './chat.ts';
+import { KEEPER_AGENT } from './core/room-chat.ts';
 import type { EngineInterface, On, RenderElement } from 'claude-code';
 import type { Hello, RunOutput, SubHumanRead } from './core/types.ts';
 
@@ -42,6 +44,10 @@ const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const PLAN_TOOL = 'mcp__plugin_sub-human_room__plan';
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const QUIET = { plugin: 'sub-human', key: 'quietCalls' } as const;
+/** Main's own Agent call for a room row agent: refused, the module starts the row itself. */
+const ROW_DENY = 'sub-human starts the room row itself';
+/** The row's second keeper call while one lives. */
+const KEEPER_DENY = 'the room row has its keeper';
 
 async function helloOf($: EngineInterface): Promise<Hello | null> {
   const { value } = await $.state.get(HELLO);
@@ -171,8 +177,18 @@ export function registerConsent(on: On): void {
   // tellAsk) draws nothing either, as the module's spawn draws nothing; only that one agent type, from the main loop,
   // while the fallback asks for it
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
+    const row = e.subagent_type === ROOM_AGENT || e.subagent_type === KEEPER_AGENT;
+    // the rows are the module's (its own $.agent.spawn is a dispatch this plugin raised): main's model never spawns one
+    // (both stay offered for room-chat's resume), but for the auto-mode fallback's one call
+    const own = String(next.origin.plugin).split('@')[0] === $.plugin.name.split('@')[0];
+    if (!e.agentId && row && !own && !(rowOffered() && e.subagent_type === ROOM_AGENT)) return { deny: ROW_DENY };
     if (!e.agentId && rowOffered() && e.subagent_type === ROOM_AGENT) {
       await hideCall($, e.tool_use_id).catch(() => {});
+    }
+    if (isChatRow(e.agentId)) {
+      quietCall(e.tool_use_id); // the room-chat row's keeper call (auto mode: its model's)
+      // one keeper at a time: a second call (the row's model calling again) is refused
+      if (e.subagent_type === KEEPER_AGENT && keeperOf(await $.agent.list(), String(e.agentId))) return { deny: KEEPER_DENY };
     }
     return next(e);
   }).catch((_$, e, next) => next(e));

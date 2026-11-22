@@ -127,7 +127,7 @@ test('node starts per event: a seated member (before its tail child reports the 
     'Bash, Read, Write': 0, 'Agent (Explore)': 0,
     'Agent (a row)': 0, // a model's Agent call of the room row starts no node (the module spawns the row itself)
     'SubagentStop (Explore)': 0,
-    'SubagentStop (a row)': 1, // row-hold
+    'SubagentStop (a row)': 0, // room-chat: the row stops after every line, no row-hold
     AskUserQuestion: 2, EnterPlanMode: 2, // consent Pre and Post
     ExitPlanMode: 2, // consent Pre and Post; PermissionRequest only while a review may be open (consent said none is)
     'a room MCP tool': 0, // consent only while a review may be open

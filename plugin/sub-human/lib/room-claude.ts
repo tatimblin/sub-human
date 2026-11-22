@@ -38,7 +38,9 @@
  * job and any strays, ends the bound process if `claude stop` left it up (ensureGone), deletes the room session's
  * native task list and then the session itself (`claude rm`: a stopped one stays listed in the agent view) once that
  * process is gone (under the room's tasks lock; the log keeps every task, and a closing
- * room is never joined or repaired again), and marks the room's Claude stopped and left. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
+ * room is never joined or repaired again), and marks the room's Claude stopped and left. Its `claude` calls use the
+ * binary and config dir the start recorded (clientFor), not the reaper's own PATH and env, which differ when a remote
+ * member's leave runs it under the host's ssh login. watchdog (the room Claude's tail and join's sweep) claims closing and starts the
  * reaper once no member has been live for orphanMs: members that crashed leave no SessionEnd, so this is what closes
  * their room. The orphan start is the latest left_at when every member left cleanly, else the first observation
  * (claude.orphan_since, cleared once a member is live again). A room whose room Claude never started (spawn_error, no
@@ -127,6 +129,33 @@ function cleanEnv(src: NodeJS.ProcessEnv = process.env): Record<string, string> 
   e.TERM = e.TERM || 'xterm-256color';
   for (const k of ['USER', 'LOGNAME']) if (!e[k]) delete e[k];
   return e;
+}
+
+/** The `claude` a client call runs and the env it runs with. */
+interface Client { bin: string; env: Record<string, string> }
+
+const isExec = (p: string): boolean => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
+/** bin as an absolute path: as given when it names a path, else the first executable of that name on PATH; null when none. */
+function resolveBin(bin: string, PATH: string | undefined): string | null {
+  if (bin.includes('/')) return isExec(bin) ? path.resolve(bin) : null;
+  for (const dir of (PATH || '').split(path.delimiter)) if (dir && isExec(path.join(dir, bin))) return path.join(dir, bin);
+  return null;
+}
+
+/**
+ * The client that reaches the room session's job: the claude that started it (members.claude.claude_bin) with the
+ * starter's CLAUDE_CONFIG_DIR (config_dir, '' for none: the bg daemon is that config dir's). The reaper may run where
+ * neither holds: a remote member's leave runs it under the host's ssh login (the serve shim), whose PATH has no
+ * Homebrew or ~/.local/bin, and `claude stop` would then not start at all while the job lived on. SUB_HUMAN_CLAUDE
+ * wins; a record from before these fields, or a binary since gone, falls back to `claude` and this process's env.
+ */
+function clientFor(rec: Pick<Member, 'claude_bin' | 'config_dir'> | null | undefined): Client {
+  const env = cleanEnv();
+  if (rec && typeof rec.config_dir === 'string') {
+    if (rec.config_dir) env.CLAUDE_CONFIG_DIR = rec.config_dir; else delete env.CLAUDE_CONFIG_DIR;
+  }
+  const bin = envStr('SUB_HUMAN_CLAUDE') || (rec?.claude_bin && isExec(rec.claude_bin) ? rec.claude_bin : 'claude');
+  return { bin, env };
 }
 
 /** --plugin-dir only when the plugin was loaded from a directory (an installed plugin loads by itself). */
@@ -220,13 +249,13 @@ type Found = { id: string, sessionId?: string | null } | null;
  * gapMs apart, while the daemon registers a fresh job. None listed (or no list): the hint, if any
  * (watchStart then sees whether it binds).
  */
-function findJob(code: RoomCode, { hint = null, skip = [], env = cleanEnv(), tries = 1, gapMs = config.ROOM_CLAUDE_FIND_GAP_MS }: {
-  hint?: string | null, skip?: readonly (string | null | undefined)[], env?: Record<string, string>, tries?: number, gapMs?: number,
+function findJob(code: RoomCode, { hint = null, skip = [], bin = claudeBin(), env = cleanEnv(), tries = 1, gapMs = config.ROOM_CLAUDE_FIND_GAP_MS }: {
+  hint?: string | null, skip?: readonly (string | null | undefined)[], bin?: string, env?: Record<string, string>, tries?: number, gapMs?: number,
 } = {}): Found {
   const name = `claude.${code}`;
   for (let i = 0; i < tries; i++) {
     if (i) sleepSync(gapMs);
-    const list: AgentJob[] | null = cc.jobs({ bin: claudeBin(), env, timeout: config.SPAWN_TIMEOUT_MS });
+    const list: AgentJob[] | null = cc.jobs({ bin, env, timeout: config.SPAWN_TIMEOUT_MS });
     if (!list) break; // unreadable: asking again says no more
     const mine = list.filter((j): j is AgentJob & { id: string } => !!j.id && j.kind !== 'interactive' && !ENDED.has(j.state ?? '')
       && !skip.includes(j.id) && (j.name === name || (!!hint && j.id === hint)));
@@ -256,10 +285,10 @@ async function ensureGone(rec: Pick<Member, 'pid' | 'pid_start' | 'machine'> | n
  * an ES module's own exports cannot be replaced from outside. */
 const seam: { ensureGone: typeof ensureGone } = { ensureGone };
 
-function stopJob(job: string | null | undefined): boolean {
+function stopJob(job: string | null | undefined, client: Client = clientFor(null)): boolean {
   if (!job || job === PENDING) return false;
-  const r = spawnSync(claudeBin(), cc.stopCmd(job), {
-    env: cleanEnv(), encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
+  const r = spawnSync(client.bin, cc.stopCmd(job), {
+    env: client.env, encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
   });
   return r.status === 0;
 }
@@ -268,10 +297,10 @@ function stopJob(job: string | null | undefined): boolean {
  * Delete a stopped job (`claude rm`), so the agent view and `claude agents` stop listing the closed room's session;
  * not while the version's verdict turns reap-rm off (cc CONTRACT bg-rm: then it stays, stopped).
  */
-function removeJob(job: string | null | undefined): boolean {
+function removeJob(job: string | null | undefined, client: Client = clientFor(null)): boolean {
   if (!job || job === PENDING || verdictLib().off('reap-rm')) return false;
-  const r = spawnSync(claudeBin(), cc.rmCmd(job), {
-    env: cleanEnv(), encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
+  const r = spawnSync(client.bin, cc.rmCmd(job), {
+    env: client.env, encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
   });
   return r.status === 0;
 }
@@ -279,13 +308,15 @@ function removeJob(job: string | null | undefined): boolean {
 /**
  * Stop every live job named claude.CODE that keep does not hold: a job the record lost (a leak) would otherwise run
  * beside the room's Claude under the same name. Live: it has a process (a done job can keep one) or has not ended.
+ * list: `claude agents --json --all` as client reads it when not given (null: no listing).
  */
-function stopStrays(code: RoomCode, keep: (string | null | undefined)[] = [],
-  list: AgentJob[] | null = cc.jobs({ all: true, bin: claudeBin(), env: cleanEnv(), timeout: config.SPAWN_TIMEOUT_MS })): string[] {
+function stopStrays(code: RoomCode, keep: (string | null | undefined)[] = [], list?: AgentJob[] | null,
+  client: Client = clientFor(null)): string[] {
   const name = `claude.${code}`;
-  const strays = (list ?? []).filter(j => !!j.id && j.kind !== 'interactive' && j.name === name && !keep.includes(j.id)
+  const all = list !== undefined ? list : cc.jobs({ all: true, bin: client.bin, env: client.env, timeout: config.SPAWN_TIMEOUT_MS });
+  const strays = (all ?? []).filter(j => !!j.id && j.kind !== 'interactive' && j.name === name && !keep.includes(j.id)
     && (!!j.pid || !ENDED.has(j.state ?? ''))).map(j => j.id as string);
-  for (const id of strays) stopJob(id);
+  for (const id of strays) stopJob(id, client);
   return strays;
 }
 
@@ -322,7 +353,9 @@ function spawn(opts: SpawnOpts): SpawnResult {
   try {
     rec = identity.updateRoomClaude(code, (o: Member | null): RoomClaudePatch | null => {
       if (!mine(o) || (o && o.closing)) return null;
-      const patch: RoomClaudePatch = { job: found.id, job_session: found.sessionId || undefined, claim: undefined, spawn_error: undefined };
+      const patch: RoomClaudePatch = { job: found.id, job_session: found.sessionId || undefined, claim: undefined, spawn_error: undefined,
+        // what reaches this job's daemon from any process (clientFor): the reaper's PATH and env may not be this one's
+        claude_bin: resolveBin(plan.bin, plan.env.PATH) ?? undefined, config_dir: plan.env.CLAUDE_CONFIG_DIR ?? '' };
       if (!claim) {
         Object.assign(patch, {
           spawned_at: iso(clock.now()), pid: null, pid_start: undefined, left_at: undefined, closing: undefined, stopped_at: undefined,
@@ -432,9 +465,12 @@ async function reap(code: RoomCode, {
   try { tasks.closeRoomTask(room.open(code).store); } catch { /* the stop below still ends it */ }
   // A start in flight records its job after this; it sees closing and stops that job itself.
   let job = identity.readMembers(code).claude?.job || o.job;
-  if (job === PENDING && identity.readMembers(code).claude?.pid) job = findJob(code)?.id; // bound, starter died
-  stopJob(job);
-  const strays = stopStrays(code, [job]); // a job the record lost would outlive the room
+  // the claude and config dir that started the job, not this process's (a remote member's leave runs here under the
+  // host's ssh login PATH): a `claude stop` that never ran leaves the job working, and its daemon resumes it
+  const client = clientFor(identity.readMembers(code).claude ?? o);
+  if (job === PENDING && identity.readMembers(code).claude?.pid) job = findJob(code, client)?.id; // bound, starter died
+  stopJob(job, client);
+  const strays = stopStrays(code, [job], undefined, client); // a job the record lost would outlive the room
   // `claude stop` answering is not the process gone (live: the room's Claude, its MCP server and tail ran on for
   // minutes after stopped_at): the bound process, by its pid and start time, ends here if it is still up
   const gone = await seam.ensureGone(identity.readMembers(code).claude ?? o);
@@ -443,7 +479,7 @@ async function reap(code: RoomCode, {
   // (contract task-list-retention). The log keeps every task (sub-human tasks reads tasks.json)
   if (gone) { try { room.open(code).store.lock('tasks', () => taskFiles.remove(code)); } catch { /* it stays */ } }
   // and the session itself, once its process is gone: a stopped job stays listed in the agent view (← N agents)
-  if (gone) for (const id of [job, ...strays]) removeJob(id);
+  if (gone) for (const id of [job, ...strays]) removeJob(id, client);
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() }));
   try { identity.leave(code, identity.ROOM_CLAUDE, {}); } catch { /* already left */ }
   try { identity.unindexClosed(code); } catch { /* the next look at the open rooms drops it */ }

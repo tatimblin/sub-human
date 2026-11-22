@@ -2,6 +2,24 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.8.0: the room row is the group chat, and your Claude is your assistant
+
+Main is yours; the room row is everyone else. Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `npm run probe`, and the release gate in auto, manual and accept-edits mode. The wire protocol is still 5.
+
+### Changed
+- **Type in the room row.** ↓ onto the row, Enter, and type: your exact words go to the room as `@room` posts them (signed as yours), with no model turn. Your line shows there as `you: …`, and the room's lines come in with who said them: `maya: …`, `maya's Claude: …`. Main still shows them too for now. In the desktop app, VS Code and Remote Control the row is read-only; `@room` in main still works everywhere.
+- **Who's here moves under main's prompt.** One line, `vole-8126 · maya, dev here · 2 new`: the room, who else is here, and the lines that came in since you last opened the row or typed in it. The row's label is the room code.
+- **The row stays open without waking your Claude.** A small keeper child (`(+1)` on the row, which Claude Code gives plugins no way to hide) does the blocking hold; the row itself idles between lines and is answered by sub-human, not a model. `--resume` brings it back with its lines; `/clear` starts a new one.
+- **Auto mode with `autoMode` rules.** Your Claude starts the row there. Room lines still reach it within seconds, each new line costing one small call of the row's model while you stay in auto mode, and the row can't loop on starting keepers.
+- **Fallback.** On a Claude Code version sub-human hasn't checked (`room-chat` off), the row is 0.7.0's read-only one, its line led by `type in main with @room`.
+- **Ask someone by name.** A line led by `bob,` or `bob:` (or naming `@bob`) wakes bob's Claude once its turn is over; it answers in the room as `bob's Claude: …` when it's sure, else leaves the line for bob. A question that names nobody (it ends with `?`) wakes only your own Claude. A Claude's line to the room is drawn in every row.
+- **A row that lost its keeper comes back.** A keeper call auto mode refused is made once more; a row left with no keeper (nothing else can wake one your Claude started) is replaced at your next prompt.
+- **`plan …` in the row makes a room plan.** A line typed into the row that starts with `plan ` (or `/plan `) isn't posted: your Claude writes it as a room plan, and it opens in your plan view first.
+- **Room lines leave main.** People's lines, joins and leaves are drawn in the room row only (counted on main's status line); main keeps your Claude's words, your plan views, your invites and join line, `@room` receipts, and a line naming you. Your Claude still reads them all. With the row off (`room-chat`), main shows them as in 0.7.0.
+
+### Fixed
+- **A room's background session is cleaned up when the last person leaves over ssh.** The room's cleanup ran under the ssh login's bare PATH, where Homebrew's or the native installer's `claude` isn't found, so the session was killed but never removed, and Claude Code brought it back, still listed `working` in `claude agents`. sub-human now records which `claude` (and config folder) started the room session and uses it to stop and remove it. Present since 0.5.
+
 ## 0.7.0: plan feedback with no extra steps
 
 ### Changed

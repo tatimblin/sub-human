@@ -1,7 +1,9 @@
 // S9b: a multi-line @room post whose later lines read like a decision and a sign-off: they show nested under
-// the sender (CHAT_NEST "  │ "), never as bare room lines, and the room's consent state is untouched
+// the sender (CHAT_NEST "  │ "), never as bare room lines, and the room's consent state is untouched. room-chat on: in
+// bob's room row (its transcript, and his open row view: state/S9b/pane-bob.txt); off: chat rows in his main
 import * as paths from '../lib/paths.ts';
 import { readText, esc } from '../lib/io.ts';
+import { drawnIn, isChatRow } from './transcripts.ts';
 import type { Ctx, Det } from './context.ts';
 
 export const scene = 'S9b';
@@ -24,13 +26,20 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   det(`The room renders it as one head line and nested lines ("${nest}")`, want.length === 3 && want.slice(1).every(l => l.startsWith(nest)),
     want.length ? want.map(l => JSON.stringify(l)).join(' / ') : 'no entry');
   const bes = x.inSpan(x.entries('bob'), s);
-  // one $.ui.log row per line (a notice is one line: a newline in one would be drawn as U+FFFD)
+  const agents = x.seatAgents('bob').filter(a => a.first >= x.runStart);
+  const chat = agents.some(a => isChatRow(a, x.code));
+  // one $.ui.log row per line (a notice is one line: a newline in one would be drawn as U+FFFD); room-chat on, the
+  // row's lines, in order
   const all = x.chatIn(bes);
-  const notes = e ? all.filter((_y, i) => want.every((l, k) => all[i + k]?.content === `sub-human: ${l}`)) : [];
-  const copies = x.pullIn(bes).filter(y => e && x.textOf(y.message?.content).includes(want.join('\n')));
-  const ct = notes[0] ? x.chatTurn('bob', notes[0]) : null;
-  det('bob gets the lines once as a chat row and once as his Claude\'s copy, "│" prefixes included, with no model turn', notes.length === 1 && copies.length === 1 && ct && !ct.woke,
-    `${notes.length} run(s) of three chat rows and ${copies.length} isMeta copy(ies) carrying the rendered lines verbatim${notes.length ? '' : `; chat rows seen: ${all.filter(y => /notes from the paging spike/.test(String(y.content))).map(y => JSON.stringify(y.content)).join(' / ') || 'none'}`}; ${ct ? ct.evidence : 'no chat row'}`);
+  const drawn = chat && e ? drawnIn(agents, x.code).filter(l => l.at >= e.at) : [];
+  const notes = !e ? [] : chat ? drawn.filter((_y, i) => want.every((l, k) => drawn[i + k]?.text === l)) : all.filter((_y, i) => want.every((l, k) => all[i + k]?.content === `sub-human: ${l}`));
+  const inMain = chat ? all.filter(y => /notes from the paging spike/.test(String(y.content))).length : 0;
+  const c = e ? x.copiesOf('bob', want[0] ?? '', e.at) : { pulls: 0, held: 0, prompted: false };
+  const copies = x.pullIn(bes).filter(y => e && x.textOf(y.message?.content).includes(want.join('\n'))).length + (chat ? c.held : 0);
+  const ct = !chat && notes[0] && 'content' in notes[0] ? x.chatTurn('bob', notes[0]) : null;
+  det(`bob gets the lines once as ${chat ? 'lines drawn in his room row' : 'a chat row'} and once as his Claude's copy, "│" prefixes included, with no model turn`,
+    notes.length === 1 && inMain === 0 && (copies === 1 || (chat && copies === 0 && !c.prompted)) && (chat || (!!ct && !ct.woke)),
+    `${notes.length} run(s) of the three lines ${chat ? `drawn in bob's row (${inMain} in main)` : 'as chat rows'} and ${copies} cop${copies === 1 ? 'y' : 'ies'} carrying the rendered lines verbatim${copies === 0 && chat && !c.prompted ? ' (none yet: no prompt of bob\'s since)' : ''}${notes.length ? '' : `; lines seen: ${(chat ? drawn.map(l => l.text) : all.map(y => String(y.content))).filter(t => /notes from the paging spike|│/.test(t)).map(t => JSON.stringify(t)).join(' / ') || 'none'}`}${ct ? `; ${ct.evidence}` : ''}`);
 
   // bob's pane (state/S9b/pane-bob.txt): the head line, then the two lines nested under it
   const pane = readText(x.stateFile('S9b', 'pane-bob.txt')) || '';

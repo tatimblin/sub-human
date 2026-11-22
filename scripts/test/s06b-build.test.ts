@@ -70,10 +70,17 @@ function world({ A = 'tristan', B = 'jess', gitLog, reflogB = REFLOG, tapB = TAP
     inSpan: (es, s) => es.filter((y): y is typeof y & { timestamp: string } => !!s && y.timestamp !== undefined && y.timestamp > s.from && y.timestamp <= s.to),
     peerIn: (es, from) => es.filter(y => y.origin && y.origin.kind === 'peer' && String(y.origin.name).startsWith(from + '.')),
     textOf: c => (typeof c === 'string' ? c : ''),
+    logIn: () => log,
   });
 }
 const run = (ctx: Ctx) => must(runChecks(ctx, { scenes: [mod] }).S6b, 'the S6b results');
 const failed = (ctx: Ctx): string[] => run(ctx).filter(c => !c.pass).map(c => c.check);
+
+test('S6b: the handoff routed through the room to another machine (a say via=agent to jess) counts too', () => {
+  const ctx = world({ handoffAt: null });
+  ctx.log.push({ id: eid(20), from: 'tristan', kind: 'say', via: 'agent', to: 'jess', at: at(20), text: 'listTasks is pushed to origin/main' });
+  assert.deepEqual(failed(ctx), []);
+});
 
 test('S6b: a clean build passes every check, for tristan and jess or alice and bob', () => {
   for (const pair of [{}, { A: 'alice', B: 'bob' }]) {
@@ -110,11 +117,17 @@ test('S6b: a failing run, a pane with no run, or a done from the wrong seat each
 });
 
 test('S6b (film): the opened room row\'s line must name the other person; a subagent row must show in jess\'s panel', () => {
-  const OPEN = 'jess opens the husky-7354 row in the agent panel: its line leads with "tristan here", one row, nothing nested';
+  const OPEN = 'jess opens the husky-7354 row in the agent panel: its line leads with "tristan here", one row, its only nested row its keeper';
   // the room row selected but not opened; its line naming nobody else; an old build's nested member row
   assert.deepEqual(failed(world({ roomB: '  ⏺ main\n❯ ◯ husky-7354  tristan here\n' })), [OPEN]);
   assert.deepEqual(failed(world({ roomB: ROOM('tristan').replace('  ⎿  tristan here · ', '  ⎿  only you · ') })), [OPEN]);
   assert.deepEqual(failed(world({ roomB: `${ROOM('tristan')}  └ ◯ tristan  working\n` })), [OPEN]);
+  // room-chat on (0.8.0): the chat view, main's status line naming tristan, the keeper the one nested row
+  const CHAT = (here: string): string => `you: hi\n────── @husky-7354 ─\n❯ Message @husky-7354…\n──────\n  ⚠ sub-human: husky-7354 · ${here}\n\n  ◯ main\n❯ ⏺ husky-7354          type here\n  └ ◯ sub-human:keeper  Holding room row husky-7354\n`;
+  const ON = 'jess opens the husky-7354 row in the agent panel: the status line names "tristan here", one row, its only nested row its keeper';
+  assert.deepEqual(failed(world({ roomB: CHAT('tristan here') })), []);
+  assert.deepEqual(failed(world({ roomB: CHAT('only you') })), [ON]);
+  assert.deepEqual(failed(world({ roomB: `${CHAT('tristan here')}  └ ◯ tristan  working\n` })), [ON]);
   assert.deepEqual(failed(world({ subB: '  ⏺ main\n  ◯ husky-7354  2 here\n  └ ◯ tristan  working\n' })), ["jess's Claude runs a subagent of its own: its row shows in jess's panel beside the room row"]);
   assert.deepEqual(failed(world({ subB: '' })), ["jess's Claude runs a subagent of its own: its row shows in jess's panel beside the room row"]);
 });

@@ -9,7 +9,7 @@
 // pane with the room row opened.
 import path from 'node:path';
 import { readJson, readText, clip } from '../lib/io.ts';
-import { panelRows, rowViewLine, hereNames, subagentRows } from '../lib/panes.ts';
+import { panelRows, rowViewLine, hereNames, subagentRows, roomStatus, oneRoomRow } from '../lib/panes.ts';
 import type { Ctx, Det } from './context.ts';
 import type { TaskRec } from './captures.ts';
 
@@ -67,16 +67,22 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   const { log, roomDir, code, A, B } = x;
   const name: Record<'A' | 'B', string> = { A, B };
   const f = (...p: string[]): string => x.stateFile('S6b', ...p);
-  // S2 (film): each person opens the room row in their agent panel: its view's own line leads with the other, and the
-  // panel keeps one row for the room, nothing nested (0.6.0: no participant rows)
+  // S2 (film): each person opens the room row in their agent panel, and the panel keeps one row for the room, its
+  // only nested row its keeper (no participant rows). Who's here: room-chat on, main's status line under the row's view
+  // ("CODE · jess here"; the view's rule reads "─ @CODE ─"); off, the view's own line (the hold's progress) leads with it
   for (const [who, other] of [[A, B], [B, A]] as const) {
     const t = readText(x.stateFile('S2', `panel-${who}.txt`));
-    const line = rowViewLine(t, code);
+    const chat = (t || '').includes(`─ @${code} ─`);
+    const viewLine = rowViewLine(t, code);
+    const status = roomStatus(t, code);
+    const line = chat ? status : viewLine;
     const names = hereNames(line);
     const rows = panelRows(t);
-    det(`${who} opens the ${code} row in the agent panel: its line leads with "${other} here", one row, nothing nested`,
-      !!line && !!names && names.includes(other) && line.startsWith(names[0] ?? '\0') && rows.filter(r => r.label === code).length === 1 && !rows.some(r => r.nested),
-      line ? `"${clip(line, 120)}"; rows ${rows.map(r => r.line).join(' | ') || 'none'} (state/S2/panel-${who}.txt)` : `no open ${code} row view in state/S2/panel-${who}.txt`);
+    const one = oneRoomRow(rows, code);
+    const opened = chat || viewLine !== null;
+    det(`${who} opens the ${code} row in the agent panel: ${chat ? 'the status line names' : 'its line leads with'} "${other} here", one row, its only nested row its keeper`,
+      opened && !!line && !!names && names.includes(other) && line.startsWith(names[0] ?? '\0') && one.ok,
+      line ? `"${clip(line, 120)}"${chat ? ' (status line)' : ''}; rows ${rows.map(r => r.line).join(' | ') || 'none'} (${one.why}; state/S2/panel-${who}.txt)` : `no open ${code} row view${chat ? ' or status line' : ''} in state/S2/panel-${who}.txt`);
   }
   const sub = subagentRows(readText(f(`panel-subagent-${B}.txt`)), code);
   det(`${B}'s Claude runs a subagent of its own: its row shows in ${B}'s panel beside the room row`, sub.length > 0,
@@ -110,9 +116,12 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     `${A} ${headA.slice(0, 7) || '?'}, ${B} ${headB.slice(0, 7) || '?'}, origin ${headO.slice(0, 7) || '?'}`);
   // the handoff: A's Claude tells B's that the store is pushed, and B's checkout pulls only after that
   const pull = firstPull(readText(f(`reflog-${B}.txt`)));
-  const said = x.peerIn(x.inSpan(x.entries(B), x.span('S6b')), A)
-    .map(e => ({ at: e.timestamp, text: x.textOf(e.message && e.message.content) || String((e.origin && e.origin.body) || '') }))
-    .filter(m => /push/i.test(m.text)).sort((a, b) => (a.at < b.at ? -1 : 1))[0];
+  // a peer message on one machine; to B on another machine the module routes the SendMessage through the room (a say
+  // via=agent to B: S3)
+  const said = [...x.peerIn(x.inSpan(x.entries(B), x.span('S6b')), A)
+    .map(e => ({ at: e.timestamp, text: x.textOf(e.message && e.message.content) || String((e.origin && e.origin.body) || '') })),
+  ...x.logIn(x.span('S6b')).filter(e => e.kind === 'say' && e.via === 'agent' && e.from === A && e.to === B).map(e => ({ at: e.at, text: String(e.text) }))]
+    .filter(m => /push/i.test(m.text)).sort((a, b) => (String(a.at) < String(b.at) ? -1 : 1))[0];
   det(`The handoff: ${A}'s Claude tells ${B}'s Claude the store is pushed before ${B}'s checkout pulls it`, said && pull && Date.parse(said.at) < Date.parse(pull.at),
     `${said ? `peer message from ${A} at ${said.at.slice(11, 19)}: "${clip(said.text, 70)}"` : `no peer message from ${A} about a push in ${B}'s transcript during S6b`}; ${pull ? `${B}'s first pull ${pull.at} (${pull.msg})` : `no pull in state/S6b/reflog-${B}.txt`}`);
   for (const who of [A, B]) {

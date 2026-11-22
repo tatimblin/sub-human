@@ -19,11 +19,15 @@
  *   {type:'pull', text}       for Claude, no wake: the pull lane plus a copy of the chat lines, under the room
  *                             context's head and end (PULL_CAP); the module holds it for the person's next prompt.
  *                             At most once: the cursor moves when the line is written
- *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
- *                             assigned to me, an objection to my proposal (members, with the room state line when
- *                             the batch moved a proposal); the room Claude gets none (it reads nothing)
+ *   {type:'wake', text, chat?}   what needs Claude now: to me / @me / "me, …", my own untagged question, a proposal
+ *                             for me, a decision on mine, a task assigned to me, an objection to my proposal
+ *                             (members, with the room state line when the batch moved a proposal); the room Claude
+ *                             gets none (it reads nothing). chat: a person's line is among them (the module submits
+ *                             it for the turn's end, even mid-turn, its prompt row drawn as nothing)
  *   {type:'reminders', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
  *                             (members); sent at start and when it changes (the room row is the hooks module's own)
+ *   {type:'here', text}       who else is here (lib/rows.ts hereLine), for the room row's status line under main's
+ *                             prompt (members, room-chat: mod/chat.ts); sent at start and when it changes
  *   {type:'health', text, quiet?}   a hash-chain break (one line per break); in a room hosted elsewhere linkLine each
  *                             time the link goes off and LINK_BACK once it is online again (quiet: the debug log and
  *                             Claude's context, no notice, unless posts were not sent; no "left"/"joined": the daemon
@@ -70,6 +74,7 @@ import type * as LinkSocketMod from './remote/link-socket.ts';
 import type * as SeatsMod from './seats.ts';
 import type * as TasksMod from './tasks.ts';
 import type * as JoiningMod from './remote/joining.ts';
+import type * as RowsMod from './rows.ts';
 
 // The tail starts with every session: what only a room's Claude, a host or a pending join reads loads at
 // its first use (start cost).
@@ -80,6 +85,7 @@ const invitesLib = lazy<typeof InvitesMod>(import.meta.url, './remote/invites.ts
 const seatsLib = lazy<typeof SeatsMod>(import.meta.url, './seats.ts');
 const tasksLib = lazy<typeof TasksMod>(import.meta.url, './tasks.ts');
 const joiningLib = lazy<typeof JoiningMod>(import.meta.url, './remote/joining.ts');
+const rowsLib = lazy<typeof RowsMod>(import.meta.url, './rows.ts');
 
 // ---------- types ----------
 /** The room as a session reads it (lib/room.ts open): the calls made here. Tests hand in fakes. */
@@ -134,6 +140,8 @@ interface TailDeps {
    * never bound, crashed or is starting again), and the room is not closing: a member's tail on the host repairs it */
   roomSessionDown(code: RoomCode): boolean;
   pendingNews(sid: string): { state: 'waiting' | 'pin' | 'linked' | 'refused'; code: RoomCode; text: string; name?: string; line?: string; check?: string } | null;
+  /** who else is here as name sees it (lib/rows.ts hereLine) */
+  here(code: RoomCode, name: string): string;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
 type Deps = Omit<TailDeps, 'roomClaude' | 'admission' | 'invites'> & {
@@ -288,6 +296,7 @@ function pullText(lines: string[]): string | null {
 function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], moved: number[] } {
   const { me, room: rm, entries, judge, seen, reported, hinted } = ctx;
   const chat: string[] = [], pull: string[] = [], wake: string[] = [], moved: number[] = [];
+  let chatWake = false;
   let state = false;
   for (const p of ready) {
     const { e } = p;
@@ -308,6 +317,7 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
       continue;
     }
     wake.push(...lines);
+    if (e.kind === 'say' && e.via === 'human') chatWake = true; // a person's line naming me (or my own question)
     // a Claude's post addressed to me: answer that Claude, not the room (on another machine the post is how
     // its SendMessage arrived; mod/send.ts carries the reply back the same way)
     if (e.via === 'agent' && e.to === me.name && e.from && e.from !== me.name && !(hinted && hinted.has(e.from))) {
@@ -323,7 +333,7 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
   if (chat.length) events.push({ type: 'chat', lines: chat });
   const pt = pullText(pull);
   if (pt) events.push({ type: 'pull', text: pt });
-  if (wake.length) events.push({ type: 'wake', text: wake.join('\n') });
+  if (wake.length) events.push({ type: 'wake', text: wake.join('\n'), ...(chatWake ? { chat: true as const } : {}) });
   return { events, moved };
 }
 
@@ -534,6 +544,14 @@ function startSession(me: Identity, ctx: TailCtx): Session {
     remindersSent = text;
     emit([{ type: 'reminders', text }]);
   }
+  let hereSent: string | undefined;
+  function sendHere() {
+    if (me.role === 'claude') return;
+    const text = deps.here(me.code, me.name);
+    if (text === hereSent) return;
+    hereSent = text;
+    emit([{ type: 'here', text }]);
+  }
   function linkHealth() {
     const st = deps.linkStatus(s.code);
     const l = linkLine(st, s.code);
@@ -587,6 +605,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendReminders();
+    try { sendHere(); } catch (e) { log('here', e); }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { admitHealth(); } catch (e) { log('admission', e); } }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { inviteHealth(rm.store); } catch (e) { log('invites', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
@@ -619,6 +638,7 @@ function startSession(me: Identity, ctx: TailCtx): Session {
   pollLoop.start(true);
   healthLoop.start(false);
   sendReminders();
+  try { sendHere(); } catch (e) { log('here', e); }
 
   s.stalled = () => clock.now() - s.lastTick > t.stallMs;
   s.killPoll = () => pollLoop.stop(); // tests: simulate a poll loop that died
@@ -662,6 +682,7 @@ function runTail({
     invites: deps.invites ? constant(deps.invites) : invitesLib,
     sweepSeats: deps.sweepSeats ?? ((code: RoomCode) => seatsLib().sweep(code)),
     repairTasks: deps.repairTasks ?? ((code: RoomCode) => tasksLib().repair(roomMod.open(code).store)),
+    here: deps.here ?? ((code: RoomCode, name: string) => rowsLib().hereLine(code, name)),
     roomSessionDown: deps.roomSessionDown ?? ((code: RoomCode) => {
       const o = identityMod.readMembers(code).claude;
       return !!o && !!o.tasks_dir && !o.closing && !o.stopped_at && !identityMod.seatAlive(o);

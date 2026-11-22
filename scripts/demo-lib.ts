@@ -33,8 +33,16 @@
  *                        with --quiet S, then keep at it until its background agents are done (only the room
  *                        row left in its panel) and no dialog has shown for S seconds
  *   demo-lib.ts wait-row <seat> [--timeout S]     wait until <seat>'s room row holds the room: in its session's
- *                                                  subagent transcripts, a room row (sub-human:room) whose hold call
- *                                                  for the room has no result yet (checks/transcripts.ts holdingRow)
+ *                                                  subagent transcripts, a room row (sub-human:room) and, room-chat
+ *                                                  on, its keeper (sub-human:keeper) whose hold call for the room has
+ *                                                  no result yet; room-chat off, the row's own hold call
+ *                                                  (checks/transcripts.ts rowHolds)
+ *   demo-lib.ts row-kind <seat>                  print the seat's room row's kind: chat (room-chat on: "chat: CODE"),
+ *                                                  hold (off: "room: CODE") or none
+ *   demo-lib.ts wait-row-line <seat> <regex> [--save FILE] [--timeout S]   wait until <seat>'s chat row has drawn a
+ *                                                  line matching <regex> (a line of the module's answer in the row's
+ *                                                  transcript, answeredWithoutRequest: checks/transcripts.ts drawnIn);
+ *                                                  print it (and save it to FILE)
  *   demo-lib.ts set-mode <session> <auto|default|acceptEdits>   shift+tab until the footer shows that mode (the
  *                                                  person's own switch; --object-mode)
  *   demo-lib.ts member-field <name> <field>       print members.json[name][field] ('' if none)
@@ -101,7 +109,7 @@ import type { LogEntry } from './snap.ts';
 import * as paths from './lib/paths.ts';
 import { readJson, jsonl, esc } from './lib/io.ts';
 import { panelRows, subagentRows, cardState, planState, joinLineIn, pinIn, admitCardState, footerMode } from './lib/panes.ts';
-import { subagents, holdingRow } from './checks/transcripts.ts';
+import { subagents, rowHolds, isChatRow, isRoomRow, drawnIn } from './checks/transcripts.ts';
 import type { DialogState } from './lib/panes.ts';
 
 /**
@@ -177,7 +185,8 @@ async function typeHuman(session: string, text: string): Promise<void> {
   const ds = keyDelays(text);
   const chars = [...text];
   for (const [i, ch] of chars.entries()) {
-    tmux('send-keys', '-c', c, '-l', '-t', tgt(session), '--', ch);
+    // a lone ";" argument is tmux's command separator (run bison-8521 typed "paging the" for "paging; the"): escape it
+    tmux('send-keys', '-c', c, '-l', '-t', tgt(session), '--', ch === ';' ? '\\;' : ch);
     await sleep(ds[i] ?? 0);
   }
 }
@@ -462,16 +471,39 @@ async function approveUntil(o: Opts, T: number): Promise<number> {
 
 /**
  * The seat's room row is live: in the seat's session (members.json session_id; any session of the seat's folder when
- * the host's record has none, as for a seat on another machine) a room-row subagent (agents/room.md) whose hold call
- * for this room is blocking, i.e. Claude Code wrote the call and no result yet (a duplicate or a stopped row has its
- * "STOP: …" result). This is the row the hooks module spawned holding, not just a panel line drawn while it starts.
+ * the host's record has none, as for a seat on another machine) a room-row subagent (agents/room.md) and the hold call
+ * that keeps it: room-chat on, its keeper's (agents/keeper.md, {room, take}); off, the row's own. Blocking means
+ * Claude Code wrote the call and no result yet (a duplicate or a stopped row has its "STOP: …" result). This is the
+ * row the hooks module spawned holding, not just a panel line drawn while it starts.
  */
 async function waitRow(o: Opts, T: number): Promise<number> {
   const seat = arg(o, 0), code = roomCode() ?? '';
   return exit(await until(o.what || `${seat}'s room row holds room ${code} (its hold call is blocking)`, T, () => {
     const sid = (readJson<Record<string, { session_id?: string } | undefined>>(roomFile('members.json'), {})[seat] || {}).session_id;
-    return subagents(paths.seatProjectDir(seat), sid || null).some(s => holdingRow(s, code));
+    return rowHolds(subagents(paths.seatProjectDir(seat), sid || null), code);
   }));
+}
+
+/** The seat's session's subagents (members.json session_id; any of its folder's when the record has none). */
+const seatSubagents = (seat: string) => {
+  const sid = (readJson<Record<string, { session_id?: string } | undefined>>(roomFile('members.json'), {})[seat] || {}).session_id;
+  return subagents(paths.seatProjectDir(seat), sid || null);
+};
+/** chat, hold or none: what the seat's room row is (its prompt). */
+async function rowKind(o: Opts): Promise<number> {
+  const code = roomCode() ?? '';
+  const rows = seatSubagents(arg(o, 0)).filter(s => isRoomRow(s, code));
+  print(rows.some(s => isChatRow(s, code)) ? 'chat' : rows.length ? 'hold' : 'none');
+  return 0;
+}
+/** A line the seat's chat row drew (room-chat on), matching the regex. */
+async function waitRowLine(o: Opts, T: number): Promise<number> {
+  const seat = arg(o, 0), src = arg(o, 1), code = roomCode() ?? '';
+  const re = new RegExp(src);
+  let hit: { at: string, text: string } | undefined;
+  const ok = await until(o.what || `${seat}'s room row draws /${src}/`, T, () => (hit = drawnIn(seatSubagents(seat), code).find(l => re.test(l.text))) !== undefined);
+  if (hit) { print(`${hit.at} ${hit.text}`); if (o.save) fs.writeFileSync(o.save, `${hit.at} ${hit.text}\n`); }
+  return exit(ok);
 }
 
 /** The person moves their seat to a permission mode with shift+tab (Claude Code's own cycle), as they would by hand. */
@@ -815,6 +847,8 @@ export const COMMANDS: Record<string, Command> = {
   'wait-log': waitLog,
   'approve-until': approveUntil,
   'wait-row': waitRow,
+  'row-kind': rowKind,
+  'wait-row-line': waitRowLine,
   'set-mode': setMode,
   'member-field': memberField,
   'wait-member': waitMember,

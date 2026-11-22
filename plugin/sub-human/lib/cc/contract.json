@@ -902,7 +902,7 @@
     "no { isOffered } (a boolean)",
     "\"agent.offer\":\"{ isOffered: false }\""
    ],
-   "note": "agent.offer {isOffered: false} hides an agent type from the model, in its listing and at dispatch, while a plugin's own $.agent.spawn of the type is no offer (the typings' agent.register note). mod/rows.ts hides sub-human:room, so only the module starts the room row, but for the auto-mode fallback's one call (auto-mode-module-spawn-deny), while it is offered."
+   "note": "agent.offer {isOffered: false} hides an agent type from the model, in its listing and at dispatch, while a plugin's own $.agent.spawn of the type is no offer (the typings' agent.register note). mod/rows.ts hides sub-human:room, so only the module starts the room row, but for the auto-mode fallback's one call (auto-mode-module-spawn-deny), while it is offered. With room-chat on, both row types stay offered (row-resume) and the tool.call deny keeps main's model off them."
   },
   {
    "id": "auto-mode-module-spawn-deny",
@@ -912,9 +912,86 @@
    "since": "2.1.296",
    "search": [
     "The server-side auto mode classifier",
-    "the request that produced this action did not ask for one"
+    "the request that produced this action did not ask for one",
+    "called by plugin"
    ],
-   "note": "In auto mode a plugin's own $.agent.spawn is answered {deny: \"The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one. Issue the action again once, as-is; …\"} in about 2 ms: the classifier reviews an action against the model request that produced it, and a hook's spawn has none (live on 2.1.296, debug log `$.tool.call (sub-human): Agent answered in 2ms, 406 chars, denied`). The same spawn in default mode starts the row. mod/core/rows.ts rowFallback matches /auto mode classifier/i (or any deny while the session's mode is auto), and mod/deliver.ts then asks the model, as context once, for the Agent call itself (rowAsk), which the classifier reviews as the model's own; mod/rows.ts offers sub-human:room to the model only while it asks. Off (the text changed): the mode check alone still catches it."
+   "note": "In auto mode a plugin's own $.agent.spawn is answered {deny: \"The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one. Issue the action again once, as-is; …\"} in about 2 ms: the classifier reviews an action against the model request that produced it, and a hook's spawn has none (live on 2.1.296, debug log `$.tool.call (sub-human): Agent answered in 2ms, 406 chars, denied`). The same spawn in default mode starts the row. mod/core/rows.ts rowFallback matches /auto mode classifier/i (or any deny while the session's mode is auto), and mod/deliver.ts then asks the model, as context once, for the Agent call itself (rowAsk), which the classifier reviews as the model's own; mod/rows.ts offers sub-human:room to the model only while it asks. Off (the text changed): the mode check alone still catches it. 0.8.0 spike 2: a plugin's main-loop $.agent.spawn skips the classifier (\"Skipping auto mode classifier for Agent: called by plugin …\") unless the person or a policy has autoMode soft_deny or hard_deny rules; with them it is denied as above. A subagent's synthesized tool call is always reviewed and, on the Anthropic API, denied (turn-step-answer-subagent). A plugin's $.session.send is refused the same way in auto mode with those rules (\"…gave no verdict for SendMessage…\"); that row, started by main's model, is woken by its keeper instead."
+  },
+  {
+   "id": "row-composer-append",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "room-chat",
+   "since": "2.1.296",
+   "search": [
+    "The user sent a new message while you were working:",
+    "This is how Claude Code surfaces messages the user sends mid-turn"
+   ],
+   "note": "A line the person types into an idle background agent's row reaches session.append at Enter as a user row (door prompt, origin composer, the agent's id), its exact text inside the wrapper \"The user sent a new message while you were working:\\n<text>\\n\\nThis is how Claude Code surfaces messages the user sends mid-turn …\"; no prompt.submit, UserPromptSubmit or session.receive fires for it, and a deny of the row is refused (quiet/ROOM-ROW-SPIKE.md Q1, live on 2.1.296). mod/core/room-chat.ts typedText unwraps it and mod/chat.ts posts it as the person's words (at-room, via=human). Off: the row is read-only, @room in main."
+  },
+  {
+   "id": "turn-step-answer-subagent",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "room-chat",
+   "since": "2.1.296",
+   "search": [
+    "turn.step: a hook answered without the request; the loop read what it streamed",
+    "the plugin's own code raised it"
+   ],
+   "note": "A turn.step hook that yields its own chunks (text, a tool call, the stop) and never calls next answers a subagent's step with no model request: no tokens, nothing amber; an empty end_turn makes the engine ask once more, so every answer has text (quiet/ROOM-ROW-SPIKE.md Q1, live on 2.1.296). A subagent a hook spawned steps past that hook alone, so the row is spawned from turn.start, its steps answered from mod/chat.ts. After a /clear the row is re-listed as general-purpose (resumed), so steps are matched by the stored agent id, never by type. In auto mode on the Anthropic API a synthesized tool call is denied (server_not_requested): the room's keeper call goes through the room's model once, and the keeper's hold through its model when the synthesized one was refused (spike 2). A row main's model started (the fallback's Agent call) is different: a plugin's $.session.send to it hands the run it starts or resumes to the plugin's own origin, so every hook of the plugin skips its steps and tool calls as re-entry (\"the plugin's own code raised it\") and its model answers (live 2.1.296: a keeper loop). So such a row is never sent to: its keeper's hold ends on someone else's line (WAKE), and that end, an engine notification, is the row's turn (mod/core/room-chat.ts keeperHold)."
+  },
+  {
+   "id": "row-keepalive-child",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "room-chat",
+   "since": "2.1.296",
+   "search": [
+    "no live background children of its own",
+    "parked on keepalive"
+   ],
+   "note": "A background agent that stops while a background agent child of its own lives sends no task notification to main: the idle room row with its keeper child (sub-human:keeper, the blocking hold) is resumable and never wakes main (quiet/ROOM-ROW-SPIKE.md Q3, runs 4 and 5, live on 2.1.296). The keeper's end reaches the room as a task-notification turn, whose answered step spawns it again (capped: mod/core/room-chat.ts keeperStep). A background shell child does not count (main is told of every stop)."
+  },
+  {
+   "id": "row-resume",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "room-chat",
+   "since": "2.1.296",
+   "search": [
+    "is not offered in this session",
+    "disk transcript missing; using",
+    "was stopped by the user and was not resumed"
+   ],
+   "note": "An idle row resumes only while its type is offered (\"Agent type '…' is not offered in this session\"), so sub-human:room and sub-human:keeper stay offered and main's model is kept from spawning them by a fixed tool.call deny (mod/consent.ts). After --resume, $.session.send to the stored id resumes the row from disk with its history; after /clear it would be re-listed as general-purpose (resumed) (\"disk transcript missing; using N in-memory messages\"), so the old row ends (its keeper's hold is taken over) and a new one is spawned; a row stopped with Esc or x refuses a send (\"was stopped by the user and was not resumed\") and is spawned again (0.8.0 spike 1, live on 2.1.296)."
+  },
+  {
+   "id": "step-answered-without-request",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "room-chat",
+   "since": "2.1.296",
+   "search": [
+    "answeredWithoutRequest",
+    "msg_hook_"
+   ],
+   "note": "An assistant row a turn.step hook made with no request is kept in the transcript with answeredWithoutRequest: true (and a msg_hook_ id, zero usage), though it still names the session's model (0.8.0 spike 5, live on 2.1.296). mod/core/room-chat.ts rowUuids reads them back from the room's transcript after a resume, to draw those lines again as room lines."
+  },
+  {
+   "id": "render-message-uuid",
+   "section": 10,
+   "stability": "incidental",
+   "feature": "room-chat",
+   "since": "2.1.296",
+   "search": [
+    "useRenderInput(\"AssistantMessage\"",
+    "\"UserMessage\",\"AssistantMessage\",\"ToolUse\",\"ToolResult\",\"ToolGroup\",\"CommandOutput\",\"TurnDuration\",\"InfoNotice\""
+   ],
+   "shape": [
+    "(\"UserMessage\",()=>({requestId:~,props:{text:~,origin:"
+   ],
+   "note": "ui.render AssistantMessage and UserMessage carry the row's uuid as requestId (the uuid session.append reports and the transcript keeps), in the row's view and in main alike, so a hook scoped by uuid redraws the room's lines (\"maya: …\", no bullet) and hides the row's own user rows (the typed ❯ line, the module's sends, the spawn prompt) and nothing of main (0.8.0 spike 5, live on 2.1.296)."
   },
   {
    "id": "hook-events",

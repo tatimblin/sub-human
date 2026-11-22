@@ -77,6 +77,8 @@ export interface TEntry {
   origin?: { kind?: string, name?: string, body?: string, verifiedPeerPid?: number };
   message?: TMessage;
   attachment?: { type?: string, hookEvent?: string, content?: unknown, planFilePath?: string };
+  /** a turn.step answer with no model call (cc CONTRACT step-answered-without-request) */
+  answeredWithoutRequest?: boolean;
   /** the transcript file it came from (checks/transcripts.ts entries) */
   _file?: string;
 }

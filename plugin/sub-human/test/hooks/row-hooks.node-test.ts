@@ -159,13 +159,14 @@ test('the room row agent: a stray typed message gets the one-line read-only repl
   }
 });
 
-test('the room row agent: its description is at most 125 chars; no model key (it inherits the session model), background, the hold its only tool', () => {
-  for (const f of ['room.md']) {
+test('the room row agents: descriptions at most 125 chars; no model key (they inherit the session model), background, the hold and (the row) its keeper their only tools', () => {
+  const tools: Record<string, string> = { 'room.md': 'mcp__plugin_sub-human_room__hold, Agent(sub-human:keeper)', 'keeper.md': 'mcp__plugin_sub-human_room__hold' };
+  for (const [f, t] of Object.entries(tools)) {
     const s = fs.readFileSync(path.join(PLUGIN, 'agents', f), 'utf8');
     const d = must(must(/^description: (.*)$/m.exec(s))[1]);
     assert.ok(Array.from(d).length <= 125, `${f}: ${d.length}`);
     assert.doesNotMatch(s, /^model:/m, `${f} prescribes no model`);
     assert.match(s, /^background: true$/m);
-    assert.match(s, /^tools: mcp__plugin_sub-human_room__hold$/m);
+    assert.equal(must(/^tools: (.*)$/m.exec(s))[1], t);
   }
 });

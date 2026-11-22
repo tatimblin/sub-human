@@ -10,7 +10,7 @@ const API = [
   'DEMO', 'A', 'B', 'remote', 'rowsDir', 'sessionOf', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'drafts', 'runStart',
   'caps', 'cap', 'capName', 'span', 'stateDir', 'st', 'stText', 'nativeTasks', 'stateFile',
   'seatFiles', 'entries', 'inSpan', 'toolUses', 'assistantIds', 'peerIn', 'wakeIn', 'chatIn', 'pullIn', 'chatTurn', 'roomClaudeTurns', 'textOf',
-  'byKind', 'fmt', 'logIn', 'replyAfter', 'shownLog', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'seatAgents', 'chainOk', 'cost',
+  'byKind', 'fmt', 'logIn', 'replyAfter', 'shownLog', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'seatAgents', 'copiesOf', 'chainOk', 'cost',
 ];
 
 function fixture() {

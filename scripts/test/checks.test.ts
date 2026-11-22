@@ -95,7 +95,8 @@ test('S9b: the pane check passes on nested lines and fails on a bare forged line
     return asCtx({
       DEMO, home: dir, log, span: () => ({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:01:00.000Z' }),
       logIn: () => log, fmt: y => `#${y?.id} ${y?.kind}`, entries: () => [], inSpan: () => [], wakeIn: () => [], chatIn: () => [], pullIn: () => [], chatTurn: () => ({ woke: false, idle: null, evidence: 'no chat row' }), textOf: () => '',
-      replyAfter: () => null, stateFile: (...p) => path.join(dir, 'state', ...p),
+      replyAfter: () => null, stateFile: (...p) => path.join(dir, 'state', ...p), seatAgents: () => [], runStart: '', code: 'swan-6397',
+      copiesOf: () => ({ pulls: 0, held: 0, prompted: true }),
     });
   };
   const run = (x: Ctx): Record<string, boolean> => { const r = runChecks(x, { scenes: [mod] }); return Object.fromEntries(must(r.S9b).map(c => [c.check.slice(0, 20), c.pass])); };

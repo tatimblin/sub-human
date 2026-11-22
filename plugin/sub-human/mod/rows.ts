@@ -4,9 +4,11 @@
  * the auto-mode fallback's one Agent call (offerRow).
  *   - agent.offer sub-human:room: not offered to the model, so no Agent call of the model's spawns a row (and no
  *     "Backgrounded agent" block, no hand-back turn of one: cc CONTRACT module-agent-spawn-quiet), except while
- *     mod/deliver.ts's fallback asks for that one call (auto mode refused the module's spawn: offerRow).
+ *     mod/deliver.ts's fallback asks for that one call (auto mode refused the module's spawn: offerRow). With
+ *     room-chat on it stays offered (an idle row resumes only while its type is: cc CONTRACT row-resume), and
+ *     mod/consent.ts's fixed deny keeps main's model from spawning it.
  *   - classic.SubagentStop: node row-hold for the room row in a seated (or unsure) session (a row that gave up is told
- *     to hold again; its block continues it).
+ *     to hold again; its block continues it); not with room-chat on, whose row stops after every line.
  *   - session.receive / prompt.submit: the row's hand-back (its final report, "left" or "error", which Claude Code
  *     delivers to the main conversation as a message of its own) and its "finished" task notification are taken: a row
  *     ending starts no model turn (stage 8e I.2: "Still in room" after a leave). The row's id is noted as it is
@@ -21,13 +23,15 @@ import { rowsNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { handbackFrom, finishedFrom, rowReportFrom, rowEndedRow, ROW_ENDED, ROOM_AGENT } from './core/rows.ts';
 import { asHello } from './core/state.ts';
+import { chatOn } from './core/room-chat.ts';
 import type { EngineInterface, On } from 'claude-code';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 
 async function needed($: EngineInterface, sid: unknown, agentType: unknown): Promise<boolean> {
-  const { value } = await $.state.get(HELLO);
-  return rowsNeeded(asHello(value), sid, agentType);
+  const hello = asHello((await $.state.get(HELLO)).value);
+  // a room-chat row stops after every line: it idles, its keeper holds (mod/chat.ts)
+  return rowsNeeded(hello, sid, agentType) && !chatOn(hello);
 }
 
 /** The room rows this process spawned (module state: a reload forgets them, and their hand-back is then known by its
@@ -56,7 +60,7 @@ const rowFinished = (text: unknown): string | null => { const id = finishedFrom(
 export function registerRows(on: On): void {
   // the row is the module's: the model never spawns one (the module's own $.agent.spawn is no offer), but for the
   // fallback's one call while it asks for it
-  on('agent.offer', { agent: ROOM_AGENT }, () => ({ isOffered: offering }))
+  on('agent.offer', { agent: ROOM_AGENT }, async $ => ({ isOffered: offering || chatOn(asHello((await $.state.get(HELLO)).value)) }))
     .catch(() => ({ isOffered: false })); // never offered, even past a failure
 
   // a row's hand-back is no turn: taken before it is queued, or dropped as a prompt where it was not

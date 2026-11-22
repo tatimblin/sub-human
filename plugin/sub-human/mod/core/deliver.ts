@@ -3,8 +3,8 @@
  * In: the tail child's ndjson events (lib/tail.ts). Out: route(ev) -> actions, one $ call each:
  *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice); pull -> held in $.state
  *   (holdPull) and carried as context beside the next prompt (pullContext, mod/prompt.ts), never a user row of its
- *   own, which the model read as one turn with the person's next words (stage 8e B); wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
- *   reminders -> held for the next prompt (proposal reminders); health -> log (quiet: the debug log) plus
+ *   own, which the model read as one turn with the person's next words (stage 8e B); wake -> $.prompt.submit when idle (a chat wake, a person's line: always, so it waits for the turn's end), else append plus log, re-checked at the turn's end (turnLedger);
+ *   reminders -> held for the next prompt (proposal reminders); here -> the room row's status line (mod/chat.ts); health -> log (quiet: the debug log) plus
  *   append; take -> the
  *   module takes a let-in join's seat (the join shim, args '') and wakes the model with its block (takeWake).
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
@@ -56,7 +56,7 @@ export const WAKE_CONTEXT: string = `${FOR_CLAUDE} sub-human: the prompt above i
 export const WAKE_RESEND: string = `${FOR_CLAUDE} sub-human: room lines came during your last turn (the row above; the person saw them). Act on what concerns you.`;
 
 /** Every event type the tail writes, keyed so a type added to TailEvent and not here (or here and not there) does not compile. */
-const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, reminders: true, health: true, invites: true, take: true };
+const TYPES: { readonly [T in TailEvent['type']]: true } = { seat: true, chat: true, pull: true, wake: true, reminders: true, here: true, health: true, invites: true, take: true };
 const isType = (t: unknown): t is TailEvent['type'] => typeof t === 'string' && Object.hasOwn(TYPES, t);
 
 /** The room tail, on a node that runs the plugin (hooks/node.sh, as every node command Claude Code starts). */
@@ -103,12 +103,14 @@ export function parseEvent(line: string): TailEvent | null {
     }
     case 'chat': return Array.isArray(o.lines) && o.lines.length ? { type: 'chat', lines: o.lines.map(String) } : null;
     case 'reminders': return { type: 'reminders', text: str(text) ? text : null };
+    case 'here': return typeof text === 'string' ? { type: 'here', text } : null;
     case 'invites': {
       if (!Array.isArray(o.open)) return null;
       const expired = Array.isArray(o.expired) ? o.expired.filter((r: unknown): r is string => typeof r === 'string') : [];
       return { type: 'invites', open: o.open.filter((r: unknown) => typeof r === 'string'), ...(expired.length ? { expired } : {}) };
     }
-    case 'pull': case 'wake': return str(text) ? { type, text } : null;
+    case 'pull': return str(text) ? { type, text } : null;
+    case 'wake': return str(text) ? { type, text, ...(o.chat === true ? { chat: true as const } : {}) } : null;
     case 'health': return str(text) ? { type, text, ...(o.quiet === true ? { quiet: true as const } : {}) } : null;
     case 'take': {
       const { code, name, check } = o;
@@ -119,7 +121,7 @@ export function parseEvent(line: string): TailEvent | null {
   }
 }
 
-function visibleLines(text: unknown): string[] {
+export function visibleLines(text: unknown): string[] {
   return String(text ?? '').split('\n').filter(l => l.trim() && !l.startsWith(FOR_CLAUDE));
 }
 
@@ -147,6 +149,7 @@ export function route(
     case 'chat': return logLines(ev.lines);
     case 'pull': return [{ do: 'hold-pull', text: ev.text }];
     case 'reminders': return [{ do: 'hold-reminders', text: ev.text }];
+    case 'here': return [{ do: 'here', text: ev.text }];
     // a quiet health line (the link down and back: nothing lost) goes to the debug log; Claude reads it either way
     case 'health': return [...(ev.quiet ? [{ do: 'debug' as const, text: ev.text }] : logLines(ev.text)), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
     case 'invites': return [{ do: 'invites', open: ev.open, ...(ev.expired ? { expired: ev.expired } : {}) }];
@@ -154,7 +157,8 @@ export function route(
     case 'wake': {
       const text = wakeText(ev.text);
       const seen = visibleLines(ev.text);
-      if (!turnRunning) return [{ do: 'submit', text, seen }];
+      // a person's line (a chat wake, spike 4): submitted even mid-turn, so it waits for the turn's end
+      if (!turnRunning || ev.chat) return [{ do: 'submit', text, seen }];
       return [...logLines(seen), { do: 'mid-turn-wake', text }];
     }
     default: return assertNever(ev, 'tail event');

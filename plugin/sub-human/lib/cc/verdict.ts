@@ -5,7 +5,7 @@
  * <home>/cc/<version>.json = {version, probedAt, contract, failed: [entry ids], off: [features]} (atomic). contract: a
  * hash of contract.json, so a plugin update that changes the contract checks the version again. failed: the entries
  * the probe (contract.ts probe) did not find in the binary, plus those reported changed on the version (degradedOn).
- * off: the gated features (mod/core/cc.ts GATED: tasks, sign-off, reap-rm, quiet-plan, keep-mode, room-row) of failed entries.
+ * off: the gated features (mod/core/cc.ts GATED: tasks, sign-off, reap-rm, quiet-plan, keep-mode, room-row, room-chat) of failed entries.
  * A failed entry of any other feature (core plumbing, rows, delivery, ...) turns nothing off: it
  * only makes the version unverified (doctor warns). The version contract.json `probed` names is verified without a
  * probe. <home>/cc/seen.json = {version, at}: the version mod-hello last saw on this machine, for a process that has no

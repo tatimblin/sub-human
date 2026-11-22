@@ -98,7 +98,7 @@ export const ENV = {
   SUB_HUMAN_WEB_FRONT: { kind: 'str', does: 'not a user knob: the tests\' and the lab\'s HTTPS front for --web (webFront)' },
   SUB_HUMAN_NODE: { kind: 'path', does: 'the node every plugin command runs on (hooks/node.sh), before any it looks for' },
   SUB_HUMAN_NODE_ROOT: { kind: 'path', does: 'not a user knob: hooks/node.sh looks for node\'s install places under this folder instead of / (the tests)' },
-  SUB_HUMAN_CC_OFF: { kind: 'str', does: 'features forced to their fallback, comma separated (tasks, sign-off, reap-rm, quiet-plan, keep-mode, room-row): lib/cc/verdict.ts forced, for tests and live checks' },
+  SUB_HUMAN_CC_OFF: { kind: 'str', does: 'features forced to their fallback, comma separated (tasks, sign-off, reap-rm, quiet-plan, keep-mode, room-row, room-chat): lib/cc/verdict.ts forced, for tests and live checks' },
 } as const;
 // the table's shape, checked apart from the table: an exported `satisfies` is a type an isolated declaration cannot infer
 ENV satisfies Record<`SUB_HUMAN_${string}`, Knob>;

@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { COMMANDS, opts, listsRoomClaude, keyDelays, paneBelow, newMatches, taskFor } from '../demo-lib.ts';
-import { panelRows, rowViewLine, hereNames, footerMode, subagentRows } from '../lib/panes.ts';
-import { subagents, holdingRow, isRoomRow } from '../checks/transcripts.ts';
+import { panelRows, rowViewLine, hereNames, footerMode, subagentRows, roomStatus, oneRoomRow } from '../lib/panes.ts';
+import { subagents, holdingRow, isRoomRow, isChatRow, isKeeper, rowHolds, rowHeld, rowStrays, rowKeepers, KEEPERS_MAX, drawnIn } from '../checks/transcripts.ts';
 import { runInfo } from '../checks/context.ts';
 import { parseJson } from '../lib/io.ts';
 
@@ -92,6 +92,21 @@ test('panes: an opened room row\'s own line and who it names; a Claude\'s own su
   assert.deepEqual(subagentRows(sub, 'egret-7989').map(r => [r.label, r.text.split('  ')[0]]), [['Explore', 'Explain GET /tasks flow']]);
 });
 
+test('panes: the 0.8.0 chat row: main\'s status line, one row with only its keeper nested (Claude Code 2.1.296)', () => {
+  const view = 'only you\nbob joined\nyou: row test one\n✻ Waiting for 1 background agent to finish\n────── @tapir-0763 ─\n❯ Message @tapir-0763…\n──────\n  ⚠ sub-human: tapir-0763 · bob here · 1 new\n  ↑/↓ to select · ctrl+x ctrl+k to stop all agents\n\n  ◯ main\n❯ ⏺ tapir-0763          type here                                    3s · ↓ 3.7k tokens\n  └ ◯ sub-human:keeper  Holding room row tapir-0763                  2m 9s · ↓ 8 tokens\n';
+  assert.equal(roomStatus(view, 'tapir-0763'), 'bob here · 1 new');
+  assert.deepEqual(hereNames(roomStatus(view, 'tapir-0763')), ['bob']);
+  assert.equal(roomStatus(view, 'swan-6397'), null);
+  assert.equal(roomStatus('  ⚠ sub-human: tapir-0763 · bob (working), carol here\n', 'tapir-0763'), 'bob (working), carol here');
+  assert.deepEqual(oneRoomRow(panelRows(view), 'tapir-0763'), { ok: true, why: '1 tapir-0763 row(s)' });
+  // collapsed: the keeper is the row's "(+1)"
+  assert.equal(oneRoomRow(panelRows('  ⏺ main\n  ◯ tapir-0763 (+1)  type here\n'), 'tapir-0763').ok, true);
+  assert.equal(oneRoomRow(panelRows(`${view}  └ ◯ bob  working\n`), 'tapir-0763').ok, false);
+  assert.equal(oneRoomRow(panelRows(`${view}  ◯ tapir-0763  type here\n`), 'tapir-0763').ok, false);
+  assert.equal(oneRoomRow(panelRows('  ⏺ main\n'), 'tapir-0763').ok, false);
+  assert.equal(rowViewLine(view, 'tapir-0763'), null); // no hold's line: the chat has none
+});
+
 test('panes footerMode: the permission mode a footer shows (default: none named, a prompt box drawn)', () => {
   const box = (foot: string): string => `⏺ done\n\n────────────────────\n❯ \n────────────────────\n  ${foot}\n`;
   assert.equal(footerMode(box('⏵⏵ auto mode on · ← 1 agent · ↓ to manage')), 'auto');
@@ -126,6 +141,84 @@ test('transcripts subagents: the room row, its blocking hold, and an old partici
   assert.equal(subagents(d, 'sid-2').length, 0);
 });
 
+test('transcripts subagents: the 0.8.0 chat row holds through its keeper; nothing else nests under it', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-subagents-'));
+  const dir = path.join(d, 'sid-1', 'subagents');
+  fs.mkdirSync(dir, { recursive: true });
+  const line = (o: unknown): string => JSON.stringify(o) + '\n';
+  const put = (id: string, meta: unknown, ...ls: string[]): void => {
+    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), ls.join(''));
+    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify(meta));
+  };
+  const prompt = (t: string, at: string) => line({ type: 'user', timestamp: at, message: { content: t } });
+  const hold = (id: string, at: string) => line({ type: 'assistant', timestamp: at, message: { content: [{ type: 'tool_use', id, name: 'mcp__plugin_sub-human_room__hold', input: { room: 'tapir-0763', take: true } }] } });
+  // as 2.1.296 writes them (run tapir-0763): the row named the code, its keeper's meta naming it parent
+  put('row', { agentType: 'sub-human:room', name: 'tapir-0763', spawnDepth: 1 }, prompt('chat: tapir-0763', '2026-01-01T00:00:01Z'));
+  put('keep', { agentType: 'sub-human:keeper', parentAgentId: 'row', spawnDepth: 2 }, prompt('keep: tapir-0763', '2026-01-01T00:00:02Z'), hold('k1', '2026-01-01T00:00:03Z'));
+  let all = subagents(d);
+  const [row, keep] = all;
+  assert.ok(row && keep);
+  assert.deepEqual([row.id, keep.id, keep.parent], ['row', 'keep', 'row']);
+  assert.deepEqual([isRoomRow(row, 'tapir-0763'), isChatRow(row, 'tapir-0763'), isKeeper(keep, 'tapir-0763'), isRoomRow(keep, 'tapir-0763')], [true, true, true, false]);
+  assert.equal(holdingRow(keep, 'tapir-0763'), true);
+  assert.equal(holdingRow(row, 'tapir-0763'), false); // the row itself holds nothing
+  assert.deepEqual([isRoomRow(row, 'swan-6397'), isKeeper(keep, 'swan-6397')], [false, false]); // an earlier run's room in the same folder
+  assert.equal(rowHolds(all, 'tapir-0763'), true);
+  assert.equal(rowHeld(all, row, 'tapir-0763'), true);
+  assert.deepEqual(rowStrays(all, 'tapir-0763'), []);
+  // the keeper's hold returned: the row holds no more
+  fs.appendFileSync(path.join(dir, 'agent-keep.jsonl'), line({ type: 'user', timestamp: '2026-01-01T00:01:00Z', message: { content: [{ type: 'tool_result', tool_use_id: 'k1', content: 'STOP: you left' }] } }));
+  assert.equal(rowHolds(subagents(d), 'tapir-0763'), false);
+  // a chat row with no keeper holds nothing; another agent under the row is a stray
+  put('keep', { agentType: 'sub-human:keeper', parentAgentId: 'other', spawnDepth: 2 }, prompt('keep: tapir-0763', '2026-01-01T00:00:02Z'), hold('k2', '2026-01-01T00:00:03Z'));
+  assert.equal(rowHolds(subagents(d), 'tapir-0763'), false); // a keeper of another row
+  put('x', { agentType: 'Explore', parentAgentId: 'row', spawnDepth: 2 }, prompt('read the store', '2026-01-01T00:00:04Z'));
+  all = subagents(d);
+  assert.deepEqual(rowStrays(all, 'tapir-0763').map(s => s.id), ['x']);
+});
+
+test('transcripts rowKeepers and modelText: a row that respawns its keeper past the cap, and writes text of its model\'s', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-subagents-'));
+  const dir = path.join(d, 'sid-1', 'subagents');
+  fs.mkdirSync(dir, { recursive: true });
+  const line = (o: unknown): string => JSON.stringify(o) + '\n';
+  const put = (id: string, meta: unknown, ...ls: string[]): void => {
+    fs.writeFileSync(path.join(dir, `agent-${id}.jsonl`), ls.join(''));
+    fs.writeFileSync(path.join(dir, `agent-${id}.meta.json`), JSON.stringify(meta));
+  };
+  const at = (s: number): string => new Date(Date.parse('2026-01-01T00:00:00Z') + s * 1000).toISOString();
+  // the module's answer (answeredWithoutRequest) is no model text; the run vole-7874's row wrote its own
+  put('row', { agentType: 'sub-human:room', name: 'vole-7874' }, line({ type: 'user', timestamp: at(0), message: { content: 'chat: vole-7874' } }),
+    line({ type: 'assistant', timestamp: at(1), answeredWithoutRequest: true, message: { content: [{ type: 'text', text: 'only you' }] } }));
+  for (let i = 0; i < 5; i++) put(`k${i}`, { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(2 + i * 60), message: { content: 'keep: vole-7874' } }));
+  let all = subagents(d);
+  let row = all.find(x => x.id === 'row');
+  assert.ok(row);
+  assert.deepEqual(row.modelText, []);
+  assert.deepEqual(drawnIn(all, 'vole-7874').map(l => l.text), ['only you']); // the module's answer: drawn
+  assert.deepEqual(drawnIn(all, 'swan-6397'), []);
+  assert.deepEqual([rowKeepers(all, row, 'vole-7874').keepers.length, rowKeepers(all, row, 'vole-7874').peak], [5, 5]);
+  // a sixth inside the window: past the cap; one after it starts a window of its own
+  put('k5', { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(300), message: { content: 'keep: vole-7874' } }));
+  put('k6', { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(5000), message: { content: 'keep: vole-7874' } }));
+  fs.appendFileSync(path.join(dir, 'agent-row.jsonl'), line({ type: 'assistant', timestamp: at(400), message: { content: [{ type: 'text', text: "I've started the background keeper again" }] } }));
+  all = subagents(d);
+  row = all.find(x => x.id === 'row');
+  assert.ok(row);
+  assert.deepEqual([rowKeepers(all, row, 'vole-7874').keepers.length, rowKeepers(all, row, 'vole-7874').peak], [7, 6]);
+  assert.ok(rowKeepers(all, row, 'vole-7874').peak > KEEPERS_MAX);
+  assert.deepEqual(row.modelText, ["I've started the background keeper again"]);
+  // 0.8.0-beta.2: a keeper whose hold ended on a WAKE (a line for the row) did its job; its successor is not counted
+  const hold = (id: string, s: number, res: string) => line({ type: 'assistant', timestamp: at(s), message: { content: [{ type: 'tool_use', id, name: 'mcp__plugin_sub-human_room__hold', input: { room: 'vole-7874', take: true } }] } })
+    + line({ type: 'user', timestamp: at(s + 1), message: { content: [{ type: 'tool_result', tool_use_id: id, content: res }] } });
+  for (let i = 0; i < 7; i++) put(`k${i}`, { agentType: 'sub-human:keeper', parentAgentId: 'row' }, line({ type: 'user', timestamp: at(2 + i * 60), message: { content: 'keep: vole-7874' } }), hold(`h${i}`, 3 + i * 60, 'WAKE: a new line in room vole-7874. End now.'));
+  all = subagents(d);
+  row = all.find(x => x.id === 'row');
+  assert.ok(row);
+  const k = rowKeepers(all, row, 'vole-7874');
+  assert.deepEqual([k.keepers.length, k.woke, k.peak], [7, 6, 1]);
+});
+
 test('demo.sh: 0.6.0 rows: no holds document, each seat\'s row waited on, the objection mode opt-in', () => {
   const sh = fs.readFileSync(DEMO_SH, 'utf8');
   assert.doesNotMatch(sh, /wait-holds/);
@@ -142,8 +235,13 @@ test('demo.sh --film: the panel beat opens the room row and comes back with one 
   const sh = fs.readFileSync(DEMO_SH, 'utf8');
   const show = (/^show_room\(\) \{\n([\s\S]*?)\n\}/m.exec(sh) ?? [])[1] ?? '';
   assert.match(show, /select-row "sh-\$s" "\$\(room\)"/);
-  assert.match(show, /select-row "sh-\$s" main --key Up/);
-  assert.equal((show.match(/keys "\$s" Up/g) || []).length, 1);
+  assert.match(show, /row_close "\$s"/);
+  // row_close: onto main with ↓ from the view's prompt box (↑ there recalls a prompt) or ↑ from the panel, then one ↑
+  const close = (/^row_close\(\) \{\n([\s\S]*?)\n\}/m.exec(sh) ?? [])[1] ?? '';
+  assert.match(close, /local k=Down/);
+  assert.match(close, /&& k=Up/);
+  assert.match(close, /select-row "sh-\$1" main --key "\$k"/);
+  assert.equal((close.match(/keys "\$1" Up/g) || []).length, 1);
   assert.match(sh, /mark panel "Everyone in the room shows up in your agent panel"/);
   const s6b = (/^S6b\(\) \{\n([\s\S]*?)\n\}/m.exec(sh) ?? [])[1] ?? '';
   const prompts = [...s6b.matchAll(/submit "\$[ab]" "([^"]*)"/g)].flatMap(m => m[1] ?? []);

@@ -95,8 +95,8 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   const chatter = agent('bob', 'status');                                  // #3
   const toMe = agent('bob', 'question', { to: 'alice' });                  // #4
   const at = agent('carol', 'say', { text: 'ping @Alice, and @alicex' }); // #5
-  const atOther = agent('carol', 'say', { text: 'ping @alicex' });         // #6
-  const roomClaudeRoom = agent('claude', 'say', { text: 'alice owns the parser' }); // #7 names me, no @: pull
+  const atOther = agent('carol', 'say', { text: 'ping @alicex' });         // #6 a Claude's say to the room: push, a notice (0.8.0)
+  const roomClaudeRoom = agent('claude', 'say', { text: 'alice owns the parser' }); // #7 names me, no @: a say to the room, push
   const p1 = prop('claude', H1, ['alice', 'bob']);                           // #8 names me, pending
   const pBob = prop('claude', H2, ['bob']);                                  // #9 not mine
   const join = sys('member_joined', {}, 'carol');                          // #10
@@ -112,7 +112,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   const bobsTask = task({ task_id: 4, owner: 'bob', status: 'in_progress', req: 16 }); // #20 pull
   const ownAnswer = answer('alice', 'objection', H1, { text: 'clamp, do not 400' }); // #21 own: none
   const want: [Entry, Lane][] = [
-    [own, 'none'], [words, 'push'], [chatter, 'pull'], [toMe, 'push'], [at, 'push'], [atOther, 'pull'], [roomClaudeRoom, 'pull'],
+    [own, 'none'], [words, 'push'], [chatter, 'pull'], [toMe, 'push'], [at, 'push'], [atOther, 'push'], [roomClaudeRoom, 'push'],
     [p1, 'push'], [pBob, 'pull'], [join, 'pull'], [sign, 'pull'], [dec2, 'pull'], [dec1, 'pull'], [ownJoin, 'none'],
     [retract, 'none'], [req, 'pull'], [assigned, 'push'], [myReq, 'none'], [claimed, 'push'], [bobsTask, 'pull'], [ownAnswer, 'none'],
   ];
@@ -138,6 +138,37 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   const d = sys('decision', { proposal_hash: H1 }, 'room');
   assert.equal(L(d, R.readAll()), 'pull');
   assert.equal(deliver(ALICE, d, { entries: R.readAll(), trust: room.trustOf }), 'notice');
+});
+
+test('lane (0.8.0): "maya, …" / "maya: …" names maya like @maya (a person\'s say); an untagged "?" wakes the asker\'s own Claude only; a Claude\'s say to the room is a notice', () => {
+  fresh();
+  const D = (me: LaneViewer, e: Entry, es?: readonly Entry[]) => deliver(me, e, { entries: es, trust: room.trustOf });
+  const BOB: LaneViewer = { name: 'bob', role: 'member' };
+  sys('member_joined', {}, 'alice'); sys('member_joined', {}, 'bob'); sys('member_joined', {}, 'maya');
+  const comma = human('alice', 'say', { text: 'bob, which branch are you on?' });
+  const colon = human('alice', 'say', { text: 'BOB: tests green?' });
+  const longer = human('alice', 'say', { text: 'bobby, hi' });
+  const later = human('alice', 'say', { text: 'thanks bob, merging' });
+  const question = human('alice', 'say', { text: '  anyone seen the CI failure? ' });
+  const plain = human('alice', 'say', { text: 'ok merging' });
+  const namedQ = human('alice', 'say', { text: 'maya, is it green?' });
+  const atQ = human('alice', 'say', { text: 'is it green @maya?' });
+  const wordComma = human('alice', 'say', { text: 'ok, anyone around?' });
+  const toBob = human('alice', 'say', { text: 'just you?', to: 'bob' });
+  const answer = agent('bob', 'say', { text: 'on row-080' });
+  const all = R.readAll();
+  const want: [Entry, LaneViewer, string][] = [
+    [comma, BOB, 'wake'], [colon, BOB, 'wake'], [longer, BOB, 'notice'], [later, BOB, 'notice'],
+    [comma, ALICE, 'none'], // a line naming someone else is no question of mine
+    [question, ALICE, 'wake'], [question, BOB, 'notice'], [plain, ALICE, 'none'], [plain, BOB, 'notice'],
+    [namedQ, ALICE, 'none'], [atQ, ALICE, 'none'], [wordComma, ALICE, 'wake'], // "ok" is no member
+    [toBob, ALICE, 'none'], [answer, ALICE, 'notice'], [answer, BOB, 'none'],
+  ];
+  for (const [e, me, d] of want) assert.equal(D(me, e, all), d, `#${e.id} "${e.text}" for ${me.name}`);
+  // the entry-only answer (the tail's first filter) is a superset: a question whatever leads it
+  assert.equal(D(ALICE, wordComma), 'wake');
+  assert.equal(D(ALICE, namedQ), 'wake');
+  assert.equal(D(ALICE, plain), 'none');
 });
 
 test('lane: the room session reads nothing (it keeps no rows): joins, posts to claude, answers, decisions and tasks are none', () => {
