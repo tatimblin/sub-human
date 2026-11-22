@@ -70,10 +70,17 @@ function world({ A = 'tristan', B = 'jess', gitLog, reflogB = REFLOG, tapB = TAP
     inSpan: (es, s) => es.filter((y): y is typeof y & { timestamp: string } => !!s && y.timestamp !== undefined && y.timestamp > s.from && y.timestamp <= s.to),
     peerIn: (es, from) => es.filter(y => y.origin && y.origin.kind === 'peer' && String(y.origin.name).startsWith(from + '.')),
     textOf: c => (typeof c === 'string' ? c : ''),
+    logIn: () => log,
   });
 }
 const run = (ctx: Ctx) => must(runChecks(ctx, { scenes: [mod] }).S6b, 'the S6b results');
 const failed = (ctx: Ctx): string[] => run(ctx).filter(c => !c.pass).map(c => c.check);
+
+test('S6b: the handoff routed through the room to another machine (a say via=agent to jess) counts too', () => {
+  const ctx = world({ handoffAt: null });
+  ctx.log.push({ id: eid(20), from: 'tristan', kind: 'say', via: 'agent', to: 'jess', at: at(20), text: 'listTasks is pushed to origin/main' });
+  assert.deepEqual(failed(ctx), []);
+});
 
 test('S6b: a clean build passes every check, for tristan and jess or alice and bob', () => {
   for (const pair of [{}, { A: 'alice', B: 'bob' }]) {

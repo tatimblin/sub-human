@@ -58,6 +58,7 @@ export interface DrawnLine { at: string, text: string }
 
 const textOfContent = (c: string | Block[] | undefined): string => (typeof c === 'string' ? c : (c || []).filter(b => b.type === 'text').map(b => b.text ?? '').join('\n'));
 
+const isText = (c: unknown): c is { type: 'text', text: string } => typeof c === 'object' && c !== null && 'type' in c && c.type === 'text' && 'text' in c && typeof c.text === 'string';
 /** One subagent transcript and its meta file, read. */
 function subagent(dir: string, session: string, f: string): SubAgent {
   const meta = readJson<{ agentType?: unknown, parentAgentId?: unknown } | null>(path.join(dir, f.replace(/\.jsonl$/, '.meta.json')), null);
@@ -65,7 +66,8 @@ function subagent(dir: string, session: string, f: string): SubAgent {
   const results = new Map<string, string>();
   for (const e of es) {
     if (e.type !== 'user') continue;
-    for (const c of blocksOf(e)) if (c.type === 'tool_result' && c.tool_use_id) results.set(c.tool_use_id, typeof c.content === 'string' ? c.content : JSON.stringify(c.content ?? ''));
+    // a result's text: a string, or its text blocks (2.1.296 writes an MCP result as [{type: text, text}])
+    for (const c of blocksOf(e)) if (c.type === 'tool_result' && c.tool_use_id) results.set(c.tool_use_id, typeof c.content === 'string' ? c.content : Array.isArray(c.content) && c.content.some(isText) ? c.content.filter(isText).map(t => t.text).join('\n') : JSON.stringify(c.content ?? ''));
   }
   const holds: HoldCall[] = es.filter(e => e.type === 'assistant').flatMap(e => blocksOf(e).filter(c => c.type === 'tool_use' && c.name === HOLD_TOOL)
     .map(c => ({ at: e.timestamp ?? '', room: typeof c.input?.room === 'string' ? c.input.room : '', result: (c.id ? results.get(c.id) : undefined) ?? null })));

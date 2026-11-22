@@ -116,9 +116,12 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     `${A} ${headA.slice(0, 7) || '?'}, ${B} ${headB.slice(0, 7) || '?'}, origin ${headO.slice(0, 7) || '?'}`);
   // the handoff: A's Claude tells B's that the store is pushed, and B's checkout pulls only after that
   const pull = firstPull(readText(f(`reflog-${B}.txt`)));
-  const said = x.peerIn(x.inSpan(x.entries(B), x.span('S6b')), A)
-    .map(e => ({ at: e.timestamp, text: x.textOf(e.message && e.message.content) || String((e.origin && e.origin.body) || '') }))
-    .filter(m => /push/i.test(m.text)).sort((a, b) => (a.at < b.at ? -1 : 1))[0];
+  // a peer message on one machine; to B on another machine the module routes the SendMessage through the room (a say
+  // via=agent to B: S3)
+  const said = [...x.peerIn(x.inSpan(x.entries(B), x.span('S6b')), A)
+    .map(e => ({ at: e.timestamp, text: x.textOf(e.message && e.message.content) || String((e.origin && e.origin.body) || '') })),
+  ...x.logIn(x.span('S6b')).filter(e => e.kind === 'say' && e.via === 'agent' && e.from === A && e.to === B).map(e => ({ at: e.at, text: String(e.text) }))]
+    .filter(m => /push/i.test(m.text)).sort((a, b) => (String(a.at) < String(b.at) ? -1 : 1))[0];
   det(`The handoff: ${A}'s Claude tells ${B}'s Claude the store is pushed before ${B}'s checkout pulls it`, said && pull && Date.parse(said.at) < Date.parse(pull.at),
     `${said ? `peer message from ${A} at ${said.at.slice(11, 19)}: "${clip(said.text, 70)}"` : `no peer message from ${A} about a push in ${B}'s transcript during S6b`}; ${pull ? `${B}'s first pull ${pull.at} (${pull.msg})` : `no pull in state/S6b/reflog-${B}.txt`}`);
   for (const who of [A, B]) {

@@ -29,12 +29,22 @@ export function run(x: Ctx, { det }: { det: Det }): void {
   chatLine(x, det, B, A, r);
   const sm = x.toolUses(x.inSpan(x.entries(B), s), 'SendMessage').filter(c => String((c.input || {}).to || '') === `${A}.${code}`);
   det(`${B}'s Claude calls SendMessage to ${A}.${code}`, sm.length >= 1, sm.length ? `SendMessage {to: "${sm[0]?.input?.to}", message: "${clip(sm[0]?.input?.message || sm[0]?.input?.content, 80)}"}` : `no SendMessage to ${A}`);
-  const pe = x.peerIn(x.inSpan(x.entries(A), s), B);
-  det(`${A}'s Claude receives it as a peer message from ${B} (origin.kind peer)`, pe.length >= 1, pe.length ? `origin {kind: peer, name: ${pe[0]?.origin?.name}, verifiedPeerPid: ${pe[0]?.origin?.verifiedPeerPid}}: "${clip(pe[0]?.origin?.body, 80)}"` : `no peer entry from ${B}`);
+  // on one machine a SendMessage arrives as a peer message (origin.kind peer); to a member on another machine (--film's
+  // jess) the module routes it through the room (mod: "Route SendMessage to members on other machines"): a say via=agent
+  // `to` the other, which reaches their Claude as a wake carrying its words
+  const got = (from: string, to: string): string | null => {
+    const pe = x.peerIn(x.inSpan(x.entries(to), s), from);
+    if (pe.length) return `peer message {kind: peer, name: ${pe[0]?.origin?.name}}: "${clip(pe[0]?.origin?.body, 70)}"`;
+    const r = x.logIn(s).find(y => y.kind === 'say' && y.via === 'agent' && y.from === from && y.to === to);
+    const w = r ? x.wakeIn(x.inSpan(x.entries(to), s)).find(y => x.textOf(y.message?.content).includes(String(r.text).slice(0, 40))) : undefined;
+    return r && w ? `routed through the room (${x.fmt(r)}, to ${to}), woke ${to}'s Claude ${w.timestamp?.slice(11, 19)}: "${clip(r.text, 70)}"` : null;
+  };
+  const ga = got(B, A);
+  det(`${A}'s Claude receives it (a peer message, or routed through the room to another machine)`, !!ga, ga ?? `no peer entry from ${B} and no routed say to ${A}`);
   // a reply goes to bob.CODE, or to the peer socket the incoming message came from ("uds:…", Claude Code's reply address)
   const back = x.toolUses(x.inSpan(x.entries(A), s), 'SendMessage').filter(c => { const to = String((c.input || {}).to || ''); return to === `${B}.${code}` || /^uds:/.test(to); });
-  const pb = x.peerIn(x.inSpan(x.entries(B), s), A);
-  det(`${A}'s Claude answers natively (SendMessage back; ${B} receives it)`, back.length >= 1 && pb.length >= 1, `${A} SendMessage back (${B}.${code} or the uds: reply address): ${back.length}${back[0] ? ` (to ${back[0].input?.to})` : ''}; peer entries from ${A} in ${B}'s transcript: ${pb.length}${pb[0] ? ` ("${clip(pb[0].origin?.body, 70)}")` : ''}`);
+  const gb = got(A, B);
+  det(`${A}'s Claude answers natively (SendMessage back; ${B} receives it)`, back.length >= 1 && !!gb, `${A} SendMessage back (${B}.${code} or the uds: reply address): ${back.length}${back[0] ? ` (to ${back[0].input?.to})` : ''}; ${B} ${gb ?? `got no peer entry or routed say from ${A}`}`);
   const cards = [A, B].flatMap(seat => x.toolUses(x.inSpan(x.entries(seat), s), 'AskUserQuestion'));
   det('No card and no proposal', cards.length === 0 && !x.logIn(s).some(y => y.kind === 'proposal'), `${cards.length} AskUserQuestion calls; proposals in S3: ${x.logIn(s).filter(y => y.kind === 'proposal').length}`);
   // zero is the contract (the room's Claude wakes only when addressed), not a budget: deterministic
