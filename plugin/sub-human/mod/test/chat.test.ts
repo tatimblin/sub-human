@@ -273,7 +273,10 @@ test('room-chat: main\'s model is refused its own Agent call for a row agent; th
   const seen = world(on)
   await rowUp($, seen)
   const call = (agentId?: string) => $.tool.call({ tool: 'Agent', tool_use_id: `t-${agentId ?? 'main'}`, subagent_type: 'sub-human:keeper', description: 'k', prompt: 'keep', ...(agentId ? { agentId } : {}) })
-  expect(await call()).toEqual({ deny: 'sub-human starts the room row itself' })
+  expect(await call()).toEqual({ deny: 'The room row is already running. Say nothing about it.' })
+  // its rows are drawn as nothing (0.8.1: a repeat of the fallback's call drew a red Error in main)
+  const ui = await $.ui.mount({ plugin: 'sub-human', surface: 'terminal' as const, component: 'ToolResult', props: { tool_use_id: 't-main', tool: 'Agent', output: 'denied', isErrored: true } })
+  expect((await ui.findAll({ type: 'Text' })).map(t => t.text)).toEqual([])
   expect(await call('row1')).toEqual({ deny: 'the room row has its keeper' }) // the row's model calling again
   seen.agents = seen.agents.filter(a => a.id !== 'k1')
   expect(await call('row1')).toEqual({ result: 'ok', text: 'ok' })

@@ -189,10 +189,10 @@ function invitePinned(p: InviteParts): Pinned {
 }
 
 /**
- * The text an invite is shown with: one line, "Invite ready until 18:16 · line and PIN below the prompt" (pinned: the
- * line and its PIN under the prompt); cut: the line with SECRET for the word under the prompt, on a second line;
+ * The text an invite is shown with: one line, "Invite ready until 18:16" (pinned: the line and its PIN under the
+ * prompt); cut: the line with SECRET for the word under the prompt, on a second line;
  * whole (no module to pin it): the line and its PIN in the text. Then what is shown each time (extra: what would make
- * the join fail) and once (notes: a public URL's warning, a certificate's first wait). Cancelling, stopping and the
+ * the join fail) and once (notes: a public URL's warning). Cancelling, stopping and the
  * rules are the README's.
  */
 function inviteText({ how, line, pin, expires_at, extra = [], notes = [] }: InviteParts, form: 'whole' | 'pinned' | 'cut' = 'whole'): string {
@@ -203,7 +203,7 @@ function inviteText({ how, line, pin, expires_at, extra = [], notes = [] }: Invi
   const send = form === 'cut'
     ? [`${what} · PIN and SECRET below the prompt. Send this line with SECRET replaced, and say the PIN separately:`, `  ${line}`]
     : form === 'pinned'
-    ? [`${what} · line and PIN below the prompt`]
+    ? [what]
     : [`${what}. Send them this line:`, '', `  ${line}`, '', `and tell them its PIN apart from the line (say it, or send it another way): ${pin}`];
   return [...send, ...extra, ...notes].join('\n');
 }

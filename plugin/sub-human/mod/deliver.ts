@@ -667,7 +667,7 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       case 'invites':
         copies.keepOpen(a.open);
-        if (pinnedRef && a.expired && a.expired.includes(pinnedRef)) $.ui.log(INVITE_EXPIRED);
+        if (pinnedRef && a.expired && a.expired.includes(pinnedRef)) $.ui.log(INVITE_EXPIRED, { to: 'debug' });
         if (pinnedRef && !a.open.includes(pinnedRef)) unpin($);
         break;
       case 'take': void takeSeat($, c, a); break; // not awaited: the shim runs, then the wake resolves as its turn starts
@@ -748,9 +748,9 @@ function pinStatus($: EngineInterface, { status, ms, ref }: { status: string; ms
   pinned = true;
   $.ui.status(status);
   // its life over while still pinned: it lapsed unused (a use or a cancel takes it off before)
-  try { $.clock.after(ms, () => { if (mine === pinnedAt) { $.ui.log(INVITE_EXPIRED); unpin($); } }); } catch { /* it stays until the next one replaces it */ }
+  try { $.clock.after(ms, () => { if (mine === pinnedAt) { $.ui.log(INVITE_EXPIRED, { to: 'debug' }); unpin($); } }); } catch { /* it stays until the next one replaces it */ }
 }
-/** The person's line when the invite they made lapsed unused. */
+/** The debug log's line when an invite lapsed unused (its status line goes; a joiner who tries it is told it expired). */
 const INVITE_EXPIRED = 'invite expired; /sub-human invite for a new one';
 /** The invite is over (used, burnt, cancelled or expired): off the status line now. */
 function unpin($: EngineInterface): void {

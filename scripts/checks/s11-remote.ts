@@ -35,7 +35,7 @@ export function run(x: Ctx, { det }: { det: Det }): void {
     j && j.via === 'system' && typeof j.pubkey === 'string' && j.machine && j.machine === carolId && j.machine !== hostId,
     `${x.fmt(j)}; machine ${j ? j.machine : '?'} (carol's home ${carolId || 'not saved'}, host ${hostId || 'not saved'}); pubkey ${j && j.pubkey ? 'pinned' : 'missing'}`);
 
-  // 0.6.0: "Invite ready until HH:MM · line and PIN below the prompt" (before: "invite to room CODE …")
+  // 0.8.1: "Invite ready until HH:MM" (0.6.0: "… · line and PIN below the prompt"; before: "invite to room CODE …")
   const cap = x.cap('S11', 'alice') || '';
   const shown = cap.includes('Invite ready') || cap.includes(`invite to room ${code}`);
   det('alice\'s /sub-human invite shows her the invite in her pane', shown, shown ? `"Invite ready" in ${x.capName('S11', 'alice')}` : `not in ${x.capName('S11', 'alice')}`);

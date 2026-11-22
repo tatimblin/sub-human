@@ -194,7 +194,7 @@ esac
   assert.ok(hiddenBlock(out), out.stderr);
   assert.equal(must(shortShown(must(out.json?.reason))).dest, `https://box.tail1a2b.ts.net/sub-human/${code}`);
   assert.match(must(out.json?.reason), /Tailscale Serve \(your tailnet only\)/);
-  assert.match(must(out.json?.reason), /can take ~20 s while Tailscale issues its certificate; it is being fetched now/);
+  assert.doesNotMatch(must(out.json?.reason), /~20 s|Off your tailnet/, '0.8.1: no certificate wait, no pointer to --public');
   assert.doesNotMatch(must(out.json?.reason), /certificate-transparency/);
   const p = `/sub-human/${code}`;
   const lines = () => fs.readFileSync(calls, 'utf8').trim().split('\n');

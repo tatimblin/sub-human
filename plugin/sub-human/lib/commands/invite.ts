@@ -11,12 +11,10 @@
  * With no way named, the tailnet (Tailscale Serve, as --web) when Tailscale is up here (seam.tailnetUp: its CLI and
  * `tailscale status` naming this machine online, checked before the listener starts), else ssh; SUB_HUMAN_SSH_ADDR set
  * keeps ssh. A tailnet invite that fails falls back to ssh with one line why, and stops the listener it started. Funnel is never chosen: its hostname goes into public
- * certificate-transparency logs, so a room's first tailnet-only invite ends with the pointer to --public (OFF_TAILNET)
- * instead. An invite's text is two or three rows; its rules, the install for a joiner without sub-human, a web line's
+ * certificate-transparency logs (`--public` is the README's). An invite's text is two or three rows; its rules, the install for a joiner without sub-human, a web line's
  * key check and Funnel's warning show with the room's first invite only (hosting.onceNotes).
  */
 import * as hosting from '../remote/hosting.ts';
-import * as room from '../room.ts';
 import { parse } from '../cli/args.ts';
 import { HELP_HINT, failure, hostOnly, refused, say, secret } from './answer.ts';
 import { msgOf } from '../errors.ts';
@@ -31,7 +29,6 @@ const webhost = lazy<typeof WebhostMod>(import.meta.url, '../remote/webhost.ts')
 const ts = lazy<typeof TailscaleMod>(import.meta.url, '../remote/tailscale.ts');
 
 export const INVITE_USAGE: string = `usage: /sub-human invite (over your tailnet when Tailscale is up here, else ssh; --ssh for ssh, --forward for someone who logs in to this machine as themselves, --public for anyone on the internet; --no-card: no card offering to copy the line). ${HELP_HINT}`;
-export const OFF_TAILNET = 'Off your tailnet? /sub-human invite --public';
 
 /** Tailscale here: `up` (its CLI, and `tailscale status` naming this machine, online; no serve, no Funnel), `down` (the
  * CLI, not online or not logged in), `none` (no CLI). */
@@ -85,10 +82,8 @@ export const invite: Verb = (argv, { cur: seat }) => {
         r = ssh();
       }
     } else r = ssh();
-    // every text the invite shows in (whole, pinned, cut) gets the same line before and after; the pointer to --public
-    // once per room (hosting.onceNotes)
-    const tail = r.mode === 'tailscale' ? hosting.onceNotes(room.hostStore(cur.code), [['tailnet', OFF_TAILNET]]).map(t => `\n${t}`).join('') : '';
-    const around = (t: string) => `${why}${t}${tail}`;
+    // every text the invite shows in (whole, pinned, cut) gets the same line before
+    const around = (t: string) => `${why}${t}`;
     const { pinned } = r;
     // the line alone for the module's copy question, unless the person or their setup turned the card off
     const card = !f['no-card'] && envStr('SUB_HUMAN_INVITE_CARD') !== '0';

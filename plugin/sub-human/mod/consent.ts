@@ -44,8 +44,9 @@ const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const PLAN_TOOL = 'mcp__plugin_sub-human_room__plan';
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const QUIET = { plugin: 'sub-human', key: 'quietCalls' } as const;
-/** Main's own Agent call for a room row agent: refused, the module starts the row itself. */
-const ROW_DENY = 'sub-human starts the room row itself';
+/** Main's own Agent call for a room row agent (a repeat of the fallback's, say): refused, its rows drawn as nothing, so
+ * the reason is the model's alone. */
+const ROW_DENY = 'The room row is already running. Say nothing about it.';
 /** The row's second keeper call while one lives. */
 const KEEPER_DENY = 'the room row has its keeper';
 
@@ -181,7 +182,10 @@ export function registerConsent(on: On): void {
     // the rows are the module's (its own $.agent.spawn is a dispatch this plugin raised): main's model never spawns one
     // (both stay offered for room-chat's resume), but for the auto-mode fallback's one call
     const own = String(next.origin.plugin).split('@')[0] === $.plugin.name.split('@')[0];
-    if (!e.agentId && row && !own && !(rowOffered() && e.subagent_type === ROOM_AGENT)) return { deny: ROW_DENY };
+    if (!e.agentId && row && !own && !(rowOffered() && e.subagent_type === ROOM_AGENT)) {
+      await hideCall($, e.tool_use_id).catch(() => {});
+      return { deny: ROW_DENY };
+    }
     if (!e.agentId && rowOffered() && e.subagent_type === ROOM_AGENT) {
       await hideCall($, e.tool_use_id).catch(() => {});
     }

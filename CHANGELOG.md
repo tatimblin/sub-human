@@ -2,6 +2,16 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.8.1: quieter start in auto mode, a one-line invite
+
+Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and the release gate in auto mode. The wire protocol is still 5.
+
+### Fixed
+- **No red `Error: sub-human starts the room row itself` in main.** In auto mode, where your settings stop sub-human starting the room row, your Claude starts it with one Agent call; when it made that call a second time, the refusal was drawn as an error. The repeat is now refused out of sight.
+
+### Changed
+- **An invite is one line, `Invite ready until 10:56`,** with the line and PIN under the prompt as before. The certificate's first wait and the `--public` pointer are gone (`--public` is in the README), and an invite that lapses unused just leaves the status line (Claude Code's debug log notes it).
+
 ## 0.8.0: the room row is the group chat, and your Claude is your assistant
 
 Main is yours; the room row is everyone else. Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, `npm run probe`, and the release gate in auto, manual and accept-edits mode. The wire protocol is still 5.
