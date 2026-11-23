@@ -4,11 +4,12 @@
 // only applies them to the room's state and appends what they return. Rooms hosted elsewhere go to `links` (U15).
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
-import path from 'node:path';
-import type { Answers, Message, PlanAct, Pointer, Request, TaskAct } from '../../core/api.js';
-import { API_VERSION, SESSION_ID, sessionFile } from '../../core/api.js';
-import { writeAtomic } from '../../store/atomic.js';
+import type { Answers, Message, PlanAct, Request, TaskAct } from '../../core/api.js';
+import { API_VERSION, CODE, SESSION_ID, sessionFile } from '../../core/api.js';
 import { sha256 } from '../../core/hash.js';
+import { Pointers } from './pointers.js';
+import { asRoom, fold } from '../../core/fold.js';
+import { pick } from './open.js';
 import type { Draft, Kind, RoomState, Snapshot } from '../../core/entries.js';
 import { accept, answer, ask, decide, edit, latestVersion, send } from '../../core/plans.js';
 import type { Texts } from '../../core/plans.js';
@@ -38,7 +39,9 @@ const HOST_KINDS: ReadonlySet<Kind> = new Set<Kind>([
 /** Messages kept per inbox until taken, and appended ids remembered per room; the oldest go first. */
 const INBOX_MAX = 100;
 const IDS_MAX = 10_000;
-const POINTER_STALE_MS = 24 * 3600_000;
+const DAY_MS = 24 * 3600_000;
+/** The chain every join runs on. */
+const OPEN = '#open';
 
 interface Placed { readonly seq: number; readonly hash: string }
 interface Room { readonly store: FsStore; snap: Snapshot; readonly ids: Map<string, Placed> }
@@ -65,7 +68,19 @@ export class Rooms {
   /** When any request last came; the daemon's start counts as one. */
   lastSeen: number;
 
-  constructor(o: RoomsOptions) { this.o = o; this.lastSeen = o.now(); }
+  private readonly pointers: Pointers;
+  /** When each session last pinged: what liveness reads (core/api.ts LIVE_MS). Kept a day. */
+  private readonly pinged = new Map<string, number>();
+
+  constructor(o: RoomsOptions) {
+    this.o = o;
+    this.lastSeen = o.now();
+    this.pointers = new Pointers({
+      home: o.home, now: o.now, pingedAt: id => this.pinged.get(id),
+      left: p => this.handle({ op: 'append', code: p.code, draft: { kind: 'left', from: p.name, by: 'system', id: p.leave } }),
+      away: p => this.handle({ op: 'put_doc', code: p.code, kind: 'presence', name: p.name, doc: { name: p.name, state: 'away', at: this.o.now() } }),
+    });
+  }
 
   handle(req: Request): Promise<Result<Answers[Request['op']]>> {
     const { links } = this.o;
@@ -81,6 +96,9 @@ export class Rooms {
           const m = room.snap.state.members.find(x => x.name === draft.from);
           if (m?.kicked) return err(`${draft.from} was removed from ${code}; nothing was written`);
           if (!m && draft.kind !== 'joined') return err(`${draft.from} is not in ${code}; nothing was written`);
+          // membership is per name: a joined for a member who is here, or a left for one who isn't, changes nothing
+          const here = m?.machine !== undefined;
+          if ((draft.kind === 'joined' && here) || (draft.kind === 'left' && !here)) return ok({ seq: room.snap.state.seq, hash: room.snap.state.hash });
           return this.place(room, { ...draft, at: now, machine: this.o.machine });
         });
       }
@@ -91,20 +109,29 @@ export class Rooms {
       case 'put_doc':
         if (links.hosts(req.code)) return links.forward(req.code, req);
         return this.queue(req.code, async room => {
-          if (!member(room.snap.state, req.name)) return err(`${req.name} is not in ${req.code}; nothing was written`);
-          await room.store.putDoc(req.kind, req.name, req.doc); // the store renews the tail's documents stamp
+          if (!member(asRoom(room.snap.state), req.name)) return err(`${req.name} is not in ${req.code}; nothing was written`);
+          // a presence is one machine's: `presence/NAME@MACHINE`, stamped with this daemon's machine; the store renews
+          // the tail's documents stamp
+          const doc = req.doc;
+          if ('state' in doc) await room.store.putDoc('presence', `${req.name}@${this.o.machine}`, { ...doc, machine: this.o.machine });
+          else await room.store.putDoc(req.kind, req.name, doc);
           return ok(null);
         });
       case 'put_blob':
         if (links.hosts(req.code)) return links.forward(req.code, req);
         return this.queue(req.code, async room => ok({ hash: await room.store.putBlob(req.text) }));
-      case 'session': return this.pointer(req.id, { code: req.code, name: req.name });
-      case 'session_end': return this.pointer(req.id, null);
+      case 'join': return this.serial(OPEN, () => this.join(req));
+      case 'leave': return this.pointers.leave(req.id);
+      case 'retire': return this.pointers.retire(req.id);
+      case 'handoff': return this.pointers.handoff(req.id, req.cwd);
+      case 'claim': return this.pointers.claim(req.id, req.cwd);
       case 'ping': {
         if (SESSION_ID.test(req.session)) {
           const d = new Date(now);
           void fs.utimes(sessionFile(this.o.home, req.session), d, d).catch(() => undefined); // still alive: keep its pointer
         }
+        this.pinged.set(req.session, now);
+        for (const [id, at] of this.pinged) if (now - at > DAY_MS) this.pinged.delete(id);
         const s = this.sessions.get(req.session) ?? { at: now, rooms: new Map<string, string>() };
         s.at = now;
         if (req.code !== undefined && req.name !== undefined) s.rooms.set(req.code, req.name);
@@ -144,26 +171,49 @@ export class Rooms {
   }
 
   /**
-   * Writes (or with null removes) a session's pointer. A write also sweeps pointers nobody has pinged for a day: their
-   * sessions ended without a SessionEnd (a crash, a kill).
+   * A bare /sub-human, on one chain so two first opens make one room: open.ts picks the room; `joined` only when the
+   * name isn't a member; then an idle presence here (which makes the room open), the pointer and the cwd's last room.
    */
-  private async pointer(id: string, p: Pointer | null): Promise<Result<null>> {
-    const file = sessionFile(this.o.home, id);
-    if (p === null) { await fs.rm(file, { force: true }); return ok(null); }
-    await writeAtomic(file, JSON.stringify(p));
-    const dir = path.dirname(file);
-    for (const n of await fs.readdir(dir).catch(() => [])) {
-      const old = await fs.stat(`${dir}/${n}`).then(s => this.o.now() - s.mtimeMs > POINTER_STALE_MS, () => false);
-      if (old) await fs.rm(`${dir}/${n}`, { force: true });
+  private async join(req: Extract<Request, { op: 'join' }>): Promise<Result<Answers['join']>> {
+    const rooms = new Map<string, RoomState>();
+    for (const code of (await fs.readdir(`${this.o.home}/rooms`).catch(() => [])).filter(c => CODE.test(c))) {
+      const room = await this.room(code);
+      if (room.ok) rooms.set(code, fold(room.value.snap, [], await room.value.store.docs()));
     }
-    return ok(null);
+    const last = await this.pointers.last(req.cwd);
+    const p = pick({ rooms, name: req.name, random: Math.random, ...(req.code !== undefined && { asked: req.code }), ...(last !== null && { last }) });
+    if (!p.ok) return p;
+    if ('rooms' in p.value) return ok({ rooms: p.value.rooms });
+    const { code, fresh } = p.value;
+    const state = rooms.get(code);
+    const me = state?.members.find(m => m.name === req.name);
+    if (me?.kicked) return err(`${req.name} was removed from ${code}.`);
+    if (me?.machine === undefined) {
+      const where = { ...(req.repo !== undefined && { repo: req.repo }), ...(req.branch !== undefined && { branch: req.branch }) };
+      const j = await this.handle({ op: 'append', code, draft: { kind: 'joined', from: req.name, by: 'system', id: randomUUID(), ...where } });
+      if (!j.ok) return j;
+    }
+    const here = await this.handle({ op: 'put_doc', code, kind: 'presence', name: req.name, doc: { name: req.name, state: 'idle', at: this.o.now() } });
+    if (!here.ok) return here;
+    const t = await this.pointers.write(req.id, { code, name: req.name, leave: req.leave });
+    if (!t.ok) return t;
+    await this.pointers.setLast(req.cwd, code);
+    const others = (state?.members ?? []).filter(m => m.machines.length > 0 && m.name !== req.name).map(m => m.name);
+    return ok({ code, title: t.value.title, opened: fresh, others });
+  }
+
+  /** Runs `fn` after every earlier call on `key` has finished. */
+  private serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.chains.get(key) ?? Promise.resolve()).then(fn);
+    this.chains.set(key, run.catch(() => undefined));
+    return run;
   }
 
   /** Settles once every write started so far has finished. */
   async drain(): Promise<void> { await Promise.all(this.chains.values()); }
 
   private async plan(room: Room, req: Writer & PlanAct): Promise<Result<Answers['plan']>> {
-    const s = room.snap.state;
+    const s = asRoom(room.snap.state);
     if (!member(s, req.from)) return err(`${req.from} is not in ${req.code}; nothing was written`);
     let drafts: Result<Draft[]>;
     switch (req.act) {
@@ -180,12 +230,12 @@ export class Rooms {
       case 'accept': drafts = accept(s, req); break;
     }
     const r = drafts.ok ? await this.commit(room, drafts.value) : drafts;
-    const after = room.snap.state;
+    const after = asRoom(room.snap.state);
     return r.ok ? ok({ seq: after.seq, hash: after.hash, latest: latestVersion(after, req.name) }) : r;
   }
 
   private async task(room: Room, req: Writer & TaskAct): Promise<Result<Answers['task']>> {
-    const s = room.snap.state;
+    const s = asRoom(room.snap.state);
     if (!member(s, req.from)) return err(`${req.from} is not in ${req.code}; nothing was written`);
     const drafts = req.act === 'add' ? add(s, req) : req.act === 'claim' ? claim(s, req) : req.act === 'release' ? release(s, req) : done(s, req);
     const n = req.act === 'add' ? nextN(s.tasks) : req.n;
@@ -212,7 +262,7 @@ export class Rooms {
     remember(room.ids, d.id, placed);
     if (d.kind === 'kick') {
       // a kicked member who was asked never blocks a decision (core/plans.ts decide)
-      const s = room.snap.state;
+      const s = asRoom(room.snap.state);
       const t = await texts(room, s.plans.map(p => p.name));
       const decided = await this.commit(room, s.plans.flatMap(p => decide(s, p.name, d.from, t)));
       if (!decided.ok) return decided;
@@ -254,7 +304,7 @@ export class Rooms {
 async function texts(room: Room, names: readonly string[]): Promise<Texts> {
   const known = new Map<string, string>();
   for (const n of names) {
-    const v = latestVersion(room.snap.state, n);
+    const v = latestVersion(asRoom(room.snap.state), n);
     if (v) known.set(v.hash, (await room.store.getBlob(v.hash)) ?? '');
   }
   return hash => known.get(hash) ?? '';

@@ -1,0 +1,40 @@
+// The commands' Daemon on a real machine: each write is one request on the home's socket (core/api.ts), and the first
+// one starts the daemon when nothing answers. Status alone never starts it: a daemon that is down has no module. The
+// client is loaded at the first request, so a hook that writes nothing never loads it.
+import type { Answers, Request } from '../core/api.js';
+import type { Result } from '../core/result.js';
+import { err, ok } from '../core/result.js';
+import type { Daemon } from './types.js';
+
+/** How long a first write waits for a daemon it started: a loaded machine takes seconds, inside the hooks' 15 s. */
+const START_MS = 8_000;
+/** How long one write may take: a join is several crash-safe writes, and a busy disk syncs slowly. */
+const CALL_MS = 10_000;
+
+export function daemonFor(home: string): Daemon {
+  let up: Promise<Result<unknown>> | null = null;
+  const client = () => import('../net/daemon/client.js');
+  const send = async <R extends Request>(req: R): Promise<Result<Answers[R['op']]>> => {
+    const { call, ensure } = await client();
+    const started = await (up ??= ensure(home, START_MS));
+    return started.ok ? call(home, req, CALL_MS) : err(started.error);
+  };
+  return {
+    append: (code, draft, id) => send({ op: 'append', code, draft: { ...draft, id } }),
+    putDoc: (code, d) => send({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
+    // the daemon has no op for the host's kick yet: it comes with the links that a kick ends
+    kick: () => Promise.resolve(err('removing a member is not available yet')),
+    join: r => send({ op: 'join', ...r }),
+    leave: id => send({ op: 'leave', id }),
+    retire: id => send({ op: 'retire', id }),
+    handoff: (id, cwd) => send({ op: 'handoff', id, cwd }),
+    claim: async (id, cwd) => {
+      const r = await send({ op: 'claim', id, cwd });
+      return r.ok ? ok(r.value.pointer) : r;
+    },
+    status: async () => {
+      const s = await (await client()).call(home, { op: 'status' }, 1000);
+      return s.ok ? ok({ sessions: s.value.sessions }) : s;
+    },
+  };
+}

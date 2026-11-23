@@ -129,7 +129,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     return reply(200, { ok: true, value: null });
   });
 
-  put(sessionFile(HOME, SESSION), JSON.stringify({ code, name: o.me }));
+  put(sessionFile(HOME, SESSION), JSON.stringify({ code, name: o.me, title: `${o.me}.${code}`, leave: '00000000-0000-4000-8000-0000000000ee' }));
   for (const name of [o.me, ...o.others]) await append({ kind: 'joined', from: name, by: 'system' });
   for (const name of o.others) await putDoc('presence', name, { name, state: 'working', at: now() });
 

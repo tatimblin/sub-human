@@ -92,7 +92,7 @@ Priority: **P0** = v2.0 ships with it; **P1** = v2.0 if cheap, else v2.1; **P2**
   - The default name is the git name; `/sub-human NAME` picks another.
   - Each member's activity (R12) carries their repo and branch, so others know where it happened.
 - **R2 (P0)** A room has a short human-readable code (e.g. `vole-8126`). Each member is addressed `NAME.CODE`.
-- **R3 (P0)** `/sub-human leave` leaves the room and keeps the session. Ending the session leaves the room too. A room with nobody left closes, and its data is deleted after a fixed retention period.
+- **R3 (P0)** `/sub-human leave` leaves the room and keeps the session. Ending the session doesn't leave: the member shows as away until a session of theirs comes back. A room with nobody left closes, and its data is deleted after a fixed retention period.
 - **R4 (P0)** `/sub-human who` lists the members, their machines and their state. `/sub-human help` lists every command.
 - **R5 (P1)** One person seated from two sessions or two machines counts once for agreement.
 

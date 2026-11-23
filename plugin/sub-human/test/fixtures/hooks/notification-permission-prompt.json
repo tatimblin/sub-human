@@ -1,0 +1,14 @@
+{
+  "name": "notification-permission-prompt",
+  "event": "hook",
+  "hook": "Notification",
+  "note": "Written by hand from NotificationHookInput (typings 2.1.330): no notification fires under -p, so U5 recorded none.",
+  "input": {
+    "session_id": "00000000-0000-4000-8000-000000000001",
+    "transcript_path": "/home/user/.claude/projects/-work-project/00000000-0000-4000-8000-000000000001.jsonl",
+    "cwd": "/work/project",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission to use Bash",
+    "notification_type": "permission_prompt"
+  }
+}

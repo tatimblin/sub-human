@@ -76,13 +76,13 @@ const entry = exact<Entry>()(v.variant('kind', [
 ]), true);
 
 const docs: { readonly [K in DocKind]: Schema<DocKinds[K]> } = {
-  presence: exact<PresenceDoc>()(v.object({ name, state: v.picklist(['working', 'idle']), waiting: opt(v.boolean()), at: count }), true),
+  presence: exact<PresenceDoc>()(v.object({ name, state: v.picklist(['working', 'idle', 'away']), waiting: opt(v.boolean()), machine: opt(short), at: count }), true),
   activity: exact<ActivityDoc>()(v.object({ name, files, at: count }), true),
   focus: exact<FocusDoc>()(v.object({ name, text: short, ...where, at: count }), true),
   members: exact<MembersDoc>()(v.object({ members: v.array(v.object({ name, machine: short, link: opt(short) })) }), true),
 };
 
-const member = exact<MemberRecord>()(v.object({ name, machines: v.array(short), since: count, ...where, kicked: v.boolean() }), true);
+const member = exact<MemberRecord>()(v.object({ name, machine: opt(short), since: count, ...where, kicked: v.boolean() }), true);
 const plan = exact<Plan>()(v.object({
   name, scope,
   versions: v.array(v.object({

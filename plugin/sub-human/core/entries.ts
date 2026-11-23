@@ -116,7 +116,17 @@ export type Draft<E extends Entry = Entry> = E extends Entry ? Omit<E, 'seq' | '
 export interface LogLine { readonly entry: Entry; readonly hash: string }
 
 // Documents: latest-wins, one per member, never in the log.
-export interface PresenceDoc { readonly name: string; readonly state: 'working' | 'idle'; readonly waiting?: boolean; readonly at: number }
+/**
+ * A member's presence on one machine (`presence/NAME@MACHINE`): here (working or idle) or away, a session's end and not
+ * a leave. Who is a member is the log's; where they are here is these documents'. The daemon stamps `machine`.
+ */
+export interface PresenceDoc {
+  readonly name: string;
+  readonly state: 'working' | 'idle' | 'away';
+  readonly waiting?: boolean;
+  readonly machine?: string;
+  readonly at: number;
+}
 export interface ActivityDoc { readonly name: string; readonly files: readonly string[]; readonly at: number }
 export interface FocusDoc { readonly name: string; readonly text: string; readonly repo?: string; readonly branch?: string; readonly at: number }
 /** The host's members document: which link each member's machine came in on. */
@@ -133,8 +143,8 @@ export const NO_DOCS: Docs = { presence: [], activity: [], focus: [] };
 // What the log folds to (fold.ts). A snapshot holds exactly this; documents are merged on top.
 export interface MemberRecord {
   readonly name: string;
-  /** One machine per session here now; empty once they have left. */
-  readonly machines: readonly string[];
+  /** The machine the member joined from; none once they have left (the log's membership). */
+  readonly machine?: string;
   readonly since: number;
   readonly repo?: string;
   readonly branch?: string;
@@ -177,6 +187,9 @@ export interface LogState {
 export interface Snapshot { readonly v: 1; readonly state: LogState }
 
 export interface Member extends MemberRecord {
+  /** Where the member is here: the machines of their presence documents that aren't away. */
+  readonly machines: readonly string[];
+  /** Their latest presence that isn't away, else their latest. */
   readonly presence?: PresenceDoc;
   readonly activity?: ActivityDoc;
   readonly focus?: FocusDoc;

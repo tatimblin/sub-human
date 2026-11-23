@@ -169,7 +169,7 @@ test/              scenes (§12) and unit tests, beside the code they test
 
 | Kind | Written by | Meaning |
 |---|---|---|
-| `joined`, `left` | system | membership, with repo, branch and machine |
+| `joined`, `left` | system | membership, per name, with repo, branch and machine: `joined` once, when a name that isn't a member joins; `left` only for an explicit `/sub-human leave` that no other session or pending handoff holds the name against. A session ending, a crash or a sweep never writes either: it marks the member away (presence). |
 | `activity` | module, mechanically | discrete events only: a commit, a push, a test result, a personal task change (R12, R23). File edits go in the activity document. |
 | `finding` | the member's Claude (`share`) | one-line update in its own words (R13) |
 | `post` | person (`@room`) or Claude (`share post`) | room-visible words; optional `to` to name someone (R7, R8). Private Claude-to-Claude messages are never posts (R6). |
@@ -183,7 +183,7 @@ test/              scenes (§12) and unit tests, beside the code they test
 | `invite`, `admit`, `kick` | host | admission records; never contain the secret |
 
 **Documents** are current state, latest-wins: overwritten rather than appended. They never wake anyone, and while the host is away a mirror keeps its own member's documents and re-sends them on reconnect (R12, R32):
-- `presence/NAME.json`: working or idle, plus a best-effort permission wait;
+- `presence/NAME@MACHINE.json`: working, idle or away on one machine, plus a best-effort permission wait. A member is here on each machine whose presence isn't away, and their machines are those; "here" and "away" never come from the log. A room is open while any member is here;
 - `activity/NAME.json`: files edited since joining, coalesced;
 - `focus/NAME.json`: one-line focus, repo, branch;
 - `members.json`.

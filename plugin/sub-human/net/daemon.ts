@@ -13,16 +13,15 @@ import net from 'node:net';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { MAX_BODY, decodeRequest, socketFile } from '../core/api.js';
+import { LIVE_MS, MAX_BODY, SOCKET_MAX, decodeRequest, socketFile } from '../core/api.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { withLock } from '../store/lock.js';
 import type { Links } from './daemon/rooms.js';
 import { NO_LINKS, Rooms } from './daemon/rooms.js';
 
-export const IDLE_MS = 60_000;
-/** The longest socket path every platform binds (macOS's sun_path holds 104 bytes with its NUL). */
-const SOCKET_MAX = 103;
+/** The daemon exits once no request has come for this long: twice a session's liveness, so a slow ping never stops it. */
+export const IDLE_MS: number = 2 * LIVE_MS;
 /** The start lock: one killed while binding holds it for a second, well inside the next one's wait. */
 const START_LOCK = { waitMs: 3000, staleMs: 1000 } as const;
 

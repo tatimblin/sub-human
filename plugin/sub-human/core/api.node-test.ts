@@ -34,8 +34,14 @@ test('an unknown op, a missing field and an empty code are refused', () => {
 });
 
 test('a session id must be safe as a file name', () => {
-  assert.ok(decodeRequest({ op: 'session', id: '0b9d6f3e-2c4a', code: 'R', name: 'a' }).ok);
-  for (const id of ['../x', '', 'a/b', 'x'.repeat(129)]) assert.ok(!decodeRequest({ op: 'session_end', id }).ok, id);
+  const p = { code: 'R', name: 'a', title: 'a.R', leave: '7d9c2a1e-4b3f-4c5d-8e6f-0a1b2c3d4e5f' };
+  const join = { op: 'join', id: '0b9d6f3e-2c4a', cwd: '/w', name: 'a', leave: p.leave };
+  assert.ok(decodeRequest(join).ok);
+  assert.ok(!decodeRequest({ ...join, leave: 'x' }).ok, 'a pointer carries its leave id');
+  assert.ok(!decodeRequest({ ...join, code: 'R' }).ok, 'a room asked for is a room code');
+  assert.ok(!decodeRequest({ op: 'claim', id: '../x', cwd: '/w' }).ok);
+  assert.deepEqual(decodePointer(JSON.stringify(p)), p);
+  for (const id of ['../x', '', 'a/b', 'x'.repeat(129)]) assert.ok(!decodeRequest({ op: 'retire', id }).ok, id);
   assert.equal(decodePointer('{"code":"R"}'), null);
   assert.equal(decodePointer('not json'), null);
 });

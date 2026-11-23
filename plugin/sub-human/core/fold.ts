@@ -7,6 +7,7 @@ import type {
   Decision, Docs, Entry, Joined, LogLine, LogState, Member, MemberRecord, Plan, PlanEntry, PlanSent, PlanVersion, RoomState,
   SentPlan, Snapshot, TaskEntry, Update,
 } from './entries.js';
+import { NO_DOCS } from './entries.js';
 
 /** How many recent updates RoomState keeps, for the catch-up only; news and counts come from updatesSince. */
 export const BRIEF_RECENT = 30;
@@ -24,8 +25,11 @@ export function fold(snapshot: Snapshot | null, lines: readonly LogLine[], docs:
   return withDocs(s, docs);
 }
 
+/** A state from the log alone, for the rules: nobody here, since no document is read. */
+export function asRoom(s: LogState): RoomState { return withDocs(s, NO_DOCS); }
+
 export function takeSnapshot(state: RoomState): Snapshot {
-  const members = state.members.map(({ presence: _p, activity: _a, focus: _f, ...m }): MemberRecord => m);
+  const members = state.members.map(({ machines: _w, presence: _p, activity: _a, focus: _f, ...m }): MemberRecord => m);
   return { v: 1, state: { ...state, members } };
 }
 
@@ -48,10 +52,14 @@ const NEWS: ReadonlySet<Entry['kind']> = new Set<News['kind']>(['activity', 'fin
 
 function withDocs(s: LogState, docs: Docs): RoomState {
   const members = s.members.map((m): Member => {
-    const presence = docs.presence.findLast(d => d.name === m.name);
+    const mine = docs.presence.filter(d => d.name === m.name).toSorted((a, b) => a.at - b.at);
+    const here = mine.filter(d => d.state !== 'away');
+    // only a member is here: a presence left behind by someone who left, or was kicked, counts for nothing
+    const machines = m.kicked || m.machine === undefined ? [] : [...new Set(here.map(d => d.machine ?? m.machine ?? ''))];
+    const presence = here.at(-1) ?? mine.at(-1);
     const activity = docs.activity.findLast(d => d.name === m.name);
     const focus = docs.focus.findLast(d => d.name === m.name);
-    return { ...m, ...(presence && { presence }), ...(activity && { activity }), ...(focus && { focus }) };
+    return { ...m, machines, ...(presence && { presence }), ...(activity && { activity }), ...(focus && { focus }) };
   });
   return { ...s, members };
 }
@@ -60,11 +68,11 @@ function apply(s: LogState, e: Entry): LogState {
   switch (e.kind) {
     case 'joined': return join(s, e);
     case 'left':
-      return { ...s, members: editMember(s.members, e.from, m => ({ ...m, machines: without(m.machines, e.machine) })) };
+      return { ...s, members: editMember(s.members, e.from, ({ machine: _m, ...m }) => m) };
     case 'kick': // permanent (R31): a name kicked before it ever joined is recorded too
       return s.members.some(m => m.name === e.name)
-        ? { ...s, members: editMember(s.members, e.name, m => ({ ...m, machines: [], kicked: true })) }
-        : { ...s, members: [...s.members, { name: e.name, machines: [], since: e.at, kicked: true }] };
+        ? { ...s, members: editMember(s.members, e.name, ({ machine: _m, ...m }) => ({ ...m, kicked: true })) }
+        : { ...s, members: [...s.members, { name: e.name, since: e.at, kicked: true }] };
     case 'activity': case 'finding': case 'post': return remember(s, e);
     case 'plan': {
       const version: PlanVersion = { version: e.version, hash: e.hash, base: e.base, from: e.from, at: e.at, asked: [], answers: [] };
@@ -105,10 +113,11 @@ function join(s: LogState, e: Joined): LogState {
   const old = s.members.find(m => m.name === e.from);
   if (old?.kicked) return s;
   const where = { ...(e.repo !== undefined && { repo: e.repo }), ...(e.branch !== undefined && { branch: e.branch }) };
-  if (!old) return { ...s, members: [...s.members, { name: e.from, machines: [e.machine], since: e.at, kicked: false, ...where }] };
+  if (!old) return { ...s, members: [...s.members, { name: e.from, machine: e.machine, since: e.at, kicked: false, ...where }] };
+  // one joined per name: a member who is in keeps the machine they joined from
+  if (old.machine !== undefined) return s;
   const { repo: _r, branch: _b, ...rest } = old;
-  const since = old.machines.length ? old.since : e.at;
-  return { ...s, members: editMember(s.members, e.from, () => ({ ...rest, ...where, since, machines: [...old.machines, e.machine] })) };
+  return { ...s, members: editMember(s.members, e.from, () => ({ ...rest, ...where, since: e.at, machine: e.machine })) };
 }
 
 function remember(s: LogState, e: Update): LogState {
@@ -130,11 +139,6 @@ function editLatest(s: LogState, name: string, version: number, f: (v: PlanVersi
 
 function sameSent(x: SentPlan, from: string, name: string, version: number): boolean {
   return x.from === from && x.name === name && x.version === version;
-}
-
-function without(xs: readonly string[], x: string): readonly string[] {
-  const i = xs.indexOf(x);
-  return i < 0 ? xs : [...xs.slice(0, i), ...xs.slice(i + 1)];
 }
 
 function union(xs: readonly string[], ys: readonly string[]): readonly string[] {

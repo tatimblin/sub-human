@@ -5,13 +5,15 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Request } from '../../core/api.js';
-import { decodePointer, sessionFile } from '../../core/api.js';
+import { HANDOFF_MS, decodePointer, sessionFile } from '../../core/api.js';
 import type { Kind } from '../../core/entries.js';
 import { openFsStore } from '../../store/fs-store.js';
 import { fileKey, roomDir } from '../../home.js';
 import { NO_LINKS, Rooms } from './rooms.js';
+import { titleFor } from './pointers.js';
 import { home, joined, post } from '../../test/support/daemon.js';
 
+const BOB = { code: 'vole-0001', name: 'bob', title: 'bob.vole-0001', leave: '7d9c2a1e-4b3f-4c5d-8e6f-0a1b2c3d4e5f' };
 const rooms = (h: string): Rooms => new Rooms({ home: h, now: () => 5, machine: 'm', idleMs: 60_000, links: NO_LINKS });
 async function kinds(h: string, code: string): Promise<Kind[]> {
   const s = await openFsStore({ home: h, code });
@@ -23,6 +25,11 @@ async function kinds(h: string, code: string): Promise<Kind[]> {
 /** Joins each name to the room. */
 async function room(r: Rooms, code: string, ...names: string[]): Promise<void> {
   for (const n of names) assert.ok((await r.handle({ op: 'append', code, draft: joined(n) })).ok);
+}
+/** Session `id` joins `p`'s room (made first) as `p`'s name: what the join answers. */
+async function seat(r: Rooms, id: string, p: { code: string; name: string; leave: string }): Promise<unknown> {
+  await room(r, p.code, p.name);
+  return okv(r, { op: 'join', id, cwd: `/seat/${id}`, name: p.name, code: p.code, leave: p.leave });
 }
 async function okv(r: Rooms, req: Request): Promise<unknown> {
   const a = await r.handle(req);
@@ -144,7 +151,7 @@ test('tasks: add answers its number; claim, a refused claim, done; a stranger re
   assert.deepEqual(await kinds(h, 'T'), ['joined', 'joined', 'task', 'task', 'task']);
 });
 
-test('session writes the pointer the module reads (0600), session_end removes it, a write sweeps day-old ones', async () => {
+test('session writes the pointer the module reads (0600) with its title, retire removes it, a write sweeps day-old ones', async () => {
   const h = await home();
   const r = rooms(h);
   const old = sessionFile(h, 'gone');
@@ -155,15 +162,72 @@ test('session writes the pointer the module reads (0600), session_end removes it
   const live = new Rooms({ home: h, now: Date.now, machine: 'm', idleMs: 60_000, links: NO_LINKS });
   await okv(live, { op: 'ping', session: 'quiet' }); // still pinging: its pointer is kept fresh
   await sleep(50);
-  await okv(live, { op: 'session', id: 's1', code: 'R1', name: 'bob' });
+  assert.deepEqual(await seat(live, 's1', BOB), { code: BOB.code, title: BOB.title, opened: false, others: [] });
   const file = sessionFile(h, 's1');
-  assert.deepEqual(decodePointer(await fs.readFile(file, 'utf8')), { code: 'R1', name: 'bob' });
+  assert.deepEqual(decodePointer(await fs.readFile(file, 'utf8')), BOB);
   assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
   await assert.rejects(fs.access(old), 'a pointer nobody pinged for a day is swept');
   await fs.access(sessionFile(h, 'quiet'));
-  await okv(r, { op: 'session_end', id: 's1' });
+  await okv(r, { op: 'retire', id: 's1' });
   await assert.rejects(fs.access(file));
-  assert.equal(await okv(r, { op: 'session_end', id: 's1' }), null, 'ending twice is fine');
+  assert.equal(await okv(r, { op: 'retire', id: 's1' }), null, 'ending twice is fine');
+});
+
+test('handoff moves a pointer aside for the next session in the cwd; claim takes it once, and only while fresh', async () => {
+  const h = await home();
+  let now = 1_000;
+  const r = new Rooms({ home: h, now: () => now, machine: 'm', idleMs: 60_000, links: NO_LINKS });
+  await seat(r, 'old', BOB);
+  assert.equal(await okv(r, { op: 'handoff', id: 'old', cwd: '/work/api' }), null);
+  await assert.rejects(fs.access(sessionFile(h, 'old')));
+  assert.deepEqual(await okv(r, { op: 'claim', id: 'new', cwd: '/work/web' }), { pointer: null }, 'another cwd claims nothing');
+  assert.deepEqual(await okv(r, { op: 'claim', id: 'new', cwd: '/work/api' }), { pointer: BOB });
+  assert.deepEqual(decodePointer(await fs.readFile(sessionFile(h, 'new'), 'utf8')), BOB);
+  assert.deepEqual(await okv(r, { op: 'claim', id: 'third', cwd: '/work/api' }), { pointer: null }, 'taken once');
+  await okv(r, { op: 'handoff', id: 'new', cwd: '/work/api' });
+  now += HANDOFF_MS + 1;
+  assert.deepEqual(await okv(r, { op: 'claim', id: 'late', cwd: '/work/api' }), { pointer: null }, 'a stale handoff is dropped');
+  assert.equal(await okv(r, { op: 'handoff', id: 'nobody', cwd: '/work/api' }), null, 'a session in no room hands nothing on');
+  assert.deepEqual(await okv(r, { op: 'claim', id: 'late', cwd: '/work/api' }), { pointer: null });
+});
+
+test('handoffs in one cwd are a list: two pending are both kept, and claims take the oldest first', async () => {
+  const h = await home();
+  const r = new Rooms({ home: h, now: () => 1_000, machine: 'm', idleMs: 60_000, links: NO_LINKS });
+  const ALICE = { ...BOB, name: 'alice', title: 'alice.vole-0001', leave: '8e9c2a1e-4b3f-4c5d-8e6f-0a1b2c3d4e5f' };
+  await seat(r, 'one', BOB);
+  await seat(r, 'two', ALICE);
+  await okv(r, { op: 'handoff', id: 'one', cwd: '/w' });
+  await okv(r, { op: 'handoff', id: 'two', cwd: '/w' });
+  assert.deepEqual(await okv(r, { op: 'claim', id: 'a', cwd: '/w' }), { pointer: BOB });
+  assert.deepEqual(await okv(r, { op: 'claim', id: 'b', cwd: '/w' }), { pointer: ALICE });
+  assert.deepEqual(await okv(r, { op: 'claim', id: 'c', cwd: '/w' }), { pointer: null });
+});
+
+test('a handoff and a claim sent together run in order on the cwd\'s chain: the claim gets it', async () => {
+  const h = await home();
+  const r = new Rooms({ home: h, now: () => 1_000, machine: 'm', idleMs: 60_000, links: NO_LINKS });
+  await seat(r, 'one', BOB);
+  const [, claimed] = await Promise.all([r.handle({ op: 'handoff', id: 'one', cwd: '/w' }), r.handle({ op: 'claim', id: 'two', cwd: '/w' })]);
+  assert.ok(claimed.ok);
+  assert.deepEqual(claimed.value, { pointer: BOB });
+});
+
+test('titleFor: NAME.CODE, else the lowest free NAME-N.CODE among the titles held (R5)', () => {
+  assert.equal(titleFor('alice', 'vole-0001', []), 'alice.vole-0001');
+  assert.equal(titleFor('alice', 'vole-0001', ['alice.vole-0001']), 'alice-2.vole-0001');
+  assert.equal(titleFor('alice', 'vole-0001', ['alice.vole-0001', 'alice-2.vole-0001']), 'alice-3.vole-0001');
+  assert.equal(titleFor('alice', 'vole-0001', ['alice-2.vole-0001']), 'alice.vole-0001', 'a freed title is used again');
+});
+
+test('a joined for a member who is here, or a left for one who isn\'t, writes nothing', async () => {
+  const h = await home();
+  const r = rooms(h);
+  await room(r, 'J', 'ann');
+  await okv(r, { op: 'append', code: 'J', draft: joined('ann') });
+  await okv(r, { op: 'append', code: 'J', draft: { kind: 'left', from: 'ann', by: 'system', id: randomUUID() } });
+  await okv(r, { op: 'append', code: 'J', draft: { kind: 'left', from: 'ann', by: 'system', id: randomUUID() } });
+  assert.deepEqual(await kinds(h, 'J'), ['joined', 'left']);
 });
 
 test('messages go to inboxes by session and room, never the log, and are taken once', async () => {

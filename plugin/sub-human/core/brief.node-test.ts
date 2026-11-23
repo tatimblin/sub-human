@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Envelope, RoomState, Update } from './entries.js';
-import { EMPTY } from './fold.js';
+import { EMPTY, asRoom } from './fold.js';
 import { brief, BRIEF_MAX } from './brief.js';
 
 const env = (seq: number, from: string, by: Envelope['by'] = 'person'): Envelope => ({ seq, id: `e${seq}`, at: seq, prev: '', from, by, machine: 'm1' });
@@ -63,7 +63,7 @@ test('the catch-up: who is doing what, plans, open tasks, then updates newest fi
 });
 
 test('an empty room says so in plain words', () => {
-  assert.equal(brief(EMPTY, { code: 'vole-8126' }),
+  assert.equal(brief(asRoom(EMPTY), { code: 'vole-8126' }),
     'Room vole-8126, at update 0.\nMembers here: nobody.\nPlans: none.\nOpen tasks: none.\nRecent updates, newest first: none.');
 });
 

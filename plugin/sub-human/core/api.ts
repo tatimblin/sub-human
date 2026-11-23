@@ -11,8 +11,21 @@
 //   task     {code, from, act, …}      → {seq, hash, n}  add, claim, release, done, by core/tasks.ts
 //   put_doc  {code, kind, name, doc}   → null         a member's presence, activity or focus document
 //   put_blob {code, text}              → {hash}       plan text, stored by its hash
-//   session  {id, code, name}          → null         writes the pointer <home>/sessions/ID.json {code, name} the module reads
-//   session_end {id}                   → null         removes it
+//   join     {id, cwd, name, code?, repo?, branch?, leave} → {code, title, opened, others} | {rooms}  a bare
+//                                                     /sub-human, on one chain: the room asked for, else the room this
+//                                                     cwd last used while NAME is a member, else the one open room (a
+//                                                     member present), else a new one; several open: {rooms}, and no
+//                                                     join. `joined` only when NAME isn't a member; then presence idle,
+//                                                     and the pointer <home>/sessions/ID.json with the lowest NAME.CODE
+//                                                     title no pointer here holds
+//   leave    {id}                      → null         /sub-human leave: `left` (under the pointer's leave id) and presence
+//                                                     away, unless another pointer or pending handoff holds the name;
+//                                                     then the pointer goes
+//   retire   {id}                      → null         the session ended: the pointer goes and the member is away, unless
+//                                                     held live elsewhere; never a `joined` or `left`
+//   handoff  {id, cwd}                 → null         /clear or /resume: moves the pointer aside for the next session in cwd
+//   claim    {id, cwd}                 → {pointer}    the next session takes the oldest handoff under HANDOFF_MS old, else
+//                                                     null; the member of one gone stale is away
 //   ping     {session, code?, name?}   → null         `session` is the session id (it keeps that pointer fresh); with
 //                                                     code and name, this session is NAME in CODE, for messages
 //   message  {code, to, from, text}    → null         private Claude-to-Claude: into the recipient's inbox, never the log
@@ -34,17 +47,44 @@ export const MAX_BODY: number = 1024 * 1024;
 export const DAEMON_URL: string = 'http://daemon/';
 
 export function socketFile(home: string): string { return `${home}/daemon.sock`; }
-/** Where a session finds its room: `{code, name}`, written by the session op. `id` is a SESSION_ID. */
+/** The longest socket path every platform binds, in bytes (macOS's sun_path holds 104 with its NUL). */
+export const SOCKET_MAX = 103;
+/** A room code: a word and four digits, `vole-8126`. */
+export const CODE: RegExp = /^[a-z]+-\d{4}$/;
+/** Where a session finds its room: a Pointer, written by the join op. `id` is a SESSION_ID. */
 export function sessionFile(home: string, id: string): string { return `${home}/sessions/${id}.json`; }
+/** Where a session ending for /clear or /resume leaves its pointer for the next one in its cwd (by the cwd's hash). */
+export function handoffFile(home: string, cwdHash: string): string { return `${home}/handoff/${cwdHash}.json`; }
+/** The room a cwd last joined, `{code}`, by the cwd's hash. */
+export function lastFile(home: string, cwdHash: string): string { return `${home}/last/${cwdHash}.json`; }
+/** How long a handoff waits for the next session to claim it. */
+export const HANDOFF_MS = 30_000;
+/** How often a session's module pings the daemon. */
+export const PING_MS = 20_000;
+/**
+ * A session is live while the daemon has seen it ping this recently (three pings). One it has never seen ping (its
+ * module is off, or not up yet) counts as live until the day-old sweep.
+ */
+export const LIVE_MS: number = 3 * PING_MS;
 /** A session id safe as a file name (Claude Code's are UUIDs). */
 export const SESSION_ID: RegExp = /^[A-Za-z0-9_-]{1,128}$/;
-export interface Pointer { readonly code: string; readonly name: string }
+/** `title` is the session's NAME.CODE, given once at the join; `leave` is the id its `left` entry will carry. */
+export interface Pointer { readonly code: string; readonly name: string; readonly title: string; readonly leave: string }
+/** A pointer handed on, and when. */
+export interface Handoff extends Pointer { readonly at: number }
 /** A session pointer as the module reads it, or null when it is not one. */
 export function decodePointer(text: string): Pointer | null {
   try {
-    const r = v.safeParse(v.object({ code: name, name }), JSON.parse(text));
+    const r = v.safeParse(v.object(pointerFields()), JSON.parse(text));
     return r.success ? r.output : null;
   } catch { return null; }
+}
+/** A cwd's handoffs, oldest first; a file that doesn't read holds none. */
+export function decodeHandoffs(text: string): Handoff[] {
+  try {
+    const r = v.safeParse(v.array(v.object({ ...pointerFields(), at: v.number() })), JSON.parse(text));
+    return r.success ? r.output : [];
+  } catch { return []; }
 }
 /** How to start the daemon: node's absolute path, the plugin's root and the home. It detaches itself. */
 export function daemonArgv(node: string, plugin: string, home: string): string[] {
@@ -78,8 +118,14 @@ export type Request =
   | ({ readonly op: 'task' } & Writer & TaskAct)
   | { readonly op: 'put_doc'; readonly code: string; readonly kind: MemberDocKind; readonly name: string; readonly doc: PresenceDoc | ActivityDoc | FocusDoc }
   | { readonly op: 'put_blob'; readonly code: string; readonly text: string }
-  | { readonly op: 'session'; readonly id: string; readonly code: string; readonly name: string }
-  | { readonly op: 'session_end'; readonly id: string }
+  | {
+    readonly op: 'join'; readonly id: string; readonly cwd: string; readonly name: string; readonly leave: string;
+    readonly code?: string; readonly repo?: string; readonly branch?: string;
+  }
+  | { readonly op: 'leave'; readonly id: string }
+  | { readonly op: 'retire'; readonly id: string }
+  | { readonly op: 'handoff'; readonly id: string; readonly cwd: string }
+  | { readonly op: 'claim'; readonly id: string; readonly cwd: string }
   | { readonly op: 'ping'; readonly session: string; readonly code?: string; readonly name?: string }
   | { readonly op: 'message'; readonly code: string; readonly to: string; readonly from: string; readonly text: string }
   | { readonly op: 'inbox'; readonly session: string }
@@ -91,8 +137,11 @@ export interface Answers {
   task: { readonly seq: number; readonly hash: string; readonly n: number };
   put_doc: null;
   put_blob: { readonly hash: string };
-  session: null;
-  session_end: null;
+  join: { readonly code: string; readonly title: string; readonly opened: boolean; readonly others: readonly string[] } | { readonly rooms: readonly string[] };
+  leave: null;
+  retire: null;
+  handoff: null;
+  claim: { readonly pointer: Pointer | null };
   ping: null;
   message: null;
   inbox: { readonly messages: readonly Message[] };
@@ -100,6 +149,7 @@ export interface Answers {
 }
 
 const name = v.pipe(v.string(), v.minLength(1), v.maxLength(LIMITS.name));
+const short = v.pipe(v.string(), v.maxLength(LIMITS.short));
 const session = v.pipe(v.string(), v.minLength(1), v.maxLength(LIMITS.short));
 const sessionId = v.pipe(v.string(), v.regex(SESSION_ID));
 const count = v.pipe(v.number(), v.integer(), v.minValue(0));
@@ -107,6 +157,9 @@ const version = v.pipe(count, v.minValue(1));
 const text = v.pipe(v.string(), v.maxLength(LIMITS.text));
 const blob = v.pipe(v.string(), v.maxLength(MAX_BODY / 2));
 const opt = v.exactOptional;
+function pointerFields() {
+  return { code: name, name, title: v.pipe(v.string(), v.minLength(1), v.maxLength(LIMITS.short)), leave: v.pipe(v.string(), v.uuid()) };
+}
 const writer = { code: name, from: name };
 const note = opt(text);
 
@@ -129,8 +182,14 @@ const request = v.variant('op', [
   ]),
   v.object({ op: v.literal('put_doc'), code: name, kind: v.picklist(['presence', 'activity', 'focus']), name, doc: v.unknown() }),
   v.object({ op: v.literal('put_blob'), code: name, text: blob }),
-  v.object({ op: v.literal('session'), id: sessionId, code: name, name }),
-  v.object({ op: v.literal('session_end'), id: sessionId }),
+  v.object({
+    op: v.literal('join'), id: sessionId, cwd: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)), name,
+    leave: v.pipe(v.string(), v.uuid()), code: opt(v.pipe(v.string(), v.regex(CODE))), repo: opt(short), branch: opt(short),
+  }),
+  v.object({ op: v.literal('leave'), id: sessionId }),
+  v.object({ op: v.literal('retire'), id: sessionId }),
+  v.object({ op: v.literal('handoff'), id: sessionId, cwd: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)) }),
+  v.object({ op: v.literal('claim'), id: sessionId, cwd: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)) }),
   v.object({ op: v.literal('ping'), session, code: opt(name), name: opt(name) }),
   v.object({ op: v.literal('message'), code: name, to: name, from: name, text }),
   v.object({ op: v.literal('inbox'), session }),
@@ -145,8 +204,14 @@ const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
   task: v.object({ ...placed, n: version }),
   put_doc: v.null(),
   put_blob: v.object({ hash: v.string() }),
-  session: v.null(),
-  session_end: v.null(),
+  join: v.union([
+    v.object({ code: v.string(), title: v.string(), opened: v.boolean(), others: v.array(v.string()) }),
+    v.object({ rooms: v.array(v.string()) }),
+  ]),
+  leave: v.null(),
+  retire: v.null(),
+  handoff: v.null(),
+  claim: v.object({ pointer: v.nullable(v.object(pointerFields())) }),
   ping: v.null(),
   message: v.null(),
   inbox: v.object({ messages: v.array(v.object({ code: name, from: name, text, at: count })) }),
