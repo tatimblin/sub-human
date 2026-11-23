@@ -20,9 +20,9 @@ async function room(): Promise<{ fake: FakeHome; alice: Ctx; bob: Ctx; code: str
   return { fake, alice, bob, code: await fake.code() };
 }
 
-test('who lists the members here, their machines, state, focus and where they work (R4, R14); and when the host is away (R34)', async () => {
+test('who lists the members here, their machines, state, focus and where they work, each one line with no escapes (R4, R14); and when the host is away (R34)', async () => {
   const { fake, alice, code } = await room();
-  await fake.daemon.putDoc(code, { kind: 'focus', doc: { name: 'bob', text: 'paging handler', repo: 'web', branch: 'paging', at: 1 } });
+  await fake.daemon.putDoc(code, { kind: 'focus', doc: { name: 'bob', text: 'paging\u001b[2J\nhandler', repo: 'web', branch: 'pag\u001b[0ming', at: 1 } });
   await fake.daemon.putDoc(code, { kind: 'presence', doc: { name: 'alice', state: 'working', at: 1 } });
   await fake.daemon.putDoc(code, { kind: 'presence', doc: { name: 'bob', state: 'working', waiting: true, at: 1 } });
   assert.deepEqual(await runCommand('who', alice), { kind: 'say', text: [
@@ -57,14 +57,14 @@ test('who, tasks, leave and kick in a session in no room say so', async () => {
   assert.equal((await runCommand('kick bob', ctx)).kind, 'refused');
 });
 
-test('tasks lists the open tasks with owners and blockers, and counts the done ones (R24)', async () => {
+test('tasks lists the open tasks with owners and blockers, one line each, and counts the done ones (R24)', async () => {
   const { fake, alice, code } = await room();
   assert.equal((await runCommand('tasks', alice)).text, `${code} has no tasks yet.`);
   const task = (n: number, title: string, rest: object) => fake.host(code, [{
     kind: 'task', from: 'alice', by: 'system', task: { n, title, status: 'open', addedBy: 'alice', blockedBy: [], ...rest },
   }]);
   await task(1, 'store paging', { status: 'claimed', owner: 'alice' });
-  await task(2, 'handler paging', { blockedBy: [1] });
+  await task(2, 'handler\u001b[2J\npaging', { blockedBy: [1] });
   await task(3, 'schema', { status: 'done', owner: 'bob' });
   assert.equal((await runCommand('tasks', alice)).text, [
     `${code} · 2 open`, '#1 alice\'s · store paging', '#2 open · handler paging · after #1', '1 done',

@@ -39,7 +39,7 @@ test('a plan sent to me: one line, the card, the full plan in the pane, then Acc
   await $.session.start(START)
   await room.settled(clock)
   await room.as('jess').planAct({ act: 'edit', name: 'handler-paging', base: 0, text: THEIRS, scope: 'personal' })
-  await room.as('jess').planAct({ act: 'send', name: 'handler-paging', to: 'alice', branch: 'jess/handler', files: ['src/server.js'] })
+  await room.as('jess').planAct({ act: 'send', name: 'handler-paging', to: 'alice', branch: 'jess/handler', files: ['src/server.js'], by: 'person' })
   await room.poll(clock)
   expect(room.logs).toEqual(['jess sent you plan handler-paging version 1.'])
 

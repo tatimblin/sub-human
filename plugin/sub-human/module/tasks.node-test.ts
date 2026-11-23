@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { RoomState, Task } from '../core/entries.js';
 import { EMPTY, asRoom } from '../core/fold.js';
-import { bridgeCall, fill, native, needsList, remember } from './tasks.js';
+import { bridgeCall, fill, native, needsList, remember, taskCall } from './tasks.js';
 
 const ROOM = { home: '/h', code: 'otter-4821', name: 'alice', title: 'alice.otter-4821', dir: '/h/r', root: '/w' };
 const update = (taskId: string, to: string) => ({ result: { success: true, taskId, updatedFields: ['status'], statusChange: { from: 'in_progress', to } } });
@@ -43,4 +43,12 @@ test('TaskList is asked once per session id, only for a task the map lacks, and 
   assert.equal(needsList(m, 's2', { tool: 'TaskUpdate', taskId: '5' }), true); // a new session id starts the map again
   fill(m, { result: { tasks: [{ id: '5', subject: '[room otter-4821#1]', status: 'pending', blockedBy: [] }] } });
   assert.deepEqual(bridgeCall(update('5', 'deleted'), m, ROOM, null), { op: 'task', code: 'otter-4821', from: 'alice', act: 'release', n: 1 });
+});
+
+test('a task title or note that looks like it holds a secret is refused before anything is sent (R14a)', () => {
+  for (const input of [{ op: 'add', title: 'rotate AKIA' + 'IOSFODNN7EXAMPLE' }, { op: 'done', n: 1, note: 'key AKIAIOSFOD\u200bNN7EXAMPLE' }]) {
+    const r = taskCall(input, ROOM, null, false);
+    assert.ok(!r.ok && /holds a secret \(/.test(r.error), JSON.stringify(input));
+  }
+  assert.ok(taskCall({ op: 'add', title: 'paging' }, ROOM, null, false).ok);
 });

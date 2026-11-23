@@ -1,5 +1,6 @@
 // `/sub-human who`: who is in this session's room, on which machines, and what each is doing (R4, R14).
 import type { Member } from '../core/entries.js';
+import { oneLine } from '../core/text.js';
 import type { Verb } from './types.js';
 import { refused, say } from './types.js';
 
@@ -20,7 +21,8 @@ function line(m: Member, me: boolean): string {
   const repo = m.focus?.repo ?? m.repo;
   const branch = m.focus?.branch ?? m.branch;
   const where = repo && branch ? `${repo} on ${branch}` : repo ?? branch;
-  const focus = m.focus?.text.trim();
+  const focus = m.focus?.text;
   const machines = [...new Set(m.machines)].join(', ');
-  return [`${m.name}${me ? ' (you)' : ''}`, machines, state, focus, where].filter(x => x !== undefined && x !== '').join(' · ');
+  // every field is a member's own text, drawn to the terminal: one line each, no escape sequence
+  return [`${m.name}${me ? ' (you)' : ''}`, machines, state, focus, where].map(x => oneLine(x ?? '', 200)).filter(x => x !== '').join(' · ');
 }

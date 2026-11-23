@@ -42,7 +42,8 @@ export function linksOnly(l: Pick<Links, 'hosts' | 'forward'>): () => Net {
 }
 
 export const joined = (from: string): AppendDraft => ({ kind: 'joined', id: randomUUID(), from, by: 'system' });
-export const post = (from: string, text: string, id: string = randomUUID()): AppendDraft => ({ kind: 'post', id, from, by: 'person', text });
+/** A post as a Claude's share tool writes it; a person's (the @room line) is taken only for a session of theirs. */
+export const post = (from: string, text: string, id: string = randomUUID(), by: 'claude' | 'person' = 'claude'): AppendDraft => ({ kind: 'post', id, from, by, text });
 
 /** Runs the daemon as its own process; resolves its exit code and what it wrote. */
 export function run(args: readonly string[]): Promise<{ code: number | null; out: string }> {

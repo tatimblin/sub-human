@@ -12,6 +12,7 @@ import type { Request } from '../core/api.js';
 import type { RoomState } from '../core/entries.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
+import { secretIn } from '../core/secrets.js';
 import { bridgeOp, parseTag, tag, taskLines } from '../core/tasks.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
@@ -32,6 +33,8 @@ export function taskCall(input: unknown, room: InRoom, state: RoomState | null, 
   if (!i.success) return err('Nothing was changed: task takes op add (title), claim, release or done (n), or list.');
   const { code, name: from } = room;
   const t = i.output;
+  const rule = secretIn(t.op === 'add' ? t.title : t.op === 'done' ? (t.note ?? '') : '');
+  if (rule) return err(`Nothing was changed: the ${t.op === 'add' ? 'title' : 'note'} looks like it holds a secret (${rule}). Write it without the secret.`);
   switch (t.op) {
     case 'list': {
       if (!state) return err(`Room ${code} hasn't been read yet; try again in a moment.`);

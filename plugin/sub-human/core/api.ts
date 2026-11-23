@@ -53,7 +53,7 @@
 //
 // Every request keeps the daemon up; it exits after a minute with none.
 import * as v from '../vendor/valibot.mjs';
-import type { Acceptance, ActivityDoc, Answer, Entry, FocusDoc, PlanScope, PresenceDoc } from './entries.js';
+import type { Acceptance, ActivityDoc, Answer, By, Entry, FocusDoc, PlanScope, PresenceDoc } from './entries.js';
 import { LIMITS } from './entries.js';
 import type { Result } from './result.js';
 import { err, ok } from './result.js';
@@ -130,11 +130,13 @@ export interface Status { readonly version: number; readonly pid: number; readon
 export interface Joining { readonly id: string; readonly cwd: string; readonly leave: string }
 export interface Version { readonly version: number; readonly hash: string }
 
+/** Who asked for an ask or a send (R35): the person on a card, or their Claude with its tool. */
+export type Author = Exclude<By, 'system'>;
 export type PlanAct =
   | { readonly act: 'edit'; readonly name: string; readonly base: number; readonly text: string; readonly scope?: PlanScope }
-  | { readonly act: 'ask'; readonly name: string; readonly version: number; readonly people: readonly string[] }
+  | { readonly act: 'ask'; readonly name: string; readonly version: number; readonly people: readonly string[]; readonly by: Author }
   | { readonly act: 'answer'; readonly name: string; readonly version: number; readonly answer: Answer; readonly note?: string }
-  | { readonly act: 'send'; readonly name: string; readonly version?: number; readonly to?: string; readonly note?: string; readonly branch?: string; readonly files?: readonly string[] }
+  | { readonly act: 'send'; readonly name: string; readonly version?: number; readonly to?: string; readonly note?: string; readonly branch?: string; readonly files?: readonly string[]; readonly by: Author }
   | { readonly act: 'accept'; readonly name: string; readonly version: number; readonly answer: Acceptance; readonly note?: string };
 export type TaskAct =
   | { readonly act: 'add'; readonly title: string; readonly blockedBy?: readonly number[] }
@@ -229,16 +231,17 @@ function pointerFields() {
 }
 const writer = { code: name, from: name };
 const note = opt(text);
+const author = v.picklist(['person', 'claude']);
 
 const request = v.variant('op', [
   v.object({ op: v.literal('append'), code: name, draft: v.looseObject({ id: v.pipe(v.string(), v.uuid()) }) }),
   v.variant('act', [
     v.object({ op: v.literal('plan'), ...writer, act: v.literal('edit'), name, base: count, text: blob, scope: opt(v.picklist(['group', 'personal'])) }),
-    v.object({ op: v.literal('plan'), ...writer, act: v.literal('ask'), name, version, people: v.pipe(v.array(name), v.maxLength(LIMITS.names)) }),
+    v.object({ op: v.literal('plan'), ...writer, act: v.literal('ask'), name, version, people: v.pipe(v.array(name), v.maxLength(LIMITS.names)), by: author }),
     v.object({ op: v.literal('plan'), ...writer, act: v.literal('answer'), name, version, answer: v.picklist(['agree', 'changes']), note }),
     v.object({
       op: v.literal('plan'), ...writer, act: v.literal('send'), name, version: opt(version), to: opt(name), note,
-      branch: opt(v.string()), files: opt(v.array(v.string())),
+      branch: opt(v.string()), files: opt(v.array(v.string())), by: author,
     }),
     v.object({ op: v.literal('plan'), ...writer, act: v.literal('accept'), name, version, answer: v.picklist(['accept', 'dismiss', 'changes']), note }),
   ]),
@@ -316,6 +319,19 @@ export function decodeAppendDraft(input: unknown): Result<AppendDraft> {
   if (!e.ok) return e;
   const { seq: _s, at: _a, prev: _p, machine: _m, ...draft } = e.value;
   return ok(draft);
+}
+
+/**
+ * Why an append can't be taken from where it came (R35, R37), or null. A post or finding is a Claude's, from its share
+ * tool, except a person's own post (the @room line): from this machine's socket only for a session here that is `from`
+ * in the room (`personHere`), and over a link for the link's member, whom the host checks `from` against first. A link
+ * writes nothing else as `system` than its member's joined and left, which that machine's daemon writes for them.
+ */
+export function refusedAppend(d: AppendDraft, via: 'socket' | 'link', personHere: boolean): string | null {
+  if (via === 'link' && d.by === 'system' && d.kind !== 'joined' && d.kind !== 'left') return `another machine can't write a ${d.kind} as the system`;
+  if ((d.kind !== 'post' && d.kind !== 'finding') || d.by === 'claude') return null;
+  if (d.kind === 'post' && d.by === 'person' && (via === 'link' || personHere)) return null;
+  return `a ${d.kind} by ${d.by === 'person' ? 'a person' : 'the system'} is taken only from a session of theirs here`;
 }
 
 /** A request as the daemon reads it: the draft and the document through their own schemas. */

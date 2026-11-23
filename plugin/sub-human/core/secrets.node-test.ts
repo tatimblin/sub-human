@@ -22,6 +22,12 @@ test('every sample of the must-pass corpus passes', () => {
   for (const line of corpus('pass')) assert.equal(secretIn(line), null, line);
 });
 
+test('an escape sequence or a zero-width character splitting a secret doesn\'t hide it', () => {
+  for (const text of ['npm test AKIAIOSF\u001b[0mODNN7EXAMPLE', 'the key AKIAIOSFOD\u200bNN7EXAMPLE', 'ghp_4bsrIbGHSdIBabqx\u2060crQZaXaFU583M5E1MLOp']) {
+    assert.ok(secretIn(text), text);
+  }
+});
+
 test('secret files, ignored files and paths outside the repo are refused; the rest pass (R14a)', () => {
   for (const p of corpus('refuse-paths')) assert.equal(refusedPath(p, IGNORE), true, p);
   for (const p of corpus('pass-paths')) assert.equal(refusedPath(p, IGNORE), false, p);

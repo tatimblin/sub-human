@@ -71,7 +71,7 @@ test('a retried append (same id) answers the first seq and hash and writes nothi
   assert.equal(lines.ok && lines.value[1]?.entry.id, draft.id, 'the entry keeps the caller\'s id');
 });
 
-test('the host refuses its own kinds, a stranger\'s line and a stranger\'s document (R37)', async () => {
+test('the host refuses its own kinds, a stranger\'s line and document, and a write its caller may not make (R35, R37)', async () => {
   const h = await home();
   const r = rooms(h);
   await room(r, 'R', 'alice');
@@ -80,10 +80,17 @@ test('the host refuses its own kinds, a stranger\'s line and a stranger\'s docum
   assert.ok(!r1.ok && /host's to write/.test(r1.error));
   const r2 = await r.handle({ op: 'append', code: 'R', draft: post('mallory', 'hi') });
   assert.ok(!r2.ok && /mallory is not in R/.test(r2.error));
+  // a person's own post only for a session of theirs here, and a link writes no system entry but its member's joined
+  const said = post('alice', 'from the person', randomUUID(), 'person');
+  assert.ok(!(await r.handle({ op: 'append', code: 'R', draft: said })).ok, 'no session of alice\'s here');
+  const sys = await r.handle({ op: 'append', code: 'R', draft: { kind: 'finding', id: randomUUID(), from: 'alice', by: 'system', text: 'x' } }, { machine: 'mB' });
+  assert.ok(!sys.ok && /another machine can't write a finding as the system/.test(sys.error));
+  await okv(r, { op: 'ping', session: 's-alice', code: 'R', name: 'alice' });
+  await okv(r, { op: 'append', code: 'R', draft: said });
   const r3 = await r.handle({ op: 'put_doc', code: 'R', kind: 'presence', name: 'bob', doc: { name: 'bob', state: 'idle', at: 1 } });
   assert.ok(!r3.ok && /bob is not in R/.test(r3.error));
   assert.equal(await okv(r, { op: 'put_doc', code: 'R', kind: 'presence', name: 'alice', doc: { name: 'alice', state: 'idle', at: 1 } }), null);
-  assert.deepEqual(await kinds(h, 'R'), ['joined']);
+  assert.deepEqual(await kinds(h, 'R'), ['joined', 'post']);
 });
 
 test('plan asks, answers, sends and accepts come only through the plan op, never append', async () => {
@@ -114,7 +121,7 @@ test('plans: CAS on base, a stale edit names the latest, and the last answer dec
   assert.partialDeepStrictEqual(stale, { latest: { version: 1 } });
   assert.match(JSON.stringify(stale), /"refused":"Plan paging was not stored: it is at v1, not v0/);
   assert.equal((await fs.readdir(`${roomDir(h, await fileKey('P'))}/plans`)).length, 1, 'the refused edit stored no text');
-  await okv(r, { op: 'plan', code: 'P', from: 'alice', act: 'ask', name: 'paging', version: 1, people: ['bob'] });
+  await okv(r, { op: 'plan', code: 'P', from: 'alice', act: 'ask', name: 'paging', version: 1, people: ['bob'], by: 'claude' });
   await okv(r, { op: 'plan', code: 'P', from: 'bob', act: 'answer', name: 'paging', version: 1, answer: 'agree' });
   assert.deepEqual(await kinds(h, 'P'), ['joined', 'joined', 'plan', 'plan_ask', 'plan_answer', 'decision', 'task']);
   const s = await openFsStore({ home: h, code: 'P' });
@@ -122,7 +129,7 @@ test('plans: CAS on base, a stale edit names the latest, and the last answer dec
   const lines = await s.value.read(0);
   const task = lines.ok ? lines.value.at(-1)?.entry : undefined;
   assert.partialDeepStrictEqual(task, { kind: 'task', task: { n: 1, title: 'the HTTP handler', status: 'claimed', owner: 'bob' } });
-  const strange = await r.handle({ op: 'plan', code: 'P', from: 'mallory', act: 'ask', name: 'paging', version: 1, people: ['bob'] });
+  const strange = await r.handle({ op: 'plan', code: 'P', from: 'mallory', act: 'ask', name: 'paging', version: 1, people: ['bob'], by: 'claude' });
   assert.ok(!strange.ok && /mallory is not in P/.test(strange.error));
 });
 
@@ -131,7 +138,7 @@ test('a kick decides a plan whose only missing answer was the kicked member\'s',
   const r = rooms(h);
   await room(r, 'K', 'alice', 'bob', 'carol');
   await okv(r, { op: 'plan', code: 'K', from: 'alice', act: 'edit', name: 'p', base: 0, text: '# p' });
-  await okv(r, { op: 'plan', code: 'K', from: 'alice', act: 'ask', name: 'p', version: 1, people: ['bob', 'carol'] });
+  await okv(r, { op: 'plan', code: 'K', from: 'alice', act: 'ask', name: 'p', version: 1, people: ['bob', 'carol'], by: 'claude' });
   await okv(r, { op: 'plan', code: 'K', from: 'bob', act: 'answer', name: 'p', version: 1, answer: 'agree' });
   assert.ok(!(await kinds(h, 'K')).includes('decision'));
   assert.ok((await r.write('K', [{ kind: 'kick', from: 'alice', by: 'system', name: 'carol' }])).ok);

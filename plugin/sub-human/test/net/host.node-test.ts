@@ -40,7 +40,7 @@ test('a call writes as the link\'s member in its own room only, and counts as an
   assert.deepEqual(['c1', 'c2', 'c3', 'c4', 'c5'].map(id => refusedFor(r, id)), [true, true, false, false, true]);
 });
 
-test('a document is the link\'s member\'s own; documents, messages and plan text are rate-limited (R37, R40)', async t => {
+test('a document is the link\'s member\'s own; documents, messages and plan text are rate-limited, a message bounded (R37, R40)', async t => {
   const h = await bobIn(t, { put_doc: 1, put_blob: 1, message: 1 });
   const r = await rawLink(h);
   r.send({ t: 'put_doc', id: 'd1', key: 'focus/alice', doc: { name: 'alice', text: 'not hers', at: 1 } });
@@ -48,6 +48,7 @@ test('a document is the link\'s member\'s own; documents, messages and plan text
   r.send({ t: 'put_doc', id: 'd3', key: 'focus/bob', doc: { name: 'bob', text: 'again', at: 2 } });
   r.send({ t: 'put_blob', id: 'b1', hash: 'x', text: 'one' });
   r.send({ t: 'put_blob', id: 'b2', hash: 'x', text: 'two' });
+  r.send({ t: 'message', to: 'alice', from: 'bob', text: 'x'.repeat(8001) }); // over the socket's limit: dropped, not counted
   r.send({ t: 'message', to: 'alice', from: 'bob', text: 'first' });
   r.send({ t: 'message', to: 'alice', from: 'bob', text: 'second' });
   await until('five answers', () => Promise.resolve(r.got.filter(m => m.t === 'refused' || m.t === 'ack').length >= 5 || null));
@@ -58,6 +59,13 @@ test('a document is the link\'s member\'s own; documents, messages and plan text
   await sleep(100);
   const inbox = (await h.host.ok({ op: 'inbox', session: 'sa' })).messages.map(m => m.text);
   assert.deepEqual(inbox, ['first']);
+});
+
+test('a link writes no system entry but its member\'s joined and left (R37)', async t => {
+  const r = await rawLink(await bobIn(t));
+  r.send({ t: 'append', entry: { kind: 'finding', id: 'f1', from: 'bob', by: 'system', text: 'the system says so' } });
+  await r.next('refused');
+  assert.ok(refusedFor(r, 'f1'));
 });
 
 test('a subscribe asked over and over is cut off: the host never re-sends the room on demand', async t => {
@@ -106,13 +114,12 @@ test('a name or machine that can\'t be shown on the card is refused before anyth
   const h = await twoHomes(t);
   await hostRoom(h);
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
-  for (const o of [{ name: 'Bob Smith', machine: 'm' }, { name: 'x'.repeat(65), machine: 'm' }, { name: 'bob', machine: '\u0007\u202e' }]) {
-    await (await dialLine(h, line, o)).closed;
-  }
+  const bad = ['\u0007\u202e', 'lap\u0000top', 'my laptop', 'b\u0430ptop', 'x'.repeat(65)].map(machine => ({ name: 'bob', machine }));
+  for (const o of [{ name: 'Bob Smith', machine: 'm' }, { name: 'x'.repeat(65), machine: 'm' }, ...bad]) await (await dialLine(h, line, o)).closed;
   assert.deepEqual((await h.host.ok({ op: 'asks', session: 'sa' })).asks, []);
-  // control characters are stripped from a machine that has more to it
-  await dialLine(h, line, { name: 'bob', machine: 'lap\u0000top\u202e' });
-  assert.equal((await nextAsk(h)).machine, 'laptop');
+  // a machine is shown as hostname characters only
+  await dialLine(h, line, { name: 'bob', machine: 'Bobs-MacBook.local' });
+  assert.equal((await nextAsk(h)).machine, 'Bobs-MacBook.local');
 });
 
 test('the same machine dialling its pending line again takes its dial\'s place: no alert, and Let in lets it in', async t => {
@@ -135,6 +142,17 @@ test('the same machine dialling its pending line again takes its dial\'s place: 
     return text.includes(me.pub.toString('base64url')) ? text : null;
   });
   assert.ok(host, 'the second dial is bound');
+});
+
+test('two machines dialling one open line at once both reach no card: the second finds it pending, and both are refused', async t => {
+  const h = await twoHomes(t);
+  await hostRoom(h);
+  const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
+  await h.restartHost(); // a cold room: the first dial waits on reading it, so the second arrives meanwhile
+  const dials = await Promise.all(['mB', 'mC'].map(machine => dialLine(h, line, { name: 'bob', machine })));
+  const asks = await until('the alert', async () => { const a = (await h.host.ok({ op: 'asks', session: 'sa' })).asks; return a.length ? a : null; });
+  assert.deepEqual(asks.map(a => a.kind), ['again']);
+  await Promise.all(dials.map(d => d.closed));
 });
 
 test('an admit that can\'t be written leaves no link saved', async t => {

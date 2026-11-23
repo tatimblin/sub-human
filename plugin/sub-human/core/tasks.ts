@@ -4,6 +4,7 @@
 import type { Draft, RoomState, Task } from './entries.js';
 import { LIMITS } from './entries.js';
 import { err, ok, type Result } from './result.js';
+import { markLabel, oneLine } from './text.js';
 
 export interface Add { readonly title: string; readonly from: string; readonly blockedBy?: readonly number[] }
 /** A claim, release or done; always by `from` for themselves. */
@@ -114,11 +115,14 @@ export function bridgeOp(change: StatusChange | undefined, t: Tag | null): Bridg
   return { kind: 'none' };
 }
 
-/** Room `code`'s open tasks with their owners and blockers, and how many are done: `/sub-human tasks` and `task list`. */
+/**
+ * Room `code`'s open tasks with their owners and blockers, and how many are done: `/sub-human tasks` and `task list`.
+ * A title and owner are colleagues' text, so each line is one line, with no escape or label in it.
+ */
 export function taskLines(code: string, all: readonly Task[]): string[] {
   if (all.length === 0) return [`${code} has no tasks yet.`];
   const open = all.filter(t => t.status !== 'done');
   const done = all.length - open.length;
-  const line = (t: Task): string => `#${t.n} ${t.owner ? `${t.owner}'s` : 'open'} · ${t.title}${t.blockedBy.length ? ` · after #${t.blockedBy.join(', #')}` : ''}`;
+  const line = (t: Task): string => `#${t.n} ${t.owner ? `${markLabel(t.owner, 64)}'s` : 'open'} · ${oneLine(t.title, 200)}${t.blockedBy.length ? ` · after #${t.blockedBy.join(', #')}` : ''}`;
   return [`${code} · ${open.length} open`, ...open.map(line), ...(done ? [`${done} done`] : [])];
 }

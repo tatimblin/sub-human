@@ -1,5 +1,6 @@
 // One line of outside text, safe to draw or hand to a Claude: terminal escapes, other control characters, bidi
-// overrides and zero-width characters removed, whitespace collapsed to single spaces, clipped to `max` with an ellipsis.
+// overrides and zero-width characters removed, whitespace collapsed to single spaces, a `[room` that could forge a
+// datamark's label defused, clipped to `max` with an ellipsis.
 
 // oxlint-disable-next-line no-control-regex -- matching escape sequences is the point
 const ANSI = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|[@-_])/g;
@@ -10,17 +11,18 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u206
 export const ZERO_WIDTH: RegExp = /[\u00ad\u200b-\u200d\u2060\ufeff]/g;
 
 export function oneLine(text: string, max: number): string {
-  const one = clean(text).replace(/\s+/g, ' ').trim();
+  const one = defuse(clean(text).replace(/\s+/g, ' ').trim());
   return one.length > max ? `${one.slice(0, max - 1)}…` : one;
 }
 
 function clean(text: string): string {
   return text.replace(ANSI, '').replace(ZERO_WIDTH, '').replace(CONTROL, ' ');
 }
+const defuse = (text: string): string => text.replace(/\[room/gi, '(room');
 
 /** A name or label as a datamark shows it: one line with no brackets, so it can't close the label and open another. */
 export function markLabel(text: string, max: number = 300): string {
-  return oneLine(text, max).replace(/[[\]]/g, '');
+  return oneLine(text.replace(/[[\]]/g, ''), max);
 }
 
 /**
@@ -31,7 +33,7 @@ export function markLabel(text: string, max: number = 300): string {
 export function datamark(code: string, label: string, text: string, o: { readonly max?: number; readonly block?: true } = {}): string {
   const max = o.max ?? 300;
   const head = `[room ${markLabel(code, 64)} · ${markLabel(label)}]`;
-  if (!o.block) return `${head} ${oneLine(text, max).replace(/\[room/gi, '(room')}`;
-  const body = text.split('\n').map(clean).join('\n').replace(/\[room/gi, '(room');
+  if (!o.block) return `${head} ${oneLine(text, max)}`;
+  const body = defuse(text.split('\n').map(clean).join('\n'));
   return `${head}\n${body.length > max ? `${body.slice(0, max)}\n… (cut at ${max} characters)` : body}`;
 }

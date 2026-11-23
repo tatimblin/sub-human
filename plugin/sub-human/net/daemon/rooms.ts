@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import type { Answers, Message, Op, PlanAct, RoomRequest, TaskAct } from '../../core/api.js';
-import { API_VERSION, CODE, SESSION_ID, pingedFile, sessionFile } from '../../core/api.js';
+import { API_VERSION, CODE, SESSION_ID, pingedFile, refusedAppend, sessionFile } from '../../core/api.js';
 import { sha256 } from '../../core/hash.js';
 import { Pointers } from './pointers.js';
 import { asRoom, fold } from '../../core/fold.js';
@@ -104,14 +104,17 @@ export class Rooms {
     });
   }
 
-  /** `machine` is a link's, for a write that came over it. */
-  handle(req: RoomRequest, machine: string = this.o.machine): Promise<Result<Answers[Op]>> {
+  /** `link` names the machine of a link a write came over; with none, it came from this machine. */
+  handle(req: RoomRequest, link?: { readonly machine: string }): Promise<Result<Answers[Op]>> {
     const { links } = this;
     const now = (this.lastSeen = this.o.now());
+    const machine = link?.machine ?? this.o.machine;
     switch (req.op) {
       case 'append': {
         const { code, draft } = req;
         if (HOST_KINDS.has(draft.kind)) return refuse(`a ${draft.kind} entry is the host's to write; nothing was written`);
+        const why = refusedAppend(draft, link ? 'link' : 'socket', [...this.live()].some(([, s]) => s.rooms.get(code) === draft.from));
+        if (why) return refuse(`${why}; nothing was written`);
         if (links.hosts(code)) return links.forward(code, req);
         return this.queue(code, async room => {
           const seen = room.ids.get(draft.id);

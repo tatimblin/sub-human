@@ -1,7 +1,8 @@
 // The socket API's shapes: what the daemon reads, and what a caller reads back.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { daemonArgv, decodePointer, decodeRequest, readAnswer, socketFile } from './api.js';
+import type { AppendDraft } from './api.js';
+import { daemonArgv, decodePointer, decodeRequest, readAnswer, refusedAppend, socketFile } from './api.js';
 
 const ID = '0b9d6f3e-2c4a-4f1e-9a7b-5d8c1e2f3a4b';
 
@@ -14,6 +15,18 @@ test('an append\'s draft goes through the entry schema: the caller\'s id is kept
   }
   const bad = decodeRequest({ op: 'append', code: 'R', draft: { kind: 'post', id: ID, from: 'a', by: 'person' } });
   assert.ok(!bad.ok && /^entry not understood: text/.test(bad.error));
+});
+
+test('who may append what: a post or finding is a Claude\'s, a person\'s post only theirs, a link\'s system entry only its membership (R35, R37)', () => {
+  const d = (kind: 'post' | 'finding' | 'joined' | 'activity', by: AppendDraft['by']): AppendDraft => (kind === 'joined' ? { kind, id: ID, from: 'a', by }
+    : kind === 'activity' ? { kind, id: ID, from: 'a', by, event: 'test', text: 't' } : { kind, id: ID, from: 'a', by, text: 't' });
+  const rows: [AppendDraft, 'socket' | 'link', boolean, boolean][] = [
+    [d('post', 'claude'), 'socket', false, true], [d('finding', 'claude'), 'link', false, true],
+    [d('post', 'person'), 'socket', true, true], [d('post', 'person'), 'socket', false, false], [d('post', 'person'), 'link', false, true],
+    [d('finding', 'person'), 'socket', true, false], [d('post', 'system'), 'socket', true, false], [d('finding', 'system'), 'link', false, false],
+    [d('joined', 'system'), 'link', false, true], [d('activity', 'system'), 'link', false, false], [d('activity', 'system'), 'socket', false, true],
+  ];
+  for (const [draft, via, here, taken] of rows) assert.equal(refusedAppend(draft, via, here) === null, taken, `${draft.kind} by ${draft.by} from ${via}${here ? ', here' : ''}`);
 });
 
 test('a document is read by its kind and must be the named member\'s', () => {

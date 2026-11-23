@@ -65,7 +65,7 @@ export type Verdict =
   | { readonly kind: 'context'; readonly item: Item; readonly line?: string }
   | { readonly kind: 'wake'; readonly text: string; readonly line: string }
   /**
-   * A Claude's text that would wake but carries a command or URL (R10): shown to the person in `line`, never
+   * Text that would wake but carries a command or URL (R10), whoever wrote it: shown to the person in `line`, never
    * submitted. After the first in a burst, or once the hour's wake budget is spent, `unread`: counted, not drawn.
    */
   | { readonly kind: 'draw'; readonly line: string; readonly unread: boolean };
@@ -78,7 +78,7 @@ export function deliver(input: Input, me: Me, state: State, now: number, budget:
   const s = prune(state, now);
   switch (input.kind) {
     case 'message':
-      return wake(s, me.code, now, budget, `from:${input.from}`, { label: label(input.from, 'claude'), text: input.text, by: 'claude', verb: 'messaged' });
+      return wake(s, me.code, now, budget, `from:${input.from}`, { label: label(input.from, 'claude'), text: input.text, verb: 'messaged' });
     case 'edits': return { verdict: overlap(input.from, input.files, me, s.room, now), state: s };
     case 'entry': return onEntry(input.entry, me, s, now, budget);
   }
@@ -109,10 +109,10 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
       const toMe = names(e.text, e.to, me.name);
       const open = s.asked;
       if (toMe && open && e.from === open.to && e.at > open.at) {
-        const r = wake(s, me.code, now, budget, `q:${open.at}`, { label: who, text: e.text, by: e.by, verb: 'answered' });
+        const r = wake(s, me.code, now, budget, `q:${open.at}`, { label: who, text: e.text, verb: 'answered' });
         return r.verdict.kind === 'wake' ? { ...r, state: { ...r.state, asked: { ...open, until: now + BURST_MS } } } : r;
       }
-      if (toMe && e.by === 'person') return wake(s, me.code, now, budget, `from:${e.from}`, { label: who, text: e.text, by: e.by, verb: 'asked' });
+      if (toMe && e.by === 'person') return wake(s, me.code, now, budget, `from:${e.from}`, { label: who, text: e.text, verb: 'asked' });
       if (toMe) return keep(item(e.text, 2));
       // a line that bears on my work is a dim line and context; any other is only counted (R15b), a person's too
       return keep(bears(e.text, e.from, me, room, now) ? item(e.text, 1) : NONE);
@@ -157,14 +157,15 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
   }
 }
 
-interface Source { readonly label: string; readonly text: string; readonly by: By; readonly verb: string }
+interface Source { readonly label: string; readonly text: string; readonly verb: string }
 
 /**
- * A wake, unless a Claude's text carries a command or URL (drawn; unread after the first in its burst), the burst is
- * still on (rides along as context), or the hour's budget is spent (an unread line).
+ * A wake, unless the text carries a command or URL (drawn; unread after the first in its burst): a person's line as
+ * much as a Claude's, since the person may be pasting what someone else wrote. Else context while the burst is
+ * still on, or an unread line once the hour's budget is spent.
  */
 function wake(s: State, code: string, now: number, budget: number, key: string, src: Source): Delivered {
-  if (src.by === 'claude' && runs(src.text)) {
+  if (runs(src.text)) {
     const drawKey = `${key}:draw`;
     const prev = s.bursts[drawKey];
     const line = clip(`${src.label} ${src.verb} your Claude with a command or URL, held for you: ${src.text}`);

@@ -35,7 +35,7 @@ function room(members: readonly string[]) {
   /** ann asks `people` about the latest version and each agrees, in order; returns the last answer's entries. */
   const agree = (name: string, people: readonly string[]) => {
     const version = latestVersion(state(), name)?.version ?? 0;
-    append(ask(state(), { name, version, people, from: 'ann' }));
+    append(ask(state(), { name, version, people, from: 'ann', by: 'claude' }));
     return people.map(from => append(answer(state(), { name, version, from, answer: 'agree' }, texts))).at(-1) ?? [];
   };
   return { state, append, texts, put, agree };
@@ -74,27 +74,27 @@ test('the first version\'s scope is the plan\'s', () => {
 test('ask names members and one exact version, the latest and undecided', () => {
   const r = room(['ann', 'bob', 'cy']);
   r.append(r.put('ann', 'api', 0, 'one'));
-  assert.deepEqual(r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob', 'ann', 'cy', 'bob'], from: 'ann' })),
-    [{ kind: 'plan_ask', from: 'ann', by: 'claude', name: 'api', version: 1, people: ['bob', 'cy'] }]);
+  assert.deepEqual(r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob', 'ann', 'cy', 'bob'], from: 'ann', by: 'person' })),
+    [{ kind: 'plan_ask', from: 'ann', by: 'person', name: 'api', version: 1, people: ['bob', 'cy'] }]);
   r.append(r.put('ann', 'api', 1, 'two'));
   const rows: [Parameters<typeof ask>[1], string][] = [
-    [{ name: 'web', version: 1, people: ['bob'], from: 'ann' }, 'Nobody was asked: there is no plan web.'],
-    [{ name: 'api', version: 1, people: ['bob'], from: 'ann' }, 'Nobody was asked: api v1 is superseded by v2.'],
-    [{ name: 'api', version: 3, people: ['bob'], from: 'ann' }, 'Nobody was asked: plan api has no v3.'],
-    [{ name: 'api', version: 2, people: ['zed', 'bob', 'yu'], from: 'ann' }, 'Nobody was asked: zed, yu are not in the room.'],
-    [{ name: 'api', version: 2, people: ['ann'], from: 'ann' }, 'Nobody was asked: name the people to ask.'],
+    [{ name: 'web', version: 1, people: ['bob'], from: 'ann', by: 'claude' }, 'Nobody was asked: there is no plan web.'],
+    [{ name: 'api', version: 1, people: ['bob'], from: 'ann', by: 'claude' }, 'Nobody was asked: api v1 is superseded by v2.'],
+    [{ name: 'api', version: 3, people: ['bob'], from: 'ann', by: 'claude' }, 'Nobody was asked: plan api has no v3.'],
+    [{ name: 'api', version: 2, people: ['zed', 'bob', 'yu'], from: 'ann', by: 'claude' }, 'Nobody was asked: zed, yu are not in the room.'],
+    [{ name: 'api', version: 2, people: ['ann'], from: 'ann', by: 'claude' }, 'Nobody was asked: name the people to ask.'],
   ];
   for (const [input, want] of rows) assert.equal(refusal(ask(r.state(), input)), want);
   const people = Array.from({ length: 257 }, (_, i) => `p${i}`);
   const many = room(['ann', ...people]);
   many.append(many.put('ann', 'api', 0, 'one'));
-  assert.equal(refusal(ask(many.state(), { name: 'api', version: 1, people, from: 'ann' })), 'Nobody was asked: a version can ask at most 256 people.');
+  assert.equal(refusal(ask(many.state(), { name: 'api', version: 1, people, from: 'ann', by: 'claude' })), 'Nobody was asked: a version can ask at most 256 people.');
 });
 
 test('answers count for one version; a new version supersedes open asks; everyone named answering decides (R21, R22)', () => {
   const r = room(['ann', 'bob', 'cy']);
   r.append(r.put('ann', 'api', 0, 'one'));
-  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob', 'cy'], from: 'ann' }));
+  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob', 'cy'], from: 'ann', by: 'claude' }));
   const no = (a: Parameters<typeof answer>[1]) => refusal(answer(r.state(), a, r.texts));
   assert.equal(no({ name: 'api', version: 1, from: 'ann', answer: 'agree' }), 'Your answer was not recorded: you were not asked about api v1.');
   assert.equal(no({ name: 'api', version: 1, from: 'bob', answer: 'changes', note: ' ' }), 'Your answer was not recorded: asking for changes needs a note.');
@@ -103,20 +103,20 @@ test('answers count for one version; a new version supersedes open asks; everyon
     [{ kind: 'plan_answer', from: 'bob', by: 'person', name: 'api', version: 1, answer: 'changes', note: ' cursor  paging ' }]);
   r.append(r.put('ann', 'api', 1, 'two'));
   assert.equal(no({ name: 'api', version: 1, from: 'cy', answer: 'agree' }), 'Your answer was not recorded: api v1 is superseded by v2.');
-  r.append(ask(r.state(), { name: 'api', version: 2, people: ['bob', 'cy'], from: 'ann' }));
+  r.append(ask(r.state(), { name: 'api', version: 2, people: ['bob', 'cy'], from: 'ann', by: 'claude' }));
   assert.equal(r.append(answer(r.state(), { name: 'api', version: 2, from: 'bob', answer: 'changes', note: 'n' }, r.texts)).length, 1);
   assert.equal(r.append(answer(r.state(), { name: 'api', version: 2, from: 'bob', answer: 'agree' }, r.texts)).length, 1); // replaces
   const last = r.append(answer(r.state(), { name: 'api', version: 2, from: 'cy', answer: 'agree' }, r.texts));
   assert.deepEqual(last[1], { kind: 'decision', from: 'cy', by: 'system', name: 'api', version: 2, agreed: ['bob', 'cy'], changes: [] });
   assert.deepEqual(r.state().plans[0]?.versions[1]?.decision, { agreed: ['bob', 'cy'], changes: [], at: r.state().seq });
   assert.equal(no({ name: 'api', version: 2, from: 'cy', answer: 'agree' }), 'Your answer was not recorded: api v2 is already decided.');
-  assert.equal(refusal(ask(r.state(), { name: 'api', version: 2, people: ['bob'], from: 'ann' })), 'Nobody was asked: api v2 is already decided.');
+  assert.equal(refusal(ask(r.state(), { name: 'api', version: 2, people: ['bob'], from: 'ann', by: 'claude' })), 'Nobody was asked: api v2 is already decided.');
 });
 
 test('a decision with changes asked turns no owned part into a task', () => {
   const r = room(['ann', 'bob']);
   r.append(r.put('ann', 'api', 0, '## Store @ann\n## Handler @bob'));
-  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob'], from: 'ann' }));
+  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob'], from: 'ann', by: 'claude' }));
   const out = r.append(answer(r.state(), { name: 'api', version: 1, from: 'bob', answer: 'changes', note: 'split it' }, r.texts));
   assert.deepEqual(kinds(out), ['plan_answer', 'decision']);
   assert.deepEqual(r.state().tasks, []);
@@ -125,7 +125,7 @@ test('a decision with changes asked turns no owned part into a task', () => {
 test('a kicked member who was asked never blocks the decision', () => {
   const r = room(['ann', 'bob', 'cy']);
   r.append(r.put('ann', 'api', 0, '## Store @bob'));
-  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob', 'cy'], from: 'ann' }));
+  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob', 'cy'], from: 'ann', by: 'claude' }));
   r.append(answer(r.state(), { name: 'api', version: 1, from: 'bob', answer: 'agree' }, r.texts));
   assert.deepEqual(decide(r.state(), 'api', 'ann', r.texts), [], 'cy has not answered');
   r.append([{ kind: 'kick', from: 'ann', by: 'system', name: 'cy' }]);
@@ -134,7 +134,7 @@ test('a kicked member who was asked never blocks the decision', () => {
 
   const k = room(['ann', 'bob', 'cy']); // kicked before the last answer
   k.append(k.put('ann', 'api', 0, 'one'));
-  k.append(ask(k.state(), { name: 'api', version: 1, people: ['bob', 'cy'], from: 'ann' }));
+  k.append(ask(k.state(), { name: 'api', version: 1, people: ['bob', 'cy'], from: 'ann', by: 'claude' }));
   k.append([{ kind: 'kick', from: 'ann', by: 'system', name: 'cy' }]);
   assert.equal(refusal(answer(k.state(), { name: 'api', version: 1, from: 'cy', answer: 'agree' }, k.texts)), 'Your answer was not recorded: you were not asked about api v1.');
   assert.deepEqual(kinds(k.append(answer(k.state(), { name: 'api', version: 1, from: 'bob', answer: 'agree' }, k.texts))), ['plan_answer', 'decision']);
@@ -208,7 +208,7 @@ test('a dropped part leaves the plan; a claim of someone never asked about the n
 test('a version whose every asked member was kicked unanswered stays open; its writer can ask someone else', () => {
   const r = room(['ann', 'bob', 'cy']);
   r.append(r.put('ann', 'api', 0, '## Store @ann'));
-  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob'], from: 'ann' }));
+  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob'], from: 'ann', by: 'claude' }));
   r.append([{ kind: 'kick', from: 'ann', by: 'system', name: 'bob' }]);
   assert.deepEqual(decide(r.state(), 'api', 'ann', r.texts), [], 'nobody agreed, so no tasks');
   assert.deepEqual(kinds(r.agree('api', ['cy'])), ['plan_answer', 'decision', 'task']);
@@ -218,19 +218,19 @@ test('send packs a version for one member or the room; the recipient accepts, di
   const r = room(['ann', 'bob', 'cy']);
   r.append(r.put('ann', 'mine', 0, 'one'));
   r.append(r.put('ann', 'mine', 1, 'two'));
-  assert.deepEqual(r.append(send(r.state(), { name: 'mine', from: 'ann', to: 'bob', branch: 'feat', files: ['a.ts', 'a.ts'], note: ' see a.ts ' })), [
-    { kind: 'plan_sent', from: 'ann', by: 'person', name: 'mine', version: 2, to: 'bob', branch: 'feat', files: ['a.ts'], note: ' see a.ts ' },
+  assert.deepEqual(r.append(send(r.state(), { name: 'mine', from: 'ann', by: 'claude', to: 'bob', branch: 'feat', files: ['a.ts', 'a.ts'], note: ' see a.ts ' })), [
+    { kind: 'plan_sent', from: 'ann', by: 'claude', name: 'mine', version: 2, to: 'bob', branch: 'feat', files: ['a.ts'], note: ' see a.ts ' },
   ]);
   const files = 'No plan was sent: it can name at most 1000 files of 1024 characters.';
   const rows: [Parameters<typeof send>[1], string][] = [
-    [{ name: 'web', from: 'ann' }, 'No plan was sent: there is no plan web.'],
-    [{ name: 'mine', version: 3, from: 'ann' }, 'No plan was sent: plan mine has no v3.'],
-    [{ name: 'mine', from: 'ann', to: 'ann' }, "No plan was sent: you can't send a plan to yourself."],
-    [{ name: 'mine', from: 'ann', to: 'zed' }, 'No plan was sent: zed is not in the room.'],
-    [{ name: 'mine', from: 'ann', files: ['f'.repeat(1025)] }, files],
-    [{ name: 'mine', from: 'ann', files: Array.from({ length: 1001 }, (_, i) => `f${i}`) }, files],
-    [{ name: 'mine', from: 'ann', branch: 'b'.repeat(1025) }, 'No plan was sent: the branch name is over 1024 characters.'],
-    [{ name: 'mine', from: 'ann', note: 'n'.repeat(8001) }, 'No plan was sent: the note is over 8000 characters.'],
+    [{ name: 'web', from: 'ann', by: 'person' }, 'No plan was sent: there is no plan web.'],
+    [{ name: 'mine', version: 3, from: 'ann', by: 'person' }, 'No plan was sent: plan mine has no v3.'],
+    [{ name: 'mine', from: 'ann', by: 'person', to: 'ann' }, "No plan was sent: you can't send a plan to yourself."],
+    [{ name: 'mine', from: 'ann', by: 'person', to: 'zed' }, 'No plan was sent: zed is not in the room.'],
+    [{ name: 'mine', from: 'ann', by: 'person', files: ['f'.repeat(1025)] }, files],
+    [{ name: 'mine', from: 'ann', by: 'person', files: Array.from({ length: 1001 }, (_, i) => `f${i}`) }, files],
+    [{ name: 'mine', from: 'ann', by: 'person', branch: 'b'.repeat(1025) }, 'No plan was sent: the branch name is over 1024 characters.'],
+    [{ name: 'mine', from: 'ann', by: 'person', note: 'n'.repeat(8001) }, 'No plan was sent: the note is over 8000 characters.'],
   ];
   for (const [input, want] of rows) assert.equal(refusal(send(r.state(), input)), want);
 
@@ -242,7 +242,7 @@ test('send packs a version for one member or the room; the recipient accepts, di
   r.append(accept(r.state(), { name: 'mine', version: 2, from: 'bob', answer: 'accept' }));
   assert.deepEqual(r.state().sent[0]?.answers, [{ name: 'bob', answer: 'accept' }]);
 
-  r.append(send(r.state(), { name: 'mine', version: 1, from: 'ann' })); // to the room
+  r.append(send(r.state(), { name: 'mine', version: 1, from: 'ann', by: 'person' })); // to the room
   r.append(accept(r.state(), { name: 'mine', version: 1, from: 'cy', answer: 'dismiss' }));
   assert.deepEqual(r.state().sent.find(x => x.version === 1)?.answers, [{ name: 'cy', answer: 'dismiss' }]);
 });
@@ -250,13 +250,13 @@ test('send packs a version for one member or the room; the recipient accepts, di
 test('applyPlan, the host\'s one way to apply a plan act: a stranger is refused, a stale edit is an answer, an answer decides', () => {
   const r = room(['ann', 'bob']);
   const none = () => '';
-  assert.deepEqual(applyPlan(r.state(), { act: 'ask', code: 'c1', from: 'zed', name: 'p', version: 1, people: ['bob'] }, '', none), { ok: false, error: 'zed is not in c1; nothing was written' });
+  assert.deepEqual(applyPlan(r.state(), { act: 'ask', code: 'c1', from: 'zed', name: 'p', version: 1, people: ['bob'], by: 'claude' }, '', none), { ok: false, error: 'zed is not in c1; nothing was written' });
   const first = applyPlan(r.state(), { act: 'edit', code: 'c1', from: 'ann', name: 'p', base: 0, text: 'one' }, '#one', none);
   assert.ok(first.ok && 'drafts' in first.value);
   r.append(first.value.drafts);
   assert.deepEqual(applyPlan(r.state(), { act: 'edit', code: 'c1', from: 'bob', name: 'p', base: 0, text: 'two' }, '#two', none),
     { ok: true, value: { refused: 'Plan p was not stored: it is at v1, not v0; merge your edit into v1 and edit on base 1.' } });
-  const asked = applyPlan(r.state(), { act: 'ask', code: 'c1', from: 'ann', name: 'p', version: 1, people: ['bob'] }, '', none);
+  const asked = applyPlan(r.state(), { act: 'ask', code: 'c1', from: 'ann', name: 'p', version: 1, people: ['bob'], by: 'claude' }, '', none);
   assert.ok(asked.ok && 'drafts' in asked.value);
   r.append(asked.value.drafts);
   const agreed = applyPlan(r.state(), { act: 'answer', code: 'c1', from: 'bob', name: 'p', version: 1, answer: 'agree' }, '', none);

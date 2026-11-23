@@ -2,6 +2,7 @@
 // Pure; the caller passes the repo's ignore text. It errs toward refusing: a path it can't judge is refused.
 import ignore, { isPathValid } from '../vendor/ignore.mjs';
 import { SECRET_RULES } from './data/secret-patterns.js';
+import { oneLine } from './text.js';
 
 // Files that hold secrets by name, matched on the last path part, and by the folder they sit in.
 const SECRET_FILES = /^(?:\.env(?:\..*)?|\.envrc|.*\.(?:pem|key|p12|pfx|p8|jks|keystore|tfstate)|id_(?:rsa|dsa|ecdsa|ed25519)(?:\..*)?|\.netrc|\.npmrc|\.pypirc|\.git-credentials|credentials\.json|service-account.*\.json)$/i;
@@ -19,7 +20,11 @@ export function refusedPath(rel: string, ignoreText = ''): boolean {
   return cached.ig.ignores(rel);
 }
 
-/** The id of the first secret rule the text matches, or null. */
+/**
+ * The id of the first secret rule the text matches, or null. Checked before and after cleaning: an escape sequence can
+ * split a secret, and removing a zero-width character or an escape can join one.
+ */
 export function secretIn(text: string): string | null {
-  return SECRET_RULES.find(r => r.re.test(text))?.id ?? null;
+  const clean = oneLine(text, text.length + 1);
+  return SECRET_RULES.find(r => r.re.test(text) || r.re.test(clean))?.id ?? null;
 }

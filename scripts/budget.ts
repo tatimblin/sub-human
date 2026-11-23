@@ -16,7 +16,7 @@ import path from 'node:path';
 import { blank } from './ts-ratchet.ts';
 import { PLUGIN } from './lib/paths.ts';
 
-export const AREAS = { core: 2500, store: 800, module: 1900, commands: 700, net: 2100, top: 1000 } as const;
+export const AREAS = { core: 2500, store: 800, module: 1900, commands: 700, net: 2300, top: 1000 } as const;
 export type Area = keyof typeof AREAS;
 const NAMES: readonly Area[] = ['core', 'store', 'module', 'commands', 'net', 'top'];
 const isArea = (s: string): s is Area => Object.hasOwn(AREAS, s);

@@ -36,7 +36,7 @@ test('a call the bridge built is answered by the daemon and read back typed', as
   const daemon = must(d.ok ? d.value : null, 'a daemon');
   const status = answer('status', await fetchLike(request({ op: 'status' }, h)));
   assert.ok(status.ok && status.value.pid === process.pid);
-  const refused = answer('append', await fetchLike(request({ op: 'append', code: 'R', draft: { kind: 'post', id: '0b9d6f3e-2c4a-4f1e-9a7b-5d8c1e2f3a4b', from: 'a', by: 'person', text: 'hi' } }, h)));
+  const refused = answer('append', await fetchLike(request({ op: 'append', code: 'R', draft: { kind: 'post', id: '0b9d6f3e-2c4a-4f1e-9a7b-5d8c1e2f3a4b', from: 'a', by: 'claude', text: 'hi' } }, h)));
   assert.deepEqual(refused, { ok: false, error: 'a is not in R; nothing was written' });
   assert.deepEqual(answer('status', { status: 400, text: '{"ok":false,"error":"request not understood: op"}' }), { ok: false, error: 'request not understood: op' });
   await daemon.close();

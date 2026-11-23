@@ -8,6 +8,7 @@
 // leaves every send to Claude Code, said once.
 import type { On, SessionSendResult } from 'claude-code';
 import type { RoomState } from '../core/entries.js';
+import { secretIn } from '../core/secrets.js';
 import { answer, request } from './bridge.js';
 import { off, once, session } from './session.js';
 
@@ -24,6 +25,8 @@ export function registerMessages(on: On): void {
     try {
       const name = recipient(to, session.state);
       if (name === room.name) return refused("that is this session's own name");
+      const rule = secretIn(e.text);
+      if (rule) return refused(`the text looks like it holds a secret (${rule}); send it without the secret`);
       const q = request({ op: 'message', code: room.code, to: name, from: room.name, text: e.text }, room.home);
       const r = answer('message', await $.http.fetch(q.url, q));
       return r.ok ? { isDelivered: true } : refused(r.error);

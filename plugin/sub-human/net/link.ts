@@ -103,6 +103,9 @@ export class LinkSet implements Links {
     if (!inv.ok) return err(`${inv.error}; nothing was sent`);
     const { code, hostKey, via } = inv.value;
     if (this.links.has(code) && this.links.get(code)?.status.phase !== 'stopped') return err(`this machine is already in ${code}`);
+    // a room here with no link to it is hosted here: a line naming its code must not turn it into a copy of another's
+    const hosted = !this.links.has(code) && await fs.stat(roomDir(this.o.home, await fileKey(code))).then(() => true, () => false);
+    if (hosted) return err(`this machine already hosts room ${code}; nothing was sent`);
     let ch: Channel, stream: Duplex | null = null;
     try {
       const pay = { code, name, machine: this.o.machine, mac: mac(inv.value, this.o.key.pub).toString('base64url') };

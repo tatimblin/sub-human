@@ -77,20 +77,25 @@ test('an upgrade with no PROXY header did not come through the forward, and is r
   assert.equal(await raw(port(), Buffer.concat([proxyHeader('127.0.0.1'), Buffer.from(UPGRADE)])), '', 'a loopback source is a local peer, refused');
 });
 
-test('half-open upgrades count against their source from the PROXY header on', async t => {
+test('half-open upgrades count against their source from the PROXY header on; an IPv6 source is its /64, ssh -W has its own cap', async t => {
   const { h, port } = await funnel(t);
   await hostRoom(h);
   await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'public' });
-  const open = new Set<number>();
-  for (let i = 0; i < 40; i++) {
-    const s = net.connect(port(), '127.0.0.1', () => { s.write(Buffer.concat([proxyHeader('198.51.100.9'), Buffer.from('GET / HTTP/1.1\r\n')])); });
-    open.add(i);
-    s.on('close', () => { open.delete(i); }).on('error', () => undefined);
+  const open = new Set<string>();
+  const hold = (id: string, bytes: Buffer): void => {
+    const s = net.connect(port(), '127.0.0.1', () => { s.write(bytes); });
+    open.add(id);
+    s.on('close', () => { open.delete(id); }).on('error', () => undefined);
     t.after(() => { s.destroy(); });
-  }
+  };
+  // one /64, a new address for each connection
+  for (let i = 0; i < 40; i++) hold(`p${i}`, Buffer.concat([proxyHeader(`2001:db8:1:2:0:0:0:${(i + 1).toString(16)}`), Buffer.from('GET / HTTP/1.1\r\n')]));
   await until('all but eight cut', () => Promise.resolve(open.size <= 8 || null));
-  await sleep(200);
-  assert.equal(open.size, 8);
+  // more local (ssh -W) connections than one public source may hold: their first Noise frame, then silence
+  for (let i = 0; i < 12; i++) hold(`l${i}`, Buffer.from([0, 48]));
+  await sleep(300);
+  assert.equal([...open].filter(id => id.startsWith('p')).length, 8);
+  assert.equal([...open].filter(id => id.startsWith('l')).length, 12);
 });
 
 test('the listener holds at most 56 connections from public sources, keeping 8 for local (ssh -W) ones', async t => {

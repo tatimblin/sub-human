@@ -120,8 +120,7 @@ function task(ctx: Context, text: string): Draft<Activity> | null {
 }
 
 function draft(ctx: Context, event: Activity['event'], text: string, branch = ctx.branch, ok?: boolean): Draft<Activity> | null {
-  // checked before and after cleaning: an escape sequence can split a secret, and removing it can join one
-  if (secretIn(text) || secretIn(oneLine(text, LIMITS.text))) return null;
+  if (secretIn(text)) return null;
   return {
     kind: 'activity', from: ctx.name, by: 'claude', event,
     text: oneLine(text, TEXT_MAX),

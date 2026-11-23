@@ -7,6 +7,7 @@
 import type { On, ToolSpec } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import type { AppendDraft, Request } from '../core/api.js';
+import { MAX_BODY } from '../core/api.js';
 import { brief } from '../core/brief.js';
 import type { Input } from '../core/deliver.js';
 import type { RoomState } from '../core/entries.js';
@@ -14,7 +15,7 @@ import { LIMITS } from '../core/entries.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { secretIn } from '../core/secrets.js';
-import { oneLine } from '../core/text.js';
+import { datamark, markLabel, oneLine } from '../core/text.js';
 import { blobFile } from '../home.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
@@ -102,8 +103,8 @@ export function shareCall(input: unknown, room: InRoom, state: RoomState | null,
   return ok({ req: { op: 'append', code: room.code, draft }, done: `${op === 'finding' ? 'Shared' : 'Posted'} with ${room.code}.` });
 }
 
-/** What a `read` answers: the text now, or the plan blob to read and how to frame it. */
-export function readCall(input: unknown, room: InRoom, state: RoomState | null, since: readonly Input[]): Result<{ text: string } | { blob: string; head: string }> {
+/** What a `read` answers: the text now, or the plan blob to read and how to show it. */
+export function readCall(input: unknown, room: InRoom, state: RoomState | null, since: readonly Input[]): Result<{ text: string } | { blob: string; show: (text: string) => string }> {
   const i = v.safeParse(ReadInput, input);
   if (!i.success) return err('Nothing was read: read takes op brief, since, or plan with a name.');
   if (!state) return err(`Room ${room.code} hasn't been read yet; try again in a moment.`);
@@ -119,7 +120,8 @@ export function readCall(input: unknown, room: InRoom, state: RoomState | null, 
       const plan = state.plans.find(p => p.name === name);
       const at = version === undefined ? plan?.versions.at(-1) : plan?.versions.find(x => x.version === version);
       if (!plan || !at) return err(`Room ${room.code} has no plan ${oneLine(name, 64)}${version === undefined ? '' : ` version ${version}`}.`);
-      return ok({ blob: blobFile(room.dir, at.hash), head: `${frame(`Plan ${plan.name} version ${at.version} by ${at.from}`)}` });
+      const what = `plan ${markLabel(plan.name, 64)} version ${at.version} by ${markLabel(at.from, 64)}`;
+      return ok({ blob: blobFile(room.dir, at.hash), show: text => `${frame(`The ${what}`)}\n${datamark(room.code, what, text, { block: true, max: MAX_BODY })}` });
     }
   }
 }
@@ -145,6 +147,6 @@ export function registerTools(on: On): void {
       return { result: c.value.text };
     }
     const text = await $.fs.read(c.value.blob).catch(() => null);
-    return text === null ? { deny: `That plan's text couldn't be read from room ${room.code}.` } : { result: `${c.value.head}\n${text}` };
+    return text === null ? { deny: `That plan's text couldn't be read from room ${room.code}.` } : { result: c.value.show(text) };
   });
 }

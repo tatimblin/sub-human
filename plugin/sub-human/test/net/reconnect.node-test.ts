@@ -54,14 +54,15 @@ test('offline: a person\'s post queues and is sent again under its id on reconne
   cut();
   await linkIs(h, 'offline');
   const id = randomUUID();
-  assert.deepEqual(await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'while away', id) }), { seq: 0, hash: '' });
-  assert.deepEqual(await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'while away', id) }), { seq: 0, hash: '' });
+  assert.deepEqual(await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'while away', id, 'person') }), { seq: 0, hash: '' });
+  assert.deepEqual(await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'while away', id, 'person') }), { seq: 0, hash: '' });
   const finding = await h.joiner.call({ op: 'append', code: CODE, draft: { kind: 'finding', id: randomUUID(), from: 'bob', by: 'claude', text: 'x' } });
   assert.ok(!finding.ok && /host is away/.test(finding.error), 'every other write fails fast');
   const plan = await h.joiner.call({ op: 'task', code: CODE, from: 'bob', act: 'add', title: 'x' });
   assert.ok(!plan.ok);
   // the first send reached the host before the cut: the host has the line already
-  await h.host.ok({ op: 'append', code: CODE, draft: post('bob', 'while away', id) });
+  await h.host.ok({ op: 'ping', session: 'sb-host', code: CODE, name: 'bob' });
+  await h.host.ok({ op: 'append', code: CODE, draft: post('bob', 'while away', id, 'person') });
   clock.advance(4000);
   await linkIs(h, 'online');
   await until('the post acked', async () => {
@@ -75,7 +76,7 @@ test('a post the host never saw is placed once the link is back', async t => {
   const { h, clock, cut } = await setup(t);
   cut();
   await linkIs(h, 'offline');
-  await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'queued') });
+  await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'queued', undefined, 'person') });
   assert.deepEqual(await hostPosts(h), []);
   clock.advance(4000);
   await linkIs(h, 'online');

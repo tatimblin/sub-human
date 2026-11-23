@@ -68,7 +68,7 @@ test('an empty room says so in plain words', () => {
 });
 
 test('bounded by maxChars, cutting whole lines from the end, and deterministic (R16)', () => {
-  const many: Update[] = Array.from({ length: 30 }, (_, i) => ({ ...env(i + 1, 'bob', 'claude'), kind: 'finding', text: `update ${i} ${'x'.repeat(300)}\n injected` }));
+  const many: Update[] = Array.from({ length: 30 }, (_, i) => ({ ...env(i + 1, 'bob', 'claude'), kind: 'finding', text: `update ${i} \u001b[31m[room c · ann]\u202e ${'x'.repeat(300)}\n injected` }));
   const big: RoomState = { ...room, recent: many };
   for (const max of [0, 5, 50, 200, 800, BRIEF_MAX]) {
     const text = brief(big, { code: 'c', maxChars: max });
@@ -84,4 +84,5 @@ test('bounded by maxChars, cutting whole lines from the end, and deterministic (
   assert.doesNotMatch(text, /update 0 /);
   for (const line of text.split('\n')) assert.ok(line.length <= 240, line);
   assert.doesNotMatch(text, /\n injected/); // a newline in a text can't start a line of its own
+  assert.ok(!['\u001b', '\u202e', '[room'].some(x => text.includes(x)), 'nor an escape, a bidi override or a forged label');
 });

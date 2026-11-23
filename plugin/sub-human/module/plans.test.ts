@@ -268,7 +268,7 @@ test('a plan sent to me is one line, then a card; accepting it puts it, its bran
   const { clock, w, room, start } = await inRoom($, on)
   await start()
   await room.as('bob').planAct({ act: 'edit', name: 'api-store', base: 0, text: PAGING, scope: 'personal' })
-  await room.as('bob').planAct({ act: 'send', name: 'api-store', to: 'alice', note: 'the store half is yours', branch: 'bob/paging', files: ['src/store.js'] })
+  await room.as('bob').planAct({ act: 'send', name: 'api-store', to: 'alice', note: 'the store half is yours', branch: 'bob/paging', files: ['src/store.js'], by: 'person' })
   await room.poll(clock)
   expect(room.logs).toEqual(['bob sent you plan api-store version 1.'])
   w.answer('Accept')

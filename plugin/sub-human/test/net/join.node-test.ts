@@ -135,6 +135,17 @@ test('a wrong host key fails at the handshake, before anything is sent', async t
   assert.deepEqual((await h.host.ok({ op: 'asks', session: 'sa' })).asks, []);
 });
 
+test('a line for a room this machine hosts is refused before anything is sent: the room stays its own', async t => {
+  const h = await twoHomes(t);
+  await hostRoom(h);
+  const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
+  await h.joiner.ok({ op: 'append', code: CODE, draft: { kind: 'joined', id: crypto.randomUUID(), from: 'bob', by: 'system' } });
+  const r = await h.joiner.call({ op: 'dial', line, name: 'bob' });
+  assert.deepEqual(r, { ok: false, error: `this machine already hosts room ${CODE}; nothing was sent` });
+  assert.equal(await h.joiner.ok({ op: 'link', code: CODE }), null);
+  assert.deepEqual((await h.host.ok({ op: 'asks', session: 'sa' })).asks, [], 'the host saw no dial');
+});
+
 test('a dial with neither a known key nor the MAC touches nothing: no ask, no record (R37)', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);

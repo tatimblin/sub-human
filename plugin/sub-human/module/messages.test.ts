@@ -31,7 +31,7 @@ test('a message to a colleague\'s Claude is answered delivered, carried stamped 
   await $.session.end(END)
 })
 
-test('a second session\'s title reaches its member; my own name is refused, never sent to myself', async ($, on) => {
+test('a second session\'s title reaches its member; my own name and a secret are refused, never sent', async ($, on) => {
   const { clock, reached, room, messages } = await setup(on)
   await $.session.start(START)
   await room.settled(clock)
@@ -39,6 +39,8 @@ test('a second session\'s title reaches its member; my own name is refused, neve
   expect(messages().at(-1)).toMatchObject({ to: 'bob' })
   const self = await $.session.send({ to: `alice.${room.code}`, text: 'hi', origin })
   expect(self).toMatchObject({ isDelivered: false, reason: expect.stringContaining('own name') })
+  const secret = await $.session.send({ to: `bob.${room.code}`, text: 'use AKIAIOSFOD\u200bNN7EXAMPLE', origin })
+  expect(secret).toMatchObject({ isDelivered: false, reason: expect.stringContaining('holds a secret') })
   expect(messages()).toHaveLength(1)
   expect(reached).toEqual([])
   await $.session.end(END)

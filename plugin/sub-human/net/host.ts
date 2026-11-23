@@ -31,6 +31,8 @@ import { acceptWs } from './pathways/tailscale.js';
 export const INVITE_TTL_MS: number = 15 * 60_000;
 export const ADMIT_MS: number = 5 * 60_000;
 export const SOURCE_MAX: number = 8;
+/** Every ssh -W connection is the one source `local`, so it has a cap of its own, well under the total. */
+export const LOCAL_MAX: number = 32;
 /** Connections not yet closed from every source together, so many made-up sources still hold little. */
 export const TOTAL_MAX: number = 64;
 /** Of those, what only local connections (ssh -W, which come with no PROXY header) may take: so public sources can't
@@ -66,12 +68,11 @@ export interface HostOptions {
 
 const short = v.pipe(v.string(), v.maxLength(256));
 /** Message 3's payload: who dials, for which room, and the invite's MAC when it is a first dial. */
-const printable = (s: string): string => s.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim();
 const payload = v.object({
   code: short,
-  // a member name by the entry rule; a machine as a short printable label (both are shown on the host's card)
+  // a member name by the entry rule; a machine in hostname characters only (both are shown on the host's card)
   name: v.pipe(v.string(), v.maxLength(LIMITS.name), v.check(n => nameFrom(n) === n)),
-  machine: v.pipe(short, v.transform(printable), v.minLength(1), v.maxLength(64)),
+  machine: v.pipe(v.string(), v.regex(/^[A-Za-z0-9.-]{1,64}$/)),
   mac: v.exactOptional(short),
 });
 const stateSchema = v.object({
@@ -241,7 +242,7 @@ export class Host {
   private take(stream: Duplex, source: string): boolean {
     const n = this.sources.get(source) ?? 0;
     const cap = source === 'local' ? TOTAL_MAX : TOTAL_MAX - LOCAL_RESERVE;
-    if (n >= SOURCE_MAX || this.total >= cap) { stream.destroy(); return false; }
+    if (n >= (source === 'local' ? LOCAL_MAX : SOURCE_MAX) || this.total >= cap) { stream.destroy(); return false; }
     this.sources.set(source, n + 1);
     this.total++;
     stream.once('close', () => {
@@ -274,7 +275,7 @@ export class Host {
         sock.off('data', first);
         // tailscaled names the joiner's own address; a loopback one is a local peer claiming to be the forward
         if (p.kind === 'bad' || /^(127\.|0:0:0:0:0:0:0:1$|0:0:0:0:0:ffff:7f)/.test(p.source)) { sock.destroy(); return; }
-        if (this.take(sock, p.source)) void acceptWs(sock, p.rest).then(d => { if (d) this.handshake(d); else sock.destroy(); });
+        if (this.take(sock, perNet(p.source))) void acceptWs(sock, p.rest).then(d => { if (d) this.handshake(d); else sock.destroy(); });
         return;
       }
       clearTimeout(quiet);
@@ -295,7 +296,13 @@ export class Host {
     const known = this.s.links.find(l => l.key === key && l.code === p.code);
     if (known) return known.kicked ? null : known;
     if (p.mac === undefined) return null;
-    const verdict = verify(Buffer.from(p.mac, 'base64url'), this.o.key.pub, rk, this.s.invites, this.o.now());
+    const proof = Buffer.from(p.mac, 'base64url');
+    const judge = (): ReturnType<typeof verify> => verify(proof, this.o.key.pub, rk, this.s.invites, this.o.now());
+    const first = judge();
+    if (first.kind === 'none' || first.kind === 'dead') return null;
+    const st = await this.o.rooms.state(first.record.code);
+    // judged again after the wait: another dial of the same line may have made it pending meanwhile
+    const verdict = judge();
     if (verdict.kind === 'none' || verdict.kind === 'dead') return null;
     const rec = verdict.record;
     const mine = [...this.waiting.values()].find(w => w.invite === rec.id);
@@ -306,7 +313,6 @@ export class Host {
       mine.shown.clear();
       return this.decide(mine, ++mine.gen, p);
     }
-    const st = await this.o.rooms.state(rec.code);
     const member = st.ok && st.value.members.some(m => m.name === p.name && !m.kicked);
     const ask = { id: randomUUID(), code: rec.code, name: p.name, expected: rec.name, machine: p.machine, check, member };
     if (verdict.kind === 'again') {
@@ -318,13 +324,14 @@ export class Host {
       setTimeout(() => { this.waiting.delete(ask.id); }, ADMIT_MS).unref();
       return null;
     }
-    await this.setInvite(rec.id, 'pending');
     const w: Waiting = { ask: { ...ask, kind: 'admit' }, shown: new Set(), invite: rec.id, key, gen: 0 };
     w.decided = new Promise(res => {
       const t = setTimeout(() => { res(false); }, ADMIT_MS);
       w.answer = y => { clearTimeout(t); res(y); };
     });
+    // pending and waiting before the save's await, so a dial of the line in the meantime finds both and refuses this one
     this.waiting.set(ask.id, w);
+    await this.setInvite(rec.id, 'pending');
     return this.decide(w, 0, p);
   }
 
@@ -361,7 +368,7 @@ export class Host {
     const write = async (id: string, req: Result<RoomRequest>, rate?: Rated): Promise<void> => {
       if (!req.ok) return refuse(id, req.error);
       if (rate && !this.allow(l, rate)) return refuse(id, 'too many writes from this machine; wait a minute');
-      const a = await rooms.handle(req.value, machine);
+      const a = await rooms.handle(req.value, { machine });
       this.send(l, a.ok ? { t: 'ack', id } : { t: 'refused', id, reason: a.error });
     };
     switch (m.t) {
@@ -384,11 +391,15 @@ export class Host {
         const q = m.req;
         if (q.code !== code || q.from !== name) return refuse(m.id);
         if (!this.allow(l, 'append')) return refuse(m.id, 'too many writes from this machine; wait a minute');
-        const a = await rooms.handle(q, machine);
+        const a = await rooms.handle(q, { machine });
         this.send(l, a.ok ? { t: 'answer', id: m.id, value: a.value } : { t: 'refused', id: m.id, reason: a.error });
         return;
       }
-      case 'message': if (this.allow(l, 'message')) await rooms.handle({ op: 'message', code, to: m.to, from: name, text: m.text }); return;
+      case 'message': {
+        const q = decodeRequest({ op: 'message', code, to: m.to, from: name, text: m.text }); // the socket's limits
+        if (q.ok && q.value.op === 'message' && this.allow(l, 'message')) await rooms.handle(q.value);
+        return;
+      }
     }
   }
 
@@ -459,6 +470,9 @@ export class Host {
     return this.saving;
   }
 }
+
+/** A source as its cap counts it: an IPv4 address, or an IPv6 one's /64, which one joiner holds whole. */
+const perNet = (s: string): string => (s.includes(':') ? `${s.split(':').slice(0, 4).join(':')}::/64` : s);
 
 function parseJson(text: string): unknown {
   try { const x: unknown = JSON.parse(text); return x; } catch { return null; }

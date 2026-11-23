@@ -3,7 +3,7 @@
 // hashes a new text, and passes `texts` to read a stored one when a decision needs its parts. The rules agree with
 // fold: a version is the previous one plus 1, the first version's scope is the plan's, and only the latest version
 // takes asks and answers (R22).
-import type { PlanAct } from './api.js';
+import type { Author, PlanAct } from './api.js';
 import type { Acceptance, Answer, Draft, Plan, PlanAnswerRecord, PlanScope, PlanVersion, RoomState, Task } from './entries.js';
 import { err, ok, type Result } from './result.js';
 import { LIMITS } from './entries.js';
@@ -35,7 +35,7 @@ export function edit(s: RoomState, e: Edit): Result<Draft[]> {
   return ok([{ kind: 'plan', from: e.from, by: 'system', name, version: base + 1, hash: e.hash, base, scope: plan?.scope ?? e.scope ?? 'group' }]);
 }
 
-export interface Ask { readonly name: string; readonly version: number; readonly people: readonly string[]; readonly from: string }
+export interface Ask { readonly name: string; readonly version: number; readonly people: readonly string[]; readonly from: string; readonly by: Author }
 
 /** Ask named members to agree to one exact version, the latest. Asking oneself is dropped. */
 export function ask(s: RoomState, a: Ask): Result<Draft[]> {
@@ -47,7 +47,7 @@ export function ask(s: RoomState, a: Ask): Result<Draft[]> {
   if (strangers.length) return err(`${what}: ${strangers.join(', ')} ${strangers.length > 1 ? 'are' : 'is'} not in the room.`);
   if (!people.length) return err(`${what}: name the people to ask.`);
   if (new Set([...at.value.version.asked, ...people]).size > LIMITS.names) return err(`${what}: a version can ask at most ${LIMITS.names} people.`);
-  return ok([{ kind: 'plan_ask', from: a.from, by: 'claude', name: a.name, version: a.version, people }]);
+  return ok([{ kind: 'plan_ask', from: a.from, by: a.by, name: a.name, version: a.version, people }]);
 }
 
 export interface AnswerIn { readonly name: string; readonly version: number; readonly from: string; readonly answer: Answer; readonly note?: string }
@@ -86,6 +86,7 @@ export interface Send {
   readonly note?: string;
   readonly branch?: string;
   readonly files?: readonly string[];
+  readonly by: Author;
 }
 
 /** Send a version (the latest by default) to one member, or with no `to`, to the room (R22b). */
@@ -103,7 +104,7 @@ export function send(s: RoomState, m: Send): Result<Draft[]> {
   const bad = checkNote(what, 'accept', m.note);
   if (bad) return err(bad);
   return ok([{
-    kind: 'plan_sent', from: m.from, by: 'person', name: m.name, version, files,
+    kind: 'plan_sent', from: m.from, by: m.by, name: m.name, version, files,
     ...(m.to !== undefined && { to: m.to }), ...(m.branch ? { branch: m.branch } : {}), ...noted(m.note),
   }]);
 }

@@ -2,6 +2,7 @@
 // sections come in order of use (who is doing what, plans, tasks, then recent updates, newest first), so a cut drops
 // the oldest updates first. The text is content about the room; framing it as data is the caller's job.
 import type { Member, Plan, PlanVersion, RoomState, SentPlan, Task, Update } from './entries.js';
+import { oneLine } from './text.js';
 
 export const BRIEF_MAX = 4000;
 const LINE_MAX = 240;
@@ -78,9 +79,9 @@ function list(xs: readonly string[], max = 8): string {
   return xs.length > max ? `${xs.slice(0, max).join(', ')} and ${xs.length - max} more` : xs.join(', ');
 }
 
+/** Every field in it is a colleague's: escapes, bidi and a forged `[room` label come out with the line breaks. */
 function clip(line: string): string {
-  const one = line.replace(/\s+/g, ' ');
-  return one.length > LINE_MAX ? `${one.slice(0, LINE_MAX - 1)}…` : one;
+  return oneLine(line, LINE_MAX);
 }
 
 /** Whole lines up to the bound, then `… N more lines` if that fits too; never longer than `max`. */

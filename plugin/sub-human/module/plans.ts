@@ -50,8 +50,8 @@ export function planCall(input: unknown, room: InRoom): Result<ToolPlan> {
       if (rule) return err(`Plan ${o.name} was not stored: its text looks like it holds a secret (${rule}). Store it without the secret.`);
       return ok({ ...writer, act: 'edit', name: o.name, base: o.base, text: o.text });
     }
-    case 'ask': return ok({ ...writer, act: 'ask', name: o.name, version: o.version, people: o.people });
-    case 'send': return ok({ ...writer, act: 'send', name: o.name, ...(o.to !== undefined && { to: o.to }), ...(o.note?.trim() && { note: o.note }) });
+    case 'ask': return ok({ ...writer, act: 'ask', name: o.name, version: o.version, people: o.people, by: 'claude' });
+    case 'send': return ok({ ...writer, act: 'send', name: o.name, ...(o.to !== undefined && { to: o.to }), ...(o.note?.trim() && { note: o.note }), by: 'claude' });
   }
 }
 
@@ -79,7 +79,7 @@ export function registerPlans(on: On): void {
       const at = await plan({ act: 'edit', name: rev.name, base: rev.base, text });
       if (!at.ok) return r;
       planSession.stored.set(rev.name, file);
-      const asked = rev.people.length ? (await plan({ act: 'ask', name: rev.name, version: at.value, people: rev.people })).ok : false;
+      const asked = rev.people.length ? (await plan({ act: 'ask', name: rev.name, version: at.value, people: rev.people, by: 'person' })).ok : false;
       const again = asked ? `; asked ${rev.people.join(', ')} again` : '';
       if (drawn) {
         $.ui.log(`sub-human: shared as ${rev.name} v${at.value}${again}`);
@@ -105,7 +105,7 @@ export function registerPlans(on: On): void {
       const branch = (await $.vcs.detect({ path: room.root }).catch(() => null))?.branch;
       const note = picked === SEND ? '' : picked.trim();
       const sent = await plan({
-        act: 'send', name: as, version: at.value, files: session.mine?.files ?? [],
+        act: 'send', name: as, version: at.value, files: session.mine?.files ?? [], by: 'person',
         ...(c.to !== undefined && { to: c.to }), ...(note && { note }), ...(branch && { branch }),
       });
       return sent.ok ? told(`your person sent this plan to ${c.to ?? 'the room'} in ${room.code} as ${as} v${at.value}.`) : r;
@@ -116,7 +116,7 @@ export function registerPlans(on: On): void {
     planSession.stored.set(as, file);
     const card = reviewersCard(s, room.name, as, at.value);
     const people = card ? reviewers(await ask(card), s, room.name) : [];
-    const asked = people.length ? (await plan({ act: 'ask', name: as, version: at.value, people })).ok : false;
+    const asked = people.length ? (await plan({ act: 'ask', name: as, version: at.value, people, by: 'person' })).ok : false;
     return told(`this approved plan is room plan ${as} v${at.value} in ${room.code}${asked ? `; asked ${people.join(', ')} to agree. Their answers reach you as room updates` : ''}.`);
   });
 

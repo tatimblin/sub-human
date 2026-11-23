@@ -113,7 +113,7 @@ test('the hourly wake budget: past it, wakes become unread lines (R10)', () => {
   assert.equal(kind(one({ kind: 'message', from: 'bob', text: 'x' }, me(), old)), 'wake', 'an hour later the budget is back');
 });
 
-test('a Claude\'s message carrying a command or URL is drawn for the person, never submitted (R10, R38)', () => {
+test('a wake carrying a command or URL, a Claude\'s or a person\'s, is drawn for the person, never submitted (R10, R38)', () => {
   // the corpora: \n is a line break and \uXXXX a character, so no invisible character sits in a fixture
   const corpus = (name: string): string[] => fs.readFileSync(new URL(`../test/fixtures/commands/${name}.txt`, import.meta.url), 'utf8')
     .split('\n').filter(l => l.trim() && !l.startsWith('#'))
@@ -129,8 +129,8 @@ test('a Claude\'s message carrying a command or URL is drawn for the person, nev
     { kind: 'draw', unread: false, line: "bob's Claude messaged your Claude with a command or URL, held for you: npm install evil" });
   const drawn = deliver(entry(post('bob', 'claude', 'at https://x.example', 'ann')), me(), { ...start(), asked: { at: NOW - 1, to: 'bob' } }, NOW);
   assert.equal(drawn.verdict.kind, 'draw');
-  // a person's own line is theirs to send: it wakes as usual
-  assert.equal(kind(one(entry(post('bob', 'person', 'ann, can you run `npm test`?')))), 'wake');
+  // a person's line too: a command or URL in it is drawn, never handed to my Claude
+  assert.equal(kind(one(entry(post('bob', 'person', 'ann, can you run `npm test`?')))), 'draw');
   for (const text of corpus('pass')) assert.equal(runs(text), false, text);
 });
 

@@ -55,7 +55,8 @@ export async function readyHome(home: string): Promise<Result<string>> {
 
 /** A serving daemon, null when another one already answers on the socket, or why it couldn't start. */
 export async function startDaemon(o: DaemonOptions): Promise<Result<Daemon | null>> {
-  const { home, idleMs = IDLE_MS, now = Date.now, machine = os.hostname() } = o;
+  // the host's card takes a machine in hostname characters only
+  const { home, idleMs = IDLE_MS, now = Date.now, machine = os.hostname().replace(/[^A-Za-z0-9.-]/g, '-').slice(0, 64) } = o;
   const ready = await readyHome(home);
   if (!ready.ok) return ready;
   const sock = ready.value;
@@ -86,7 +87,10 @@ export async function startDaemon(o: DaemonOptions): Promise<Result<Daemon | nul
   }
   if (!bound.ok) return err(`sub-human did not start: another start held its lock for ${START_LOCK.waitMs / 1000} s`);
   if (!bound.value.ok || !bound.value.value) return bound.value.ok ? ok(null) : bound.value;
-  await theNet.start();
+  try { await theNet.start(); } catch (e) {
+    server.close();
+    return err(`sub-human did not start: ${msg(e)}`);
+  }
   void rooms.sweep(); // R3: rooms nobody has used for a month
 
   let done = (): void => undefined;
