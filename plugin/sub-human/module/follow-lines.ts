@@ -1,7 +1,10 @@
 // What follow.ts reads, as pure functions: the log's new lines from a byte range, the tail's documents stamp, the
-// documents held for fold, and the status line. No `$` here; follow.ts makes the reads.
+// documents held for fold, and what a poll's news is for me (absorb). No `$` here; follow.ts makes the reads.
 import * as v from '../vendor/valibot.mjs';
-import type { DocKinds, Docs, LogLine, RoomState } from '../core/entries.js';
+import type { ActivityDoc, DocKinds, Docs, LogLine, RoomState } from '../core/entries.js';
+import type { Input, Item, Me, State } from '../core/deliver.js';
+import { deliver, edits } from '../core/deliver.js';
+import { updatesSince } from '../core/fold.js';
 import { decodeEntry } from '../core/schema.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
@@ -41,11 +44,89 @@ export function docsOf(held: Held): Docs {
   return { presence: docs('presence'), activity: docs('activity'), focus: docs('focus') };
 }
 
-/** `CODE · bob (working), carol · 2 updates`: who else is here, and what I haven't seen. */
-export function statusLine(room: RoomState, me: { readonly code: string; readonly name: string }, count: number): string {
-  const here = room.members.filter(m => m.name !== me.name && m.machines.length > 0)
-    .map(m => (m.presence?.state === 'working' ? `${m.name} (working)` : m.name));
-  return [me.code, ...(here.length ? [here.join(', ')] : []), ...(count ? [`${count} update${count === 1 ? '' : 's'}`] : [])].join(' · ');
+/** Where follow has read to in one room; a new room starts from a fresh one. */
+export interface Cursor {
+  head: Head;
+  /** Bytes of the log read so far. */
+  offset: number;
+  /** The tail file's text at the last read, and its documents stamp. */
+  tail: string;
+  stamp: string | undefined;
+  /** Null until the first read: the room as it stood then is the catch-up's, never news. */
+  state: State | null;
+  held: Held;
+  /** A plan version's hash → the terms of its text. */
+  terms: Map<string, readonly string[]>;
+}
+export function freshCursor(): Cursor {
+  return { head: { seq: 0, hash: '' }, offset: 0, tail: '', stamp: undefined, state: null, held: { presence: new Map(), activity: new Map(), focus: new Map() }, terms: new Map() };
+}
+
+/** The latest versions of the plans `me` is on whose terms aren't read yet (R15c), by hash. */
+export function unreadPlans(room: RoomState, me: string, read: ReadonlyMap<string, readonly string[]>): string[] {
+  return room.plans.flatMap(p => {
+    const at = p.versions.at(-1);
+    return at && !read.has(at.hash) && p.versions.some(x => x.from === me || x.asked.includes(me)) ? [at.hash] : [];
+  });
+}
+/** The terms of the latest versions read. */
+export function planTerms(room: RoomState, read: ReadonlyMap<string, readonly string[]>): string[] {
+  return room.plans.flatMap(p => read.get(p.versions.at(-1)?.hash ?? '') ?? []);
+}
+
+/** At most this many lines are drawn between two prompts (R41); the rest are counted in one more line, drawn once. */
+export const DRAWN_MAX = 3;
+
+/** A line to draw, with what decides which survive the cap: the context cap's value (overlap 3, about me 2, relevant 1). */
+export interface Drawn { readonly line: string; readonly value: number; readonly at: number }
+
+/**
+ * The lines to draw now, given how many were drawn since the last prompt: the most valuable first, newest first among
+ * equals, up to the cap; past it, one `and N more` line, once.
+ */
+export function toDraw(drawn: readonly Drawn[], shown: number): { draw: string[]; shown: number } {
+  const ranked = [...drawn].sort((a, b) => b.value - a.value || b.at - a.at).map(d => d.line);
+  const draw = ranked.slice(0, Math.max(0, DRAWN_MAX - shown));
+  const rest = ranked.length - draw.length;
+  if (!rest || shown > DRAWN_MAX) return { draw, shown: shown + draw.length };
+  return { draw: [...draw, `sub-human: and ${rest} more: /sub-human news`], shown: DRAWN_MAX + 1 };
+}
+
+export interface Absorbed {
+  readonly state: State;
+  /** Context for my Claude's next prompt. */
+  readonly items: readonly Item[];
+  /** The dim lines to draw, before the cap (toDraw). */
+  readonly drawn: readonly Drawn[];
+  /** What news and `read since` gain: colleagues' joins, leaves, new edits and the updates fold counts, in order. */
+  readonly feed: readonly Input[];
+  readonly count: number;
+}
+
+/** What one poll's new lines and colleagues' new edits are for me, from a state already folded with them. */
+export function absorb(state: State, lines: readonly LogLine[], activity: readonly { readonly before?: ActivityDoc; readonly doc: ActivityDoc }[], me: Me, now: number): Absorbed {
+  const inputs: Input[] = [
+    ...lines.map(l => ({ kind: 'entry', entry: l.entry }) satisfies Input),
+    ...activity.flatMap(d => edits(d.before?.files ?? [], d.doc) ?? []),
+  ];
+  let s = state;
+  const items: Item[] = [];
+  const drawn: Drawn[] = [];
+  for (const input of inputs) {
+    const d = deliver(input, me, s, now);
+    s = d.state;
+    if (d.verdict.kind === 'context') items.push(d.verdict.item);
+    const v = d.verdict;
+    if (v.kind !== 'none' && v.line !== undefined) { // wakes: drawn until wake.ts
+      drawn.push(v.kind === 'context' ? { line: v.line, value: v.item.value, at: v.item.at } : { line: v.line, value: 2, at: now });
+    }
+  }
+  const news = updatesSince(lines, me.name);
+  const at = (i: Input): number => (i.kind === 'entry' ? i.entry.at : Number.MAX_SAFE_INTEGER); // an edit is as of now
+  const others = inputs.filter(i => (i.kind === 'edits' ? i.from !== me.name
+    : i.kind === 'entry' && i.entry.from !== me.name && (i.entry.kind === 'joined' || i.entry.kind === 'left')));
+  const feed = [...others, ...news.items.map(entry => ({ kind: 'entry', entry }) satisfies Input)].sort((a, b) => at(a) - at(b));
+  return { state: s, items, drawn, feed, count: news.count };
 }
 
 export function parseJson<T>(schema: v.GenericSchema<unknown, T>, text: string): T | null {

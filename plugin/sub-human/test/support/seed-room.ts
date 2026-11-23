@@ -5,9 +5,10 @@ import type { On } from 'claude-code';
 import type { MockClock } from 'claude-code/testing';
 import { mock } from 'claude-code/testing';
 import type { DocKind, DocKinds, Draft } from '../../core/entries.js';
-import { docFile, fileKey, logFile, roomDir, tailFile } from '../../home.js';
+import { blobFile, docFile, fileKey, logFile, roomDir, tailFile } from '../../home.js';
 import { MemoryStore } from '../../store/memory-store.js';
 import { tailText } from '../../store/store.js';
+import type { Request } from '../../core/api.js';
 import { decodeRequest, sessionFile, socketFile } from '../../core/api.js';
 import { toolFixture } from './fixtures.js';
 import { kitReader } from './kit-fixtures.js';
@@ -26,7 +27,15 @@ export interface Colleague {
   /** Files edited (their activity document) and, optionally, a commit with this message. */
   activity(o: { files?: readonly string[]; commit?: string; replace?: boolean }): Promise<void>;
   finding(text: string): Promise<void>;
-  presence(state: 'working' | 'idle'): Promise<void>;
+  /** On `machine` (their laptop when not given); each machine's presence is its own document, as the daemon keeps it. */
+  presence(state: 'working' | 'idle' | 'away', machine?: string): Promise<void>;
+  /** A line typed by the person (`@room`), or posted by their Claude. */
+  post(text: string, o?: { to?: string; by?: 'person' | 'claude' }): Promise<void>;
+  focus(text: string): Promise<void>;
+  /** A plan version of theirs with `text`, asking `people` to agree. */
+  plan(name: string, text: string, people: readonly string[]): Promise<void>;
+  left(): Promise<void>;
+  joined(): Promise<void>;
 }
 
 export interface Room {
@@ -40,10 +49,20 @@ export interface Room {
   readonly spawned: (readonly string[])[];
   /** How many times each path was read, and each folder listed (`list:` and its path). */
   readonly reads: Map<string, number>;
-  /** What the test breaks: the daemon refusing every write, the log's file refusing reads. */
-  readonly broken: { daemon: boolean; log: boolean };
+  /** Every request the module sent the daemon, decoded. */
+  readonly requests: Request[];
+  /** Moves my pointer to session `id`, which `$.session.id` then answers (a /clear's handoff), or removes it (a leave). */
+  pointer(id: string | null): void;
+  /** The tools the module registered, by name. */
+  readonly registered: string[];
+  /** What the test breaks: the daemon refusing every write, the log's file refusing reads, tool registration refused. */
+  readonly broken: { daemon: boolean; log: boolean; tools: boolean };
   /** Moves the clock one poll on and waits, at most 3 s, until that poll has finished. */
   poll(clock: MockClock): Promise<void>;
+  /** Holds every file read until the returned release is called: a slow disk. */
+  hold(): () => void;
+  /** Waits, at most 3 s, until the session's first poll (started, not awaited, at session.start) has finished. */
+  settled(clock: MockClock): Promise<void>;
 }
 
 export const HOME = '/home/me/.sub-human';
@@ -67,14 +86,16 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   const logs: string[] = [];
   const spawned: (readonly string[])[] = [];
   const reads = new Map<string, number>();
-  const broken = { daemon: false, log: false };
+  const broken = { daemon: false, log: false, tools: false };
+  const registered: string[] = [];
+  const requests: Request[] = [];
   let polls = 0;
   const dir = roomDir(HOME, await fileKey(code));
   const put = (path: string, text: string): void => { files.set(path, { text, mtime: ++writes }); };
 
-  const putDoc = async <K extends DocKind>(kind: K, name: string, doc: DocKinds[K]): Promise<void> => {
-    await store.putDoc(kind, name, doc);
-    put(docFile(dir, kind, await fileKey(name)), JSON.stringify(doc));
+  const putDoc = async <K extends DocKind>(kind: K, name: string, doc: DocKinds[K], key = name): Promise<void> => {
+    await store.putDoc(kind, key, doc);
+    put(docFile(dir, kind, await fileKey(key)), JSON.stringify(doc));
     await tail(`d${writes}`); // the daemon's documents stamp (net/daemon/rooms.ts)
   };
   const tail = async (docs?: string): Promise<void> => {
@@ -90,10 +111,16 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     path === logFile(dir) ? store.room.lines.map(l => `${l}\n`).join('') : files.get(path)?.text;
 
   mock.env(on, { HOME: '/home/me', SUB_HUMAN_HOME: HOME });
-  on('session.id', () => ({ value: SESSION }));
+  let current = SESSION;
+  on('session.id', () => ({ value: current }));
   on('session.start', (_, e) => ({ cwd: e.cwd }));
   on('session.end', (_, e) => ({ sessionId: e.sessionId }));
   on('prompt.submit', (_, e) => ({ text: e.text, ...(e.context && { context: e.context }) }));
+  on('tool.register', (_, e) => {
+    if (broken.tools) return { deny: 'tools are off by policy' };
+    registered.push(e.name);
+    return { value: { tool: `mcp__sub-human__${e.name}` } };
+  });
   on('ui.status', (_, e) => { status.push(e.text); return { value: undefined }; });
   on('ui.log', (_, e) => {
     if (e.to !== 'debug') logs.push(e.text);
@@ -102,7 +129,14 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   });
   // eslint-disable-next-line require-yield -- refused before it starts, so it streams nothing
   on('process.spawn', async function* (_, e) { spawned.push(e.argv); return { deny: 'no processes in the kit' }; });
-  on('fs.read', (_, e) => {
+  let held: Promise<void> | null = null;
+  const hold = (): (() => void) => {
+    let release = (): void => {};
+    held = new Promise(r => { release = () => { held = null; r(); }; });
+    return () => release();
+  };
+  on('fs.read', async (_, e) => {
+    if (held) await held;
     reads.set(e.path, (reads.get(e.path) ?? 0) + 1);
     const text = broken.log && e.path === logFile(dir) ? undefined : read(e.path);
     if (text === undefined) return { deny: `ENOENT: ${e.path}` };
@@ -121,17 +155,34 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   on('http.fetch', async (_, e) => {
     const reply = (status: number, body: unknown) => ({ value: { status, ok: status === 200, headers: {}, text: JSON.stringify(body) } });
     const r = e.init?.socketPath === socketFile(HOME) && typeof e.init.body === 'string' ? decodeRequest(JSON.parse(e.init.body)) : null;
+    if (r?.ok) requests.push(r.value);
     if (broken.daemon) return reply(503, { ok: false, error: 'the daemon is broken for this test' });
     if (!r?.ok) return reply(400, { ok: false, error: r ? r.error : 'not the daemon\'s socket' });
     const req = r.value;
+    if (req.op === 'ping') return reply(200, { ok: true, value: null });
+    if (req.op === 'append' && req.code === code) {
+      const line = await store.append({ ...req.draft, at: now(), machine: 'my-laptop' });
+      if (!line.ok) return reply(400, { ok: false, error: line.error });
+      await tail();
+      return reply(200, { ok: true, value: { seq: line.value.entry.seq, hash: line.value.hash } });
+    }
     if (req.op !== 'put_doc' || req.code !== code) return reply(400, { ok: false, error: `the kit's daemon takes no ${req.op} here` });
-    await putDoc(req.kind, req.name, req.doc);
+    const doc = req.doc;
+    if ('state' in doc) await putDoc('presence', req.name, { ...doc, machine: 'my-laptop' }, `${req.name}@my-laptop`);
+    else await putDoc(req.kind, req.name, doc);
     return reply(200, { ok: true, value: null });
   });
 
-  put(sessionFile(HOME, SESSION), JSON.stringify({ code, name: o.me, title: `${o.me}.${code}`, leave: '00000000-0000-4000-8000-0000000000ee' }));
+  const pointer = (id: string | null): void => {
+    const mine = JSON.stringify({ code, name: o.me, title: `${o.me}.${code}`, leave: '00000000-0000-4000-8000-0000000000ee' });
+    for (const p of [...files.keys()].filter(k => k.startsWith(`${HOME}/sessions/`))) files.delete(p);
+    if (id !== null) { current = id; put(sessionFile(HOME, id), mine); }
+  };
+  pointer(SESSION);
   for (const name of [o.me, ...o.others]) await append({ kind: 'joined', from: name, by: 'system' });
-  for (const name of o.others) await putDoc('presence', name, { name, state: 'working', at: now() });
+  const presence = (name: string, state: 'working' | 'idle' | 'away', machine = `${name}-laptop`) =>
+    putDoc('presence', name, { name, state, machine, at: now() }, `${name}@${machine}`);
+  for (const name of o.others) await presence(name, 'working');
 
   let sha = 0x4f2a9c1;
   const as = (name: string): Colleague => ({
@@ -143,17 +194,35 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
       if (commit !== undefined) await append({ kind: 'activity', from: name, by: 'claude', event: 'commit', text: `committed ${(sha++).toString(16)}: ${commit}` });
     },
     finding: text => append({ kind: 'finding', from: name, by: 'claude', text }),
-    presence: state => putDoc('presence', name, { name, state, at: now() }),
+    presence: (state, machine) => presence(name, state, machine),
+    post: (text, p) => append({ kind: 'post', from: name, by: p?.by ?? 'person', text, ...(p?.to !== undefined && { to: p.to }) }),
+    focus: text => putDoc('focus', name, { name, text, at: now() }),
+    async plan(plan, text, people) {
+      const hash = await store.putBlob(text);
+      put(blobFile(dir, hash), text);
+      const version = 1 + store.room.lines.filter(l => l.includes(`"kind":"plan"`) && l.includes(`"name":${JSON.stringify(plan)}`)).length;
+      await append({ kind: 'plan', from: name, by: 'claude', name: plan, version, hash, base: version - 1, scope: 'group' });
+      if (people.length) await append({ kind: 'plan_ask', from: name, by: 'claude', name: plan, version, people });
+    },
+    async left() { // the daemon's leave: `left`, and this machine's presence away
+      await append({ kind: 'left', from: name, by: 'system' });
+      await presence(name, 'away');
+    },
+    joined: () => append({ kind: 'joined', from: name, by: 'system' }),
   });
-  const poll = async (clock: MockClock): Promise<void> => {
-    const want = polls + 1;
-    await clock.advance(POLL_MS);
-    // the poll's host round trips run on real time (hashing, the stubs); bounded well inside the test's own limit
-    const until = Date.now() + 3000;
+  // the poll's host round trips run on real time (hashing, the stubs); bounded well inside the test's own limit
+  const until = async (clock: MockClock, want: number): Promise<void> => {
+    const end = Date.now() + 3000;
     while (polls < want) {
-      if (Date.now() > until) throw new Error('no poll finished within 3 s');
+      if (Date.now() > end) throw new Error('no poll finished within 3 s');
       await clock.settle();
     }
   };
-  return { code, home: HOME, store, as, status, logs, spawned, reads, broken, poll };
+  const poll = async (clock: MockClock): Promise<void> => {
+    const want = polls + 1;
+    await clock.advance(POLL_MS);
+    await until(clock, want);
+  };
+  const settled = (clock: MockClock): Promise<void> => until(clock, 1);
+  return { code, home: HOME, store, as, status, logs, spawned, reads, requests, registered, pointer, broken, poll, settled, hold };
 }

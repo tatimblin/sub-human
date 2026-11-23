@@ -1,0 +1,63 @@
+// S-Leave (R3): I leave and my session keeps going, out of the room; a colleague who leaves is gone from my status line.
+// `/sub-human leave` is the command hook's (the daemon removes my pointer); the module sees the pointer go.
+import { expect, mock, test } from 'claude-code/testing'
+import { EDIT, EDITED, END, START, seedRoom } from '../support/seed-room.js'
+
+const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer' } }) as const
+const leave = { ...typed('/sub-human leave'), command: { name: 'sub-human', args: 'leave' } } as const
+
+test('after I leave, the room reaches neither my Claude nor my status line, and my work is no longer shared', async ($, on) => {
+  const clock = mock.clock(on)
+  on('tool.call', { tool: 'Edit' }, () => EDIT.result)
+  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
+  await $.session.start(START)
+  await room.settled(clock)
+  await $.tool.call(EDIT.input)
+  await $.prompt.submit(typed('hi'))
+  const writes = room.requests.filter(q => q.op === 'put_doc').length
+
+  room.pointer(null) // the daemon's leave
+  await $.prompt.submit(leave)
+  await room.poll(clock)
+  expect(room.status.at(-1)).toBeUndefined() // the status line is gone
+  await room.as('bob').finding(`alice, ${EDITED} pages by cursor now`)
+  await room.as('bob').activity({ files: [EDITED] })
+  await room.poll(clock)
+  await $.tool.call(EDIT.input)
+  const r = await $.prompt.submit(typed('keep going')) // the session goes on
+  expect(r.text).toBe('keep going')
+  expect(r.context).toBeUndefined()
+  expect(room.status.at(-1)).toBeUndefined()
+  expect(room.requests.filter(q => q.op === 'put_doc')).toHaveLength(writes)
+  expect(room.logs).toEqual([])
+  const pings = room.requests.filter(q => q.op === 'ping').length
+  for (let i = 0; i < 20; i++) await room.poll(clock)
+  expect(room.requests.filter(q => q.op === 'ping')).toHaveLength(pings) // no room: nothing keeps it live
+  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
+  await $.session.end(END)
+})
+
+test('a colleague who leaves goes from my status line, in one change, with no line drawn', async ($, on) => {
+  const clock = mock.clock(on)
+  const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol'], now: clock.now })
+  await $.session.start(START)
+  await room.settled(clock)
+  expect(room.status.at(-1)).toBe(`${room.code} · bob (working), carol (working) here`)
+  await room.as('carol').left()
+  await room.poll(clock)
+  expect(room.status.at(-1)).toBe(`${room.code} · bob (working) here`)
+  expect(room.logs).toEqual([])
+  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
+  await $.session.end(END)
+})
+
+test('a session that ends is away, not gone: no left is written for it', async ($, on) => {
+  const clock = mock.clock(on)
+  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
+  await $.session.start(START)
+  await room.settled(clock)
+  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
+  await $.session.end(END)
+  expect(room.requests.filter(r => r.op === 'append')).toEqual([])
+  expect(room.store.room.lines.join('\n')).not.toContain('"kind":"left"')
+})

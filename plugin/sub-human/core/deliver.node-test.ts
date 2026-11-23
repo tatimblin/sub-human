@@ -54,7 +54,7 @@ test('the three wakes: a person\'s line naming me, a direct message, an answer t
     assert.equal(kind(one(entry(post('bob', 'person', text)))), 'wake', text);
   }
   assert.equal(kind(one(entry(post('bob', 'person', 'which port?', 'ann')))), 'wake');
-  assert.equal(kind(one(entry(post('bob', 'person', 'annie, which port?')))), 'notice', 'another name');
+  assert.equal(kind(one(entry(post('bob', 'person', 'annie, which port?')))), 'none', 'another name');
   assert.equal(kind(one({ kind: 'message', from: 'bob', text: 'listTasks changed shape; update your side' })), 'wake');
   // my Claude asks bob; bob's answer to me wakes, though a Claude's post naming me otherwise never does
   const ask = entry(post('ann', 'claude', 'which port does the server use?', 'bob'));
@@ -194,8 +194,10 @@ test('relevance (R15c): context only for what bears on my work; the rest is coun
   assert.equal(kind(one(finding('fixed the timezone bug', 'bob'), me(), live)), 'context');
   const stale = start(room({ plans: [{ name: 'paging', scope: 'group', versions: [decided, version('bob', ['ann'], 2)] }] }));
   assert.equal(kind(one(finding('fixed the timezone bug', 'bob'), me(), stale)), 'none');
-  // a person's room line is one dim line for everyone (R8); context only when it bears on my work or names me
-  assert.deepEqual(one(entry(post('cat', 'person', 'everyone, rebase on main'))).verdict, { kind: 'notice', line: 'cat: everyone, rebase on main' });
+  // a person's room line that bears on nothing of mine is only counted (R15b); one that bears on my work or names me is context
+  assert.deepEqual(one(entry(post('cat', 'person', 'everyone, rebase on main'))).verdict, { kind: 'none' });
+  assert.deepEqual(one(entry(post('cat', 'person', 'src/store.js is frozen')), me({ touched })).verdict,
+    { kind: 'context', item: { at: 10_000_000, label: 'cat', text: 'src/store.js is frozen', value: 1 }, line: 'cat: src/store.js is frozen' });
   assert.equal(kind(one(entry(post('cat', 'person', 'src/store.js is frozen')), me({ touched }))), 'context');
   assert.equal(kind(one(entry(post('cat', 'person', 'ann will review it')))), 'context');
   // a Claude's post to me is about me

@@ -110,9 +110,8 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
       }
       if (toMe && e.by === 'person') return wake(s, me.code, now, budget, `from:${e.from}`, { label: who, text: e.text, by: e.by, verb: 'asked' });
       if (toMe) return keep(item(e.text, 2));
-      if (bears(e.text, e.from, me, room, now)) return keep(item(e.text, 1));
-      // a person's room line is one dim line for everyone (R8); it is context only when it bears on my work
-      return keep(e.by === 'person' ? notice(`${who}: ${e.text}`) : NONE);
+      // a line that bears on my work is a dim line and context; any other is only counted (R15b), a person's too
+      return keep(bears(e.text, e.from, me, room, now) ? item(e.text, 1) : NONE);
     }
     case 'finding': case 'activity': {
       const text = e.kind === 'activity' && e.ok !== undefined ? `${e.text} (${e.ok ? 'passed' : 'failed'})` : e.text;

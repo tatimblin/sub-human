@@ -5,12 +5,15 @@ import { tokens } from '../../core/deliver.js'
 import { EDIT, EDITED, END, START, seedRoom } from '../support/seed-room.js'
 
 const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer' } }) as const
+/** The room's updates in a prompt's context: the blocks past the mechanics the first prompt also carries. */
+const updates = (r: { context?: readonly string[] | undefined }) => (r.context ?? []).filter(c => c.startsWith('[room '))
 
 test('a relevant colleague change reaches my next prompt, capped', async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'Edit' }, () => EDIT.result) // the recorded answer
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   await $.session.start(START)
+  await room.settled(clock)
 
   await $.tool.call(EDIT.input) // I edit a file
   expect(room.store.room.docs.get('activity/alice')).toContain(EDITED) // shared through the daemon
@@ -18,7 +21,7 @@ test('a relevant colleague change reaches my next prompt, capped', async ($, on)
   await room.poll(clock)
 
   const r = await $.prompt.submit(typed('keep going'))
-  const context = (r.context ?? []).join('\n')
+  const context = updates(r).join('\n')
   expect(context).toMatch(/bob.*listTasks/)
   expect(context).toContain(`bob is editing ${EDITED}, which you edited recently`)
   expect(tokens(context)).toBeLessThan(400)
@@ -26,7 +29,8 @@ test('a relevant colleague change reaches my next prompt, capped', async ($, on)
   expect(room.logs).toContainEqual(expect.stringContaining(`bob is editing ${EDITED}`))
 
   const again = await $.prompt.submit(typed('and then'))
-  expect(again.context).toBeUndefined() // delivered once
+  expect(again.context).toBeUndefined() // delivered once, and the mechanics went with the first prompt
+  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
 })
 
@@ -34,6 +38,7 @@ test('a change that bears on nothing of mine is counted, not handed to my Claude
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol'], now: clock.now })
   await $.session.start(START)
+  await room.settled(clock)
 
   await room.as('carol').presence('idle')
   await room.as('carol').finding('the docs build needs node 24')
@@ -41,9 +46,10 @@ test('a change that bears on nothing of mine is counted, not handed to my Claude
   await room.poll(clock)
 
   const r = await $.prompt.submit(typed('keep going'))
-  expect(r.context).toBeUndefined()
-  expect(room.status.at(-1)).toBe(`${room.code} · bob (working), carol · 1 update`)
+  expect(updates(r)).toEqual([])
+  expect(room.status.at(-1)).toBe(`${room.code} · bob (working), carol here · 1 update`)
   expect(room.spawned).toEqual([])
+  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
 })
 
@@ -52,10 +58,12 @@ test('history from before my session is no news', async ($, on) => {
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   await room.as('bob').finding(`alice, ${EDITED} now pages by cursor`)
   await $.session.start(START)
+  await room.settled(clock)
   await room.poll(clock)
 
   const r = await $.prompt.submit(typed('hi'))
-  expect(r.context).toBeUndefined()
-  expect(room.status.at(-1)).toBe(`${room.code} · bob (working)`)
+  expect(updates(r)).toEqual([])
+  expect(room.status.at(-1)).toBe(`${room.code} · bob (working) here`)
+  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
 })

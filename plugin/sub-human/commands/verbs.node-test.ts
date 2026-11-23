@@ -114,13 +114,21 @@ test('kick removes a member for good; never yourself, nobody unknown, nobody twi
   assert.match((await runCommand('leave', bob)).text, /^You're still in .*: bob was removed/);
 });
 
-test('help is at most six lines; news, invite and join say they are not available yet', async () => {
+test('help is at most six lines; invite and join say they are not available yet', async () => {
   const ctx = testCtx(fakeHome());
   const help = await runCommand('help', ctx);
   assert.ok(help.text.split('\n').length <= 6);
   assert.match(help.text, /^\/sub-human \[NAME\]/);
-  for (const v of ['news', 'invite bob', 'join https://x/y#z']) assert.match((await runCommand(v, ctx)).text, /not available yet/);
+  for (const v of ['invite bob', 'join https://x/y#z']) assert.match((await runCommand(v, ctx)).text, /not available yet/);
   assert.deepEqual(fakeHome().calls, []);
+});
+
+test('news reaches the command only where the module is off: one line saying so (the module draws it)', async () => {
+  assert.equal((await runCommand('news', testCtx(fakeHome()))).text, 'This session is in no room. Type /sub-human to join one.');
+  const { alice } = await room();
+  assert.deepEqual(await runCommand('news', alice), {
+    kind: 'refused', text: "News wasn't shown: sub-human's module draws it, and it isn't running in this session. /sub-human who shows what each member is doing.",
+  });
 });
 
 test('doctor: node, the socket path, the module, the version checked on, every room log, and the stubs', async () => {
