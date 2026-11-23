@@ -181,3 +181,19 @@ test('messages go to inboxes by session and room, never the log, and are taken o
   assert.deepEqual(await okv(r, { op: 'inbox', session: 's-bob' }), { messages: [] });
   await assert.rejects(fs.access(`${h}/rooms`), 'nothing was written');
 });
+
+test('a put_doc renews the tail file\'s documents stamp and keeps its head, so a follower lists documents only then', async () => {
+  const h = await home();
+  const r = rooms(h);
+  await room(r, 'R', 'alice');
+  const tail = async (): Promise<unknown> => JSON.parse(await fs.readFile(`${roomDir(h, await fileKey('R'))}/tail.json`, 'utf8'));
+  const doc = { op: 'put_doc', code: 'R', kind: 'presence', name: 'alice', doc: { name: 'alice', state: 'idle', at: 1 } } as const;
+  await okv(r, doc);
+  const a = await tail();
+  await okv(r, doc);
+  const b = await tail();
+  assert.ok(a && typeof a === 'object' && 'docs' in a && b && typeof b === 'object' && 'docs' in b);
+  assert.notEqual(a.docs, b.docs);
+  assert.deepEqual({ ...b, docs: 0, at: 0 }, { ...a, docs: 0, at: 0 });
+  assert.ok('seq' in b && b.seq === 1);
+});
