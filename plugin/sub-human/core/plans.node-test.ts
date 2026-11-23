@@ -5,7 +5,7 @@ import { NO_DOCS } from './entries.js';
 import { fold } from './fold.js';
 import type { Result } from './result.js';
 import { decodeEntry } from './schema.js';
-import { accept, answer, ask, decide, edit, latestVersion, parts, send } from './plans.js';
+import { accept, answer, applyPlan, ask, decide, edit, latestVersion, parts, send } from './plans.js';
 
 /**
  * A room whose rules' entries are stamped, decoded and folded, so every test also checks that each entry a rule writes
@@ -223,4 +223,21 @@ test('send packs a version for one member or the room; the recipient accepts, di
   r.append(send(r.state(), { name: 'mine', version: 1, from: 'ann' })); // to the room
   r.append(accept(r.state(), { name: 'mine', version: 1, from: 'cy', answer: 'dismiss' }));
   assert.deepEqual(r.state().sent.find(x => x.version === 1)?.answers, [{ name: 'cy', answer: 'dismiss' }]);
+});
+
+test('applyPlan, the host\'s one way to apply a plan act: a stranger is refused, a stale edit is an answer, an answer decides', () => {
+  const r = room(['ann', 'bob']);
+  const none = () => '';
+  assert.deepEqual(applyPlan(r.state(), { act: 'ask', code: 'c1', from: 'zed', name: 'p', version: 1, people: ['bob'] }, '', none), { ok: false, error: 'zed is not in c1; nothing was written' });
+  const first = applyPlan(r.state(), { act: 'edit', code: 'c1', from: 'ann', name: 'p', base: 0, text: 'one' }, '#one', none);
+  assert.ok(first.ok && 'drafts' in first.value);
+  r.append(first.value.drafts);
+  assert.deepEqual(applyPlan(r.state(), { act: 'edit', code: 'c1', from: 'bob', name: 'p', base: 0, text: 'two' }, '#two', none),
+    { ok: true, value: { refused: 'Plan p was not stored: it is at v1, not v0; merge your edit into v1 and edit on base 1.' } });
+  const asked = applyPlan(r.state(), { act: 'ask', code: 'c1', from: 'ann', name: 'p', version: 1, people: ['bob'] }, '', none);
+  assert.ok(asked.ok && 'drafts' in asked.value);
+  r.append(asked.value.drafts);
+  const agreed = applyPlan(r.state(), { act: 'answer', code: 'c1', from: 'bob', name: 'p', version: 1, answer: 'agree' }, '', none);
+  assert.ok(agreed.ok && 'drafts' in agreed.value);
+  assert.deepEqual(agreed.value.drafts.map(d => d.kind), ['plan_answer', 'decision']);
 });

@@ -5,7 +5,7 @@
 // Broadcasts never do. Context is only what bears on my work (R15c) or overlaps it (R15d); the rest is counted by
 // fold's updatesSince and left to the catch-up.
 import type { By, Entry, RoomState } from './entries.js';
-import { oneLine, ZERO_WIDTH } from './text.js';
+import { datamark, markLabel, oneLine, ZERO_WIDTH } from './text.js';
 
 export const WAKES_PER_HOUR = 6;
 /** One wake per sender or question burst: what follows within this rides along as context. */
@@ -268,7 +268,7 @@ export function runs(text: string): boolean {
 
 /** A member's name as drawn: one line, no brackets, so it can't close a label and open another. */
 function name(from: string): string {
-  return oneLine(from, 64).replace(/[[\]]/g, '');
+  return markLabel(from, 64);
 }
 
 function label(from: string, by: By): string {
@@ -277,7 +277,7 @@ function label(from: string, by: By): string {
 
 /** One datamarked line: who it is from, and the text on one line with no way to forge another label. */
 function mark(it: Item, code: string): string {
-  return `[room ${code} · ${clip(it.label).replace(/[[\]]/g, '')}] ${clip(it.text).replace(/\[room/gi, '(room')}`;
+  return datamark(code, it.label, it.text, { max: LINE_MAX });
 }
 
 function clip(text: string): string {

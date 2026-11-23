@@ -12,7 +12,7 @@ import { Pointers } from './pointers.js';
 import { asRoom, fold } from '../../core/fold.js';
 import { pick } from './open.js';
 import type { Docs, Draft, Kind, LogLine, RoomState, Snapshot } from '../../core/entries.js';
-import { accept, answer, ask, decide, edit, latestVersion, send } from '../../core/plans.js';
+import { applyPlan, decide, latestVersion } from '../../core/plans.js';
 import type { Texts } from '../../core/plans.js';
 import type { Result } from '../../core/result.js';
 import { err, ok } from '../../core/result.js';
@@ -271,22 +271,12 @@ export class Rooms {
 
   private async plan(room: Room, req: Writer & PlanAct): Promise<Result<Answers['plan']>> {
     const s = asRoom(room.snap.state);
-    if (!member(s, req.from)) return err(`${req.from} is not in ${req.code}; nothing was written`);
-    let drafts: Result<Draft[]>;
-    switch (req.act) {
-      case 'edit': {
-        // the base is checked before the text is stored, so a refused edit leaves no file behind
-        drafts = edit(s, { ...req, hash: await sha256(req.text) });
-        if (!drafts.ok) return ok({ refused: drafts.error, latest: latestVersion(s, req.name) });
-        await room.store.putBlob(req.text);
-        break;
-      }
-      case 'ask': drafts = ask(s, req); break;
-      case 'answer': drafts = answer(s, req, await texts(room, [req.name])); break;
-      case 'send': drafts = send(s, req); break;
-      case 'accept': drafts = accept(s, req); break;
-    }
-    const r = drafts.ok ? await this.commit(room, drafts.value) : drafts;
+    const applied = applyPlan(s, req, req.act === 'edit' ? await sha256(req.text) : '', req.act === 'answer' ? await texts(room, [req.name]) : () => '');
+    if (!applied.ok) return applied;
+    if ('refused' in applied.value) return ok({ refused: applied.value.refused, latest: latestVersion(s, req.name) });
+    // the base is checked before the text is stored, so a refused edit leaves no file behind
+    if (req.act === 'edit') await room.store.putBlob(req.text);
+    const r = await this.commit(room, applied.value.drafts);
     const after = asRoom(room.snap.state);
     return r.ok ? ok({ seq: after.seq, hash: after.hash, latest: latestVersion(after, req.name) }) : r;
   }

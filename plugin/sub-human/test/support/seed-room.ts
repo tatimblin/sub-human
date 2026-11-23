@@ -8,10 +8,14 @@ import type { DocKind, DocKinds, Draft } from '../../core/entries.js';
 import { blobFile, docFile, fileKey, logFile, roomDir, tailFile } from '../../home.js';
 import { MemoryStore } from '../../store/memory-store.js';
 import { tailText } from '../../store/store.js';
-import type { Message, Request } from '../../core/api.js';
+import type { Answers, Message, PlanAct, Request } from '../../core/api.js';
 import { decodeRequest, sessionFile, socketFile } from '../../core/api.js';
 import { toolFixture } from './fixtures.js';
 import { kitReader } from './kit-fixtures.js';
+import { planRule, roomState } from './kit-plans.js';
+import { latestVersion } from '../../core/plans.js';
+import type { Result } from '../../core/result.js';
+import { ok } from '../../core/result.js';
 import { POLL_MS, POLLED } from '../../module/follow.js';
 
 export interface SeedOptions {
@@ -38,6 +42,8 @@ export interface Colleague {
   joined(): Promise<void>;
   /** Their Claude's SendMessage to mine: into my inbox at the daemon, never the log (R6); `code` for another room's. */
   message(text: string, code?: string): void;
+  /** A plan act of theirs (answer, accept, send, …) through the host's plan rules; throws when they refuse it. */
+  planAct(act: PlanAct): Promise<void>;
 }
 
 export interface Room {
@@ -119,6 +125,16 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     if (!r.ok) throw new Error(r.error);
     await tail(); // FsStore writes the tail with no stamp
   };
+  // the daemon's `plan`: the host's rules, then the entries and any new text, as net/daemon/rooms.ts stores them
+  const plan = async (from: string, act: PlanAct): Promise<Result<Answers['plan']>> => {
+    const r = await planRule(store, code, from, act);
+    if (!r.ok) return r;
+    if ('refused' in r.value) return ok({ refused: r.value.refused, latest: latestVersion(await roomState(store), act.name) });
+    if (act.act === 'edit') put(blobFile(dir, await store.putBlob(act.text)), act.text);
+    for (const d of r.value.drafts) await append(d);
+    const s = await roomState(store);
+    return ok({ seq: s.seq, hash: s.hash, latest: latestVersion(s, act.name) });
+  };
   const read = (path: string): string | undefined =>
     path === logFile(dir) ? store.room.lines.map(l => `${l}\n`).join('') : files.get(path)?.text;
 
@@ -185,6 +201,10 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
       await tail();
       return reply(200, { ok: true, value: { seq: line.value.entry.seq, hash: line.value.hash } });
     }
+    if (req.op === 'plan' && req.code === code) {
+      const r = await plan(req.from, req);
+      return r.ok ? reply(200, { ok: true, value: r.value }) : reply(400, { ok: false, error: r.error });
+    }
     if (req.op !== 'put_doc' || req.code !== code) return reply(400, { ok: false, error: `the kit's daemon takes no ${req.op} here` });
     const doc = req.doc;
     if ('state' in doc) await putDoc('presence', req.name, { ...doc, machine: 'my-laptop' }, `${req.name}@my-laptop`);
@@ -229,6 +249,11 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     },
     joined: () => append({ kind: 'joined', from: name, by: 'system' }),
     message: (text, other) => { inbox.push({ code: other ?? code, from: name, text, at: now() }); },
+    async planAct(act) {
+      const r = await plan(name, act);
+      if (!r.ok) throw new Error(r.error);
+      if ('refused' in r.value) throw new Error(r.value.refused);
+    },
   });
   // the poll's host round trips run on real time (hashing, the stubs); bounded well inside the test's own limit
   const until = async (clock: MockClock, want: number): Promise<void> => {

@@ -9,8 +9,7 @@ import { registerStatus } from './status.js';
 import { registerTools } from './tools.js';
 import { admitCards } from './admit.js';
 import { registerWake } from './wake.js';
-// not wired yet: re-exported so validate type-checks it and the vendored diff it imports (U10 uses it)
-export { planDiff } from './plan-diff.js';
+import { registerPlans } from './plans.js';
 
 export function register(on: On): void {
   registerFollow(on);
@@ -21,4 +20,5 @@ export function register(on: On): void {
   admitCards(on);
   registerMessages(on);
   registerWake(on);
+  registerPlans(on);
 }

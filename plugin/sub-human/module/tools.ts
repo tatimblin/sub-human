@@ -3,7 +3,7 @@
 // since, plan: the catch-up, R16). Each answers in one line, or with the data asked for, framed as data. What to do
 // is pure (`shareCall`, `readCall`); the hook bodies make the one daemon call or file read it names.
 //
-// The seam for U12/U13: add a spec to TOOLS, and a `tool.run` hook on `toolName(spec.name)` in their own file.
+// The seam for U12/U13: add a spec to TOOLS, and a `tool.run` hook on `toolName(spec.name)` in their own file (`plan`: plans.ts).
 import type { On, ToolSpec } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import type { AppendDraft, Request } from '../core/api.js';
@@ -45,6 +45,21 @@ export const TOOLS: readonly ToolSpec[] = [
     inputSchema: {
       type: 'object', required: ['op'],
       properties: { op: { enum: ['brief', 'since', 'plan'] }, name: { type: 'string' }, version: { type: 'integer', minimum: 1 } },
+    },
+    isDeferred: false,
+  },
+  { // answered in plans.ts
+    name: 'plan',
+    description: 'Your sub-human room\'s plans. op edit: store `text` as the next version of plan `name`, on `base`, the version '
+      + 'you edited (0 for a new plan); if someone stored a newer one first, nothing is stored and you get its text to merge '
+      + 'and edit again. op ask: ask members (`people`) to agree to one `version`; each answers in their own session. op send: '
+      + 'send a plan\'s latest version to one member (`to`) or the room, with an optional `note`. Read one with read op plan.',
+    inputSchema: {
+      type: 'object', required: ['op', 'name'],
+      properties: {
+        op: { enum: ['edit', 'ask', 'send'] }, name: { type: 'string' }, base: { type: 'integer', minimum: 0 }, text: { type: 'string' },
+        version: { type: 'integer', minimum: 1 }, people: { type: 'array', items: { type: 'string' } }, to: { type: 'string' }, note: { type: 'string' },
+      },
     },
     isDeferred: false,
   },

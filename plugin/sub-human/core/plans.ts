@@ -3,6 +3,7 @@
 // hashes a new text, and passes `texts` to read a stored one when a decision needs its parts. The rules agree with
 // fold: a version is the previous one plus 1, the first version's scope is the plan's, and only the latest version
 // takes asks and answers (R22).
+import type { PlanAct } from './api.js';
 import type { Acceptance, Answer, Draft, Plan, PlanAnswerRecord, PlanScope, PlanVersion, RoomState, Task } from './entries.js';
 import { err, ok, type Result } from './result.js';
 import { LIMITS } from './entries.js';
@@ -115,6 +116,26 @@ export function accept(s: RoomState, a: Accept): Result<Draft[]> {
   const bad = checkNote(what, a.answer, a.note);
   if (bad) return err(bad);
   return ok([{ kind: 'plan_accept', from: a.from, by: 'person', name: a.name, version: a.version, answer: a.answer, ...noted(a.note) }]);
+}
+
+/**
+ * What the host appends for one member's plan act (net/daemon/rooms.ts, and the kit's daemon), or a stale edit's
+ * refusal, which is an answer and not an error. `hash` is an edit's text hashed; `texts` reads a stored text.
+ */
+export function applyPlan(s: RoomState, req: { readonly code: string; readonly from: string } & PlanAct, hash: string, texts: Texts): Result<{ readonly drafts: Draft[] } | { readonly refused: string }> {
+  if (!isMember(s, req.from)) return err(`${req.from} is not in ${req.code}; nothing was written`);
+  let drafts: Result<Draft[]>;
+  switch (req.act) {
+    case 'edit': {
+      const d = edit(s, { ...req, hash });
+      return d.ok ? ok({ drafts: d.value }) : ok({ refused: d.error });
+    }
+    case 'ask': drafts = ask(s, req); break;
+    case 'answer': drafts = answer(s, req, texts); break;
+    case 'send': drafts = send(s, req); break;
+    case 'accept': drafts = accept(s, req); break;
+  }
+  return drafts.ok ? ok({ drafts: drafts.value }) : drafts;
 }
 
 /** A part of a plan with its owner. `title` is the line without the owner's name, `line` the line as written. */

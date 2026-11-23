@@ -10,6 +10,28 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u206
 export const ZERO_WIDTH: RegExp = /[\u200b-\u200d\ufeff]/g;
 
 export function oneLine(text: string, max: number): string {
-  const one = text.replace(ANSI, '').replace(ZERO_WIDTH, '').replace(CONTROL, ' ').replace(/\s+/g, ' ').trim();
+  const one = clean(text).replace(/\s+/g, ' ').trim();
   return one.length > max ? `${one.slice(0, max - 1)}…` : one;
+}
+
+function clean(text: string): string {
+  return text.replace(ANSI, '').replace(ZERO_WIDTH, '').replace(CONTROL, ' ');
+}
+
+/** A name or label as a datamark shows it: one line with no brackets, so it can't close the label and open another. */
+export function markLabel(text: string, max: number = 300): string {
+  return oneLine(text, max).replace(/[[\]]/g, '');
+}
+
+/**
+ * Text marked as data from the room (the one datamark): `[room CODE · LABEL] text`, with any `[room` inside defused so
+ * it can't forge another label. One line clipped to `max` by default; a `block` keeps its lines, each cleaned, after
+ * the label's line, and is cut at `max` characters with a line saying so.
+ */
+export function datamark(code: string, label: string, text: string, o: { readonly max?: number; readonly block?: true } = {}): string {
+  const max = o.max ?? 300;
+  const head = `[room ${markLabel(code, 64)} · ${markLabel(label)}]`;
+  if (!o.block) return `${head} ${oneLine(text, max).replace(/\[room/gi, '(room')}`;
+  const body = text.split('\n').map(clean).join('\n').replace(/\[room/gi, '(room');
+  return `${head}\n${body.length > max ? `${body.slice(0, max)}\n… (cut at ${max} characters)` : body}`;
 }

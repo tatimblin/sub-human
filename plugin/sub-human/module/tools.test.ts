@@ -9,7 +9,7 @@ const share = (args: Record<string, unknown>) => ({ tool: toolName('share'), too
 const read = (args: Record<string, unknown>) => ({ tool: toolName('read'), tool_use_id: 'toolu_read', ...args })
 const last = (lines: readonly string[]) => v.parse(v.record(v.string(), v.unknown()), JSON.parse(lines.at(-1) ?? '{}'))
 
-test('share and read are registered for the model once the session is in a room, and not before', async ($, on) => {
+test('share, read and plan are registered for the model once the session is in a room, and not before', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   room.pointer(null)
@@ -19,7 +19,7 @@ test('share and read are registered for the model once the session is in a room,
   room.pointer('session-1') // a /sub-human join
   await room.poll(clock)
   await room.poll(clock)
-  expect(room.registered).toEqual(['share', 'read'])
+  expect(room.registered).toEqual(['share', 'read', 'plan'])
   await $.session.end(END)
 })
 
