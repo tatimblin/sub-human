@@ -1,7 +1,7 @@
 // Wiring: how many node processes the hooks module starts per event ($.process.run and $.process.spawn), for a session
 // with no seat and for a seated member. Run with `npm run test:mods`. Together with the hooks.json entries (the
 // /sub-human expansion; SessionEnd, whose shell check starts node only for a session with a lease or a seat:
-// test/manifest.node-test.ts) this is the node-start table in docs/ARCHITECTURE.md "Performance". The target, held
+// test/manifest.node-test.ts) this is the node-start table in docs/archive/ARCHITECTURE-0.8.md "Performance". The target, held
 // here: a session with no seat starts no node on any event but /sub-human.
 import type { EventName, On, ToolCallArgs } from 'claude-code'
 import { test, expect, type Engine } from 'claude-code/testing'

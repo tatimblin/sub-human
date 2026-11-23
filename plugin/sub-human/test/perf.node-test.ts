@@ -1,6 +1,6 @@
 // The 100k-entry budget: an @room post (the store's signed append) and the agent-panel status line, measured
 // in-process over a room whose log holds 100,000 entries, after a warm-up (the process's caches are filled, as in
-// the long-lived tail and MCP server; a hook's cold start is the hooks entry's own budget, docs/ARCHITECTURE.md
+// the long-lived tail and MCP server; a hook's cold start is the hooks entry's own budget, docs/archive/ARCHITECTURE-0.8.md
 // Performance). Budgets: append <= 50 ms, status line <= 30 ms (the median of RUNS).
 //
 // The log is written by hand, as a day of a busy room would leave it: one entry a second, ending now, a hash chain,

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * arch-doc: regenerate the generated sections of docs/ARCHITECTURE.md, so they can't drift from the code.
+ * arch-doc: regenerate the generated sections of docs/archive/ARCHITECTURE-0.8.md, so they can't drift from the code.
  *
  *   node scripts/arch-doc.ts            rewrite the sections in place (npm run docs)
  *   node scripts/arch-doc.ts --check    exit 1 when the committed doc is stale (scripts/test/arch-doc.test.ts)
@@ -35,7 +35,7 @@ interface ContractJson {
 /** The generated sections, by marker name. */
 export type Sections = Record<string, string>;
 
-export const DOC = path.join(REPO, 'docs', 'ARCHITECTURE.md');
+export const DOC = path.join(REPO, 'docs', 'archive', 'ARCHITECTURE-0.8.md');
 const cell = (s: unknown): string => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 const code = (s: unknown): string => '`' + cell(s) + '`';
 const table = (head: string[], rows: string[][]): string => [
@@ -193,11 +193,11 @@ async function main(argv: string[]): Promise<number> {
   const doc = fs.readFileSync(DOC, 'utf8');
   const next = render(doc, await generate());
   if (check) {
-    if (next !== doc) { process.stderr.write('docs/ARCHITECTURE.md is stale: run npm run docs\n'); return 1; }
+    if (next !== doc) { process.stderr.write('docs/archive/ARCHITECTURE-0.8.md is stale: run npm run docs\n'); return 1; }
     return 0;
   }
   if (next !== doc) fs.writeFileSync(DOC, next);
-  process.stdout.write(next !== doc ? 'docs/ARCHITECTURE.md updated\n' : 'docs/ARCHITECTURE.md up to date\n');
+  process.stdout.write(next !== doc ? 'docs/archive/ARCHITECTURE-0.8.md updated\n' : 'docs/archive/ARCHITECTURE-0.8.md up to date\n');
   return 0;
 }
 

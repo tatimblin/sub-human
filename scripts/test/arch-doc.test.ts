@@ -1,14 +1,14 @@
-// docs/ARCHITECTURE.md's generated sections must match the code: regenerate them in memory and compare.
+// docs/archive/ARCHITECTURE-0.8.md's generated sections must match the code: regenerate them in memory and compare.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DOC, generate, render, firstSentence } from '../arch-doc.ts';
 
-test('docs/ARCHITECTURE.md generated sections are current (run npm run docs)', async () => {
+test('docs/archive/ARCHITECTURE-0.8.md generated sections are current (run npm run docs)', async () => {
   const doc = fs.readFileSync(DOC, 'utf8');
   const sections = await generate();
   for (const name of ['hooks', 'mod-hooks', 'mcp-tools', 'cc-contract', 'lib-modules']) assert.ok(sections[name], name);
-  assert.equal(render(doc, sections), doc, 'docs/ARCHITECTURE.md is stale: run npm run docs');
+  assert.equal(render(doc, sections), doc, 'docs/archive/ARCHITECTURE-0.8.md is stale: run npm run docs');
 });
 
 test('render replaces only between markers and is idempotent', () => {

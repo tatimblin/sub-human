@@ -8,7 +8,7 @@ A Claude Code plugin for working together from separate sessions, on one machine
 - **Consent is yours.** When someone asks you to sign off on a version of a plan, it opens in Claude Code's own plan view in your terminal, all of it scrollable. Only your answer there records agreement. No Claude can give it.
 - **The room session** (member `claude`, a background session titled `claude.CODE`) starts with the room and holds the room's shared task list. It never plans, reads or answers anything, and keeps no rows.
 
-How it is built: [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md).
+How it is built: [docs/archive/ARCHITECTURE-0.8.md](../../docs/archive/ARCHITECTURE-0.8.md).
 
 ## Install
 
