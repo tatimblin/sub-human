@@ -1,0 +1,26 @@
+{
+  "name": "tool-task-update-in-progress",
+  "event": "tool.call",
+  "session": "steps",
+  "input": {
+    "taskId": "1",
+    "status": "in_progress",
+    "tool": "TaskUpdate",
+    "tool_use_id": "toolu_fake0010"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "success": true,
+      "taskId": "1",
+      "updatedFields": [
+        "status"
+      ],
+      "statusChange": {
+        "from": "pending",
+        "to": "in_progress"
+      }
+    },
+    "text": "Updated task #1 status"
+  }
+}

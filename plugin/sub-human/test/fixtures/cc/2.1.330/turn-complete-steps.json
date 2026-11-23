@@ -1,0 +1,33 @@
+{
+  "name": "turn-complete-steps",
+  "event": "turn.complete",
+  "session": "steps",
+  "input": {
+    "answer": "done\n\nI ran all 10 steps in order:\n- **Step 3:** the commit `9b6afa1` also has a `Co-Authored-By` trailer that I added, so its message isn't exactly `add notes`.\n- **Step 4:** `ls does-not-exist` failed with exit code 1, as expected.\n- **Step 5:** `npm test` passed (1 test). Node also printed a warning that `package.json` has no `\"type\": \"module\"` setting.\n- **Step 9:** sending `hi` to `nobody` failed because no agent by that name is reachable.\n- **Step 10:** you picked A.",
+    "durationMs": 33717,
+    "isAborted": false,
+    "turnId": "00000000-0000-4000-8000-000000000014",
+    "reason": "answer",
+    "usage": {
+      "input_tokens": 22,
+      "output_tokens": 1434,
+      "cache_read_input_tokens": 142164,
+      "cache_creation_input_tokens": 15319,
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 15319,
+      "model": "claude-opus-5-5"
+    }
+  },
+  "result": {
+    "text": "done\n\nI ran all 10 steps in order:\n- **Step 3:** the commit `9b6afa1` also has a `Co-Authored-By` trailer that I added, so its message isn't exactly `add notes`.\n- **Step 4:** `ls does-not-exist` failed with exit code 1, as expected.\n- **Step 5:** `npm test` passed (1 test). Node also printed a warning that `package.json` has no `\"type\": \"module\"` setting.\n- **Step 9:** sending `hi` to `nobody` failed because no agent by that name is reachable.\n- **Step 10:** you picked A.",
+    "usage": {
+      "input_tokens": 22,
+      "output_tokens": 1434,
+      "cache_read_input_tokens": 142164,
+      "cache_creation_input_tokens": 15319,
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 15319,
+      "model": "claude-opus-5-5"
+    }
+  }
+}

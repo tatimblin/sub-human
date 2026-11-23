@@ -1,0 +1,23 @@
+{
+  "name": "tool-write",
+  "event": "tool.call",
+  "session": "steps",
+  "input": {
+    "file_path": "/work/project/notes.txt",
+    "content": "one\n",
+    "tool": "Write",
+    "tool_use_id": "toolu_fake0004"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "type": "create",
+      "filePath": "/work/project/notes.txt",
+      "content": "one\n",
+      "structuredPatch": [],
+      "originalFile": null,
+      "userModified": false
+    },
+    "text": "File created successfully at: /work/project/notes.txt (file state is current in your context — no need to Read it back)"
+  }
+}

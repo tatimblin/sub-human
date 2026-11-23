@@ -1,0 +1,14 @@
+{
+  "name": "hook-session-end-plan",
+  "event": "hook",
+  "session": "plan",
+  "hook": "SessionEnd",
+  "input": {
+    "session_id": "00000000-0000-4000-8000-000000000015",
+    "transcript_path": "/home/user/.claude/projects/-work-project/00000000-0000-4000-8000-000000000015.jsonl",
+    "cwd": "/work/project",
+    "prompt_id": "00000000-0000-4000-8000-000000000016",
+    "hook_event_name": "SessionEnd",
+    "reason": "other"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "hook-user-prompt-expansion-steps",
+  "event": "hook",
+  "session": "steps",
+  "hook": "UserPromptExpansion",
+  "input": {
+    "session_id": "00000000-0000-4000-8000-000000000001",
+    "transcript_path": "/home/user/.claude/projects/-work-project/00000000-0000-4000-8000-000000000001.jsonl",
+    "cwd": "/work/project",
+    "prompt_id": "00000000-0000-4000-8000-000000000002",
+    "permission_mode": "default",
+    "hook_event_name": "UserPromptExpansion",
+    "expansion_type": "slash_command",
+    "command_name": "rec:steps",
+    "command_args": "",
+    "command_source": "plugin",
+    "prompt": "/rec:steps"
+  }
+}

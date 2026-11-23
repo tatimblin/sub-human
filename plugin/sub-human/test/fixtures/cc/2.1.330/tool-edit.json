@@ -1,0 +1,37 @@
+{
+  "name": "tool-edit",
+  "event": "tool.call",
+  "session": "steps",
+  "input": {
+    "replace_all": false,
+    "file_path": "/work/project/notes.txt",
+    "old_string": "one",
+    "new_string": "two",
+    "tool": "Edit",
+    "tool_use_id": "toolu_fake0005"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "filePath": "/work/project/notes.txt",
+      "oldString": "one",
+      "newString": "two",
+      "originalFile": "one\n",
+      "structuredPatch": [
+        {
+          "oldStart": 1,
+          "oldLines": 1,
+          "newStart": 1,
+          "newLines": 1,
+          "lines": [
+            "-one",
+            "+two"
+          ]
+        }
+      ],
+      "userModified": false,
+      "replaceAll": false
+    },
+    "text": "The file /work/project/notes.txt has been updated successfully. (file state is current in your context — no need to Read it back)"
+  }
+}

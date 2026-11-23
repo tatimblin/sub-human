@@ -1,0 +1,26 @@
+{
+  "name": "tool-task-update-deleted",
+  "event": "tool.call",
+  "session": "extra",
+  "input": {
+    "taskId": "1",
+    "status": "deleted",
+    "tool": "TaskUpdate",
+    "tool_use_id": "toolu_fake0024"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "success": true,
+      "taskId": "1",
+      "updatedFields": [
+        "deleted"
+      ],
+      "statusChange": {
+        "from": "pending",
+        "to": "deleted"
+      }
+    },
+    "text": "Updated task #1 deleted"
+  }
+}

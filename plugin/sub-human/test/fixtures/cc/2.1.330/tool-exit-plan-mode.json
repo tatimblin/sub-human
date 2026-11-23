@@ -1,0 +1,20 @@
+{
+  "name": "tool-exit-plan-mode",
+  "event": "tool.call",
+  "session": "plan",
+  "input": {
+    "plan": "1. Append the line `three` to the end of `notes.txt` (e.g. `echo three >> notes.txt`).\n2. Verify with `tail -n 1 notes.txt` that the last line is `three`.\n",
+    "planFilePath": "/work/project/.plans/without-reading-any-file-staged-firefly-of-00000000-0000-4000-8000-000000000015.md",
+    "tool": "ExitPlanMode",
+    "tool_use_id": "toolu_fake0018"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "plan": "1. Append the line `three` to the end of `notes.txt` (e.g. `echo three >> notes.txt`).\n2. Verify with `tail -n 1 notes.txt` that the last line is `three`.\n",
+      "isAgent": false,
+      "filePath": "/work/project/.plans/without-reading-any-file-staged-firefly-of-00000000-0000-4000-8000-000000000015.md"
+    },
+    "text": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable\n\nYour plan has been saved to: /work/project/.plans/without-reading-any-file-staged-firefly-of-00000000-0000-4000-8000-000000000015.md\nYou can refer back to it if needed during implementation.\n\n## Approved Plan:\n1. Append the line `three` to the end of `notes.txt` (e.g. `echo three >> notes.txt`).\n2. Verify with `tail -n 1 notes.txt` that the last line is `three`.\n"
+  }
+}

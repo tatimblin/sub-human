@@ -1,0 +1,22 @@
+{
+  "name": "prompt-submit-steps",
+  "event": "prompt.submit",
+  "session": "steps",
+  "input": {
+    "text": "/rec:steps",
+    "wait": false,
+    "origin": {
+      "kind": "sdk"
+    },
+    "command": {
+      "name": "rec:steps",
+      "args": ""
+    }
+  },
+  "result": {
+    "text": "/rec:steps",
+    "origin": {
+      "kind": "sdk"
+    }
+  }
+}

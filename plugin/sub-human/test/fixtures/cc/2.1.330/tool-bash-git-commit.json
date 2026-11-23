@@ -1,0 +1,29 @@
+{
+  "name": "tool-bash-git-commit",
+  "event": "tool.call",
+  "session": "steps",
+  "input": {
+    "command": "git add -A && git commit -m \"add notes\" -m \"Co-Authored-By: Claude Opus 5.5 <user@example.com>\"",
+    "description": "Stage and commit all changes",
+    "tool": "Bash",
+    "tool_use_id": "toolu_fake0006"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "stdout": "[master 9b6afa1] add notes\n 1 file changed, 1 insertion(+)\n create mode 100644 notes.txt",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false,
+      "gitOperation": {
+        "commit": {
+          "sha": "9b6afa1",
+          "kind": "committed",
+          "branch": "master"
+        }
+      }
+    },
+    "text": "[master 9b6afa1] add notes\n 1 file changed, 1 insertion(+)\n create mode 100644 notes.txt"
+  }
+}

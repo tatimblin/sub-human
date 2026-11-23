@@ -1,0 +1,52 @@
+{
+  "name": "tool-list-steps",
+  "event": "tool.list",
+  "session": "steps",
+  "result": [
+    {
+      "name": "AskUserQuestion",
+      "description": "Use this tool only when you are blocked on a decision that is genuinely the user's to make: one you cannot resolve from the request, the code, or sensible defaults.\n\nUsage notes:\n- Users will always be able to select \"Other\" to provide custom text input\n- Use multiSelect: true to allow multiple answ",
+      "mcp": false
+    },
+    {
+      "name": "Bash",
+      "description": "Executes a given bash command and returns its output.\n\n`cd` carries to the next call only in the main session, if the command succeeds and ends inside the working directories. Outside them the shell returns to the start folder; otherwise it stays where it was. Shell state does not persist. The shell",
+      "mcp": false
+    },
+    {
+      "name": "Edit",
+      "description": "Performs exact string replacements in files.\n\nUsage:\n- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.\n- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spac",
+      "mcp": false
+    },
+    {
+      "name": "SendMessage",
+      "description": "# SendMessage\n\nSend a message to another agent.\n\n```json\n{\"to\": \"researcher\", \"summary\": \"assign task 1\", \"message\": \"start on task #1\"}\n```\n\n| `to` | |\n|---|---|\n| `\"researcher\"` | Teammate by name |\n| `\"main\"` | The main conversation (background subagents only) |\n| `\"worker\"` | Any agent from `Lis",
+      "mcp": false
+    },
+    {
+      "name": "TaskCreate",
+      "description": "Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.\nIt also helps the user understand the progress of the task and overall progress of their requests.\n\n## When to Use This Too",
+      "mcp": false
+    },
+    {
+      "name": "TaskGet",
+      "description": "Use this tool to retrieve a task by its ID from the task list.\n\n## When to Use This Tool\n\n- When you need the full description and context before starting work on a task\n- To understand task dependencies (what it blocks, what blocks it)\n- After being assigned a task, to get complete requirements\n\n##",
+      "mcp": false
+    },
+    {
+      "name": "TaskList",
+      "description": "Use this tool to list all tasks in the task list.\n\n## When to Use This Tool\n\n- To see what tasks are available to work on (status: 'pending', no owner, not blocked)\n- To check overall progress on the project\n- To find tasks that are blocked and need dependencies resolved\n- After completing a task, t",
+      "mcp": false
+    },
+    {
+      "name": "TaskUpdate",
+      "description": "Use this tool to update a task in the task list.\n\n## When to Use This Tool\n\n**Mark tasks as resolved:**\n- When you have completed the work described in a task\n- When a task is no longer needed or has been superseded\n- IMPORTANT: Always mark your assigned tasks as resolved when you finish them\n- Afte",
+      "mcp": false
+    },
+    {
+      "name": "Write",
+      "description": "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided path.\n- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\n- Prefer the Edit too",
+      "mcp": false
+    }
+  ]
+}

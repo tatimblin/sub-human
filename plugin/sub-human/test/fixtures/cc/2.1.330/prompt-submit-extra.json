@@ -1,0 +1,22 @@
+{
+  "name": "prompt-submit-extra",
+  "event": "prompt.submit",
+  "session": "extra",
+  "input": {
+    "text": "/rec:extra",
+    "wait": false,
+    "origin": {
+      "kind": "sdk"
+    },
+    "command": {
+      "name": "rec:extra",
+      "args": ""
+    }
+  },
+  "result": {
+    "text": "/rec:extra",
+    "origin": {
+      "kind": "sdk"
+    }
+  }
+}
