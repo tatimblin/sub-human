@@ -121,7 +121,7 @@ test('a relevant colleague change reaches my next prompt, capped', async ($, on)
 |---|---|
 | No model runs | the canary and live gate (§7, §9) |
 | No command hooks (`hooks.json`) | the edge tests (§5). There is no MCP server to test; Claude's tools are module tools, tested here through `tool.run`. |
-| No node children (listener, link daemon) | the network tests (§6); the module side stubs `$.process.spawn` and `$.http.fetch` |
+| No node processes (the daemon) | the network tests (§6); the module side stubs `$.process.spawn` and `$.http.fetch` |
 | No two real sessions at once | one side is scripted here; two-sided behaviour is tested in the store and network tests (§3, §6) and in the live gate |
 | It doesn't check painting | `ui.find` on mounted trees is enough |
 
@@ -130,7 +130,7 @@ The kit needs hooks modules turned on in the shell that runs it. If they're off,
 ## 5. Edge tests (`node:test`)
 
 - **Command hooks.** Each `hooks.json` handler (the `/sub-human` expansion, `SessionEnd`, and the policy-surviving plan and title hooks, F7) runs with recorded stdin fixtures. The tests assert its stdout `Reply` and exit code, and that nothing is written to stderr on success.
-- **The module-to-node bridge:** the listener and link daemon answer the module's loopback `$.http.fetch` calls, detach from their parent, and exit when no local session is left in the room.
+- **The module-to-daemon bridge:** the daemon answers the module's `$.http.fetch` calls on its Unix socket, re-spawns itself detached, lets only one instance bind the socket, takes every write, and exits a minute after the last local session stops pinging.
 - **Vendored files:** `scripts/vendor.ts --check` fails when `vendor/VENDOR.json` disagrees with the pinned devDependencies or the file hashes; each vendored file loads in node.
 - **CLI and commands:** `parseArgs` cases; every `/sub-human` verb against a temp home.
 

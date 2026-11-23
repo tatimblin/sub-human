@@ -4,7 +4,7 @@ How v2 is built. It is the design for `docs/PRD.md`; requirement numbers (R…) 
 
 ## 1. Shape in one paragraph
 
-Each Claude Code session in a room runs one piece of sub-human: a **hooks module**, in-process. It watches the session's work, delivers updates to it, draws the status line, and registers Claude's few tools (`$.tool.register`). There is no MCP server. The module has no Node, so network work (the link, Noise, WebSocket) runs in node children it starts.
+Each Claude Code session in a room runs one piece of sub-human: a **hooks module**, in-process. It watches the session's work, delivers updates to it, draws the status line, and registers Claude's few tools (`$.tool.register`). There is no MCP server. The module has no Node and can't write files safely, so every write and all network work (the link, Noise, WebSocket) runs in one node process per home, the daemon (§5).
 
 One machine is the room's **host**. It holds the room's **log**, an append-only list of entries, and applies every write. Other machines keep a **mirror** of the log, fed by one **link** per room over Tailscale or ssh. Everything a person sees and every piece of context a Claude gets is computed by pure functions over the log. Everything else is a thin adapter around those functions.
 
@@ -16,9 +16,9 @@ One machine is the room's **host**. It holds the room's **log**, an append-only 
 │     capture·deliver·status·plans   │    │              │     (same)           │       │
 │     tools: share·read·plan·task    │    │              │                      │       │
 │                                    │    │              │        MirrorStore ──┘       │
-│          FsStore (host) ───────────┘    │◄── link ────►│   link daemon (node child)    │
+│          FsStore (host) ───────────┘    │◄── link ────►│   daemon (node) + link        │
 │   rooms/CODE/log.jsonl  docs/  plans/   │  Tailscale   │   rooms/CODE/ (mirror copy)   │
-│   listener 127.0.0.1 ← tailscaled/sshd  │  or ssh      │                               │
+│   daemon: listener ← tailscaled/sshd   │  or ssh      │                               │
 └─────────────────────────────────────────┘              └───────────────────────────────┘
 ```
 
@@ -49,7 +49,7 @@ Small, single-purpose packages with few or no dependencies of their own. Each on
 | Validating outside data | `valibot` | `vendor/valibot.mjs` (206 KB) | module and node | chosen |
 | Not sharing ignored, excluded or secret files (R12, R14a) | `ignore` | `vendor/ignore.mjs` (50 KB; CommonJS wrapped as ESM) | module | chosen |
 | The diff since the last version, in the review pane (R21) | `diff` | `vendor/diff/` (its `libesm`, 152 KB) | module | chosen (M2) |
-| The Funnel wire: WebSocket over HTTPS, proxy-friendly (R29a) | `ws` | `vendor/ws/` (176 KB) | node children only | chosen |
+| The Funnel wire: WebSocket over HTTPS, proxy-friendly (R29a) | `ws` | `vendor/ws/` (176 KB) | the daemon only | chosen |
 | Peer connection without Tailscale | `hyperswarm` | — (~13 MB, mostly udx-native; UDP only) | — | P2, opt-in (Q14) |
 
 **Vendored, not installed** (PRD Q13):
@@ -77,7 +77,7 @@ Small, single-purpose packages with few or no dependencies of their own. Each on
 | **A PROXY-protocol v2 parser** | It is mandatory behind Funnel (R29a) and small. |
 
 **From Node, the module runtime or the system:**
-- Node: `node:crypto` (keys, hashes, ids), `node:util` (`parseArgs`, `styleText`), `node:test` with `mock.timers`, `fs.watch` in the node children, and `node:fs` for locks and crash-safe writes.
+- Node: `node:crypto` (keys, hashes, ids), `node:util` (`parseArgs`, `styleText`), `node:test` with `mock.timers`, `fs.watch` in the daemon, and `node:fs` for locks and crash-safe writes.
 - The module runtime: the global `crypto.subtle.digest`, for the hash chain inside the module.
 - The system: the `ssh`, `git` and `tailscale` commands. The person's own ssh config, agent and `known_hosts` are respected.
 
@@ -141,14 +141,15 @@ plugin/sub-human/
     messages.ts      session.send caught at the sender for NAME.CODE; carried over the room channel (R6)
     plans.ts         ExitPlanMode result → keep / room / send; review card (ui.ask) + pane (ui.open) (R18–R22e)
     tools.ts         Claude's tools via $.tool.register + tool.run: share, read, plan, task (§6)
-    bridge.ts        talks to the node children over $.http.fetch (loopback) or files
+    bridge.ts        talks to the daemon over $.http.fetch on its Unix socket; starts it when it doesn't answer
   vendor/          committed ESM builds of the dependencies, plus VENDOR.json (§2a)
   commands/        /sub-human verbs, one small file each: (bare), invite, join, who, tasks, leave, kick, help, doctor
-  net/             node children only (the module can't load node:crypto or ws)
+  net/             the daemon only (the module can't load node:crypto or ws)
+    daemon.ts        one per home: the socket API, store writes, the listener and the links (§5)
     channel.ts       Noise XK over any Duplex (the POC's noise.ts, kept; vectors in CI)
     pathways/        tailscale.ts (Funnel | Serve, WebSocket), ssh.ts (ssh -W), pipe.ts (tests)
     host.ts          host side: accept, PROXY v2, handshake, admission, serve ops
-    link.ts          joiner side: the link daemon running link-engine
+    link.ts          joiner side: one link per room hosted elsewhere, running link-engine
     invite.ts        invite lines, secret, admission requests
   keys.ts          machine key, link keys
   home.ts          where files live (~/.sub-human)
@@ -197,13 +198,14 @@ test/              scenes (§12) and unit tests, beside the code they test
 
 | Process | Where | Lifetime | Job |
 |---|---|---|---|
-| Hooks module | inside each Claude Code session | the session | capture, follow, deliver, status, plan hooks, message routing, wakes, Claude's tools |
-| Listener (node) | host, one per home | while the host has a session in a room with remote members | the `127.0.0.1` port behind tailscaled (Funnel or Serve) or reached by `ssh -W`; accepts links; holds a sleep assertion while links are live |
-| Link daemon (node) | each mirror, one per room | while a local member is in the room | runs `link-engine`; keeps the mirror in sync; relays writes and private messages |
+| Hooks module | inside each Claude Code session | the session | capture, follow, deliver, status, plan hooks, message routing, wakes, Claude's tools; reads the store with `$.fs` |
+| Daemon (node) | one per home | while any local session is in a room | every write to the store; for rooms hosted here, the FsStore and the listener (the `127.0.0.1` port behind tailscaled or reached by `ssh -W`, accepting links, holding a sleep assertion while links are live); for rooms hosted elsewhere, one link per room running `link-engine` and keeping the mirror in sync; private messages between members |
 
-The module starts the node processes with `$.process.spawn` and talks to them over `$.http.fetch` to loopback, or through files. Spawned children die when the module unloads. So the listener and link daemon detach themselves, and they exit on their own when no local session is left in the room.
+**Every write goes through the daemon** (U4, checked on 2.1.330). `$.fs` has no exclusive create, rename, append or fsync, and its `write` truncates in place, so a module can't keep the log's chain or a document's "old or new, never torn". The module only reads: the tail file and the log by ranges (4 MiB per read), documents and plan text.
 
-When the host's last session leaves a room, the listener stops serving it, and remote members see "host away" until it returns (R34). There is no room-level Claude, no tail child and no background job (PRD §4).
+**How the module reaches it.** `$.http.fetch` over a Unix socket in the home (`socketPath`), which draws no permission prompt and passes no rule check; a refusal (managed policy, or a build with no socket transport) throws, and the module says so in one line (C3). If the socket doesn't answer, the module starts the daemon with `$.process.spawn` of `node --import resolve-ts.ts net/daemon.ts <home>` (node's absolute path); spawning draws no prompt either, and only a managed deny rule refuses it. Spawned children die when the module unloads, so the daemon re-spawns itself detached (`detached: true` + `unref`, U6: it outlives the session) and the first one to bind the socket wins. Each session pings it; it exits when no local session has pinged for a minute. Command hooks are node, and they write through the same socket, never to the store directly.
+
+When the host's last session leaves a room, the listener stops serving it, and remote members see "host away" until it returns (R34). There is no room-level Claude and no background job besides the daemon (PRD §4).
 
 The command hooks in `hooks.json` keep working when policy disables user modules on managed machines (PRD C1): the `/sub-human` expansion, `SessionStart` with `sessionTitle`, `Notification` and `SessionEnd`. If the module is off, the person gets one line saying so.
 
@@ -220,7 +222,7 @@ There are four tools, registered by the module with `$.tool.register` and answer
 
 **Claude-to-Claude.** A Claude uses native `SendMessage` to `NAME.CODE` (R6). The message is caught at the **sender**, because the recipient's `session.receive` carries no sender name.
 1. The sender's `module/messages.ts` hooks `session.send`. For any `to` ending in `.CODE`, it answers `{isDelivered: true}` without calling `next`.
-2. It carries the message over the room channel, stamped with the sender: a local file drop on one machine, the link daemon's `message` op across machines. It is never written to the log.
+2. It carries the message over the room channel, stamped with the sender: the daemon on one machine, the link's `message` op across machines. It is never written to the log.
 3. The recipient's module hands it to `wake.ts` as a framed wake (R10). That waits for the turn to end, applies the debounce and budget, and applies the command/URL rule in every mode.
 
 Native mid-turn interrupts are therefore never used for room members. Whether Claude Code honours the answer given without `next` is the one risk, settled by an M1 module test.
@@ -331,7 +333,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 - The command/URL rule applies in every mode, because the module can't read the mode.
 - The branch comes from `git` (or `$.vcs.detect`, which is experimental).
 - Mid-loop notes use `$.session.append` and `tool.call` `context`.
-- The module has no Node, so `ws` and Noise run only in node children.
+- The module has no Node and no safe write, so writes, `ws` and Noise run only in the daemon.
 
 **Status legend:** "typed" means it is in the module typings; "documented" means it is in Claude Code's docs but not the typings.
 
