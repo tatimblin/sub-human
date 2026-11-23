@@ -4,11 +4,26 @@
 // stale, and removes it. Release removes the lock only while it still holds the holder's own token.
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 
-export interface LockOptions { readonly waitMs?: number; readonly staleMs?: number }
+/** The lock's time: injected, so tests run it on mock timers (ARCHITECTURE §2, principle 4). */
+export interface LockClock {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+  /** Calls fn every ms until the returned stop; never keeps the process alive by itself. */
+  every(ms: number, fn: () => void): () => void;
+}
+export const REAL_CLOCK: LockClock = {
+  now: () => Date.now(),
+  sleep: ms => new Promise(r => { setTimeout(r, ms); }),
+  every: (ms, fn) => {
+    const t = setInterval(fn, ms);
+    t.unref();
+    return () => { clearInterval(t); };
+  },
+};
+export interface LockOptions { readonly waitMs?: number; readonly staleMs?: number; readonly clock?: LockClock }
 /** What a waiter saw at the lock path. */
 export interface Seen { readonly token: string; readonly mtimeMs: number }
 
@@ -16,29 +31,28 @@ const code = (e: unknown): unknown => (e instanceof Error ? Reflect.get(e, 'code
 
 /** Runs `fn` holding `file`; an error only when the lock stayed held past `waitMs`. */
 export async function withLock<T>(file: string, fn: () => Promise<T>, o: LockOptions = {}): Promise<Result<T>> {
-  const { waitMs = 5000, staleMs = 10_000 } = o;
+  const { waitMs = 5000, staleMs = 10_000, clock = REAL_CLOCK } = o;
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const deadline = Date.now() + waitMs;
+  const deadline = clock.now() + waitMs;
   for (;;) {
     const token = await take(file);
-    if (token !== null) return ok(await hold(file, token, staleMs, fn));
-    if (Date.now() > deadline) return err('the room is busy; nothing was written');
+    if (token !== null) return ok(await hold(file, token, staleMs, clock, fn));
+    if (clock.now() > deadline) return err('the room is busy; nothing was written');
     const seen = await look(file);
-    if (seen && Date.now() - seen.mtimeMs > staleMs) await breakStale(file, staleMs, seen);
-    await sleep(2 + Math.random() * 8);
+    if (seen && clock.now() - seen.mtimeMs > staleMs) await breakStale(file, staleMs, seen, clock);
+    await clock.sleep(2 + Math.random() * 8);
   }
 }
 
-async function hold<T>(file: string, token: string, staleMs: number, fn: () => Promise<T>): Promise<T> {
+async function hold<T>(file: string, token: string, staleMs: number, clock: LockClock, fn: () => Promise<T>): Promise<T> {
   const touch = async (): Promise<void> => {
     if ((await look(file))?.token !== token) return;
-    const now = new Date();
+    const now = clock.now() / 1000;
     await fs.utimes(file, now, now).catch(() => undefined);
   };
-  const timer = setInterval(() => { void touch(); }, Math.max(1, staleMs / 3));
-  timer.unref(); // a hold never keeps the process alive by itself
+  const stop = clock.every(Math.max(1, staleMs / 3), () => { void touch(); });
   try { return await fn(); } finally {
-    clearInterval(timer);
+    stop();
     await release(file, token);
   }
 }
@@ -68,18 +82,18 @@ async function release(file: string, token: string): Promise<void> {
 }
 
 /** Removes the lock a waiter saw, if under `.break` it is still that file and still stale. */
-export async function breakStale(file: string, staleMs: number, seen: Seen): Promise<void> {
+export async function breakStale(file: string, staleMs: number, seen: Seen, clock: LockClock = REAL_CLOCK): Promise<void> {
   const brk = `${file}.break`;
   const token = await take(brk);
   if (token === null) {
     // another waiter is breaking it, or one died doing so
     const b = await look(brk);
-    if (b && Date.now() - b.mtimeMs > staleMs) await breakStale(brk, staleMs, b);
+    if (b && clock.now() - b.mtimeMs > staleMs) await breakStale(brk, staleMs, b, clock);
     return;
   }
   try {
     const now = await look(file);
-    if (now?.token === seen.token && now.mtimeMs === seen.mtimeMs && Date.now() - now.mtimeMs > staleMs) {
+    if (now?.token === seen.token && now.mtimeMs === seen.mtimeMs && clock.now() - now.mtimeMs > staleMs) {
       await fs.unlink(file).catch(() => undefined);
     }
   } finally { await release(brk, token); }

@@ -31,7 +31,8 @@ const room = (h: string): string => roomDir(h, 'room');
 function child(h: string, body: string, ...args: string[]) {
   const code = `import { openFsStore } from ${JSON.stringify(FS_STORE)};
 const [home, ...args] = process.argv.slice(1);
-const { value: s } = await openFsStore({ home, code: 'room' });
+// no wait or stale bound a loaded machine could reach: the test checks the chain, not the speed
+const { value: s } = await openFsStore({ home, code: 'room', lock: { waitMs: 600_000, staleMs: 600_000 } });
 ${body}`;
   return spawn(process.execPath, ['--import', RESOLVE, '--input-type=module', '-e', code, h, ...args], { stdio: ['ignore', 'ignore', 'inherit'] });
 }
@@ -59,7 +60,9 @@ test('the layout under rooms/CODE, private: folders 0700, files 0600', async () 
   const hash = await s.putBlob('plan');
   const r = room(h);
   assert.equal((await fs.readFile(logFile(r), 'utf8')).split('\n').length, 3);
-  assert.deepEqual(parseTail(await fs.readFile(tailFile(r), 'utf8')), { ok: true, value: { seq: 2, hash: b.value.hash, at: 1234 } });
+  const tail = parseTail(await fs.readFile(tailFile(r), 'utf8'));
+  assert.ok(tail.ok);
+  assert.deepEqual({ ...tail.value, docs: typeof tail.value.docs }, { seq: 2, hash: b.value.hash, at: 1234, docs: 'string' });
   const blob = path.join(r, 'plans', `${hash}.md`);
   assert.equal(await fs.readFile(blob, 'utf8'), 'plan');
   for (const d of [path.join(h, 'rooms'), r, path.join(r, 'docs', 'presence'), path.join(r, 'plans')]) {
@@ -164,7 +167,7 @@ test('an append does not read the log when another handle already took the snaps
   assert.deepEqual(reads.filter(p => p === logFile(room(h))), []);
 });
 
-test('writers in several processes share one chain under the lock', async () => {
+test('writers in several processes share one chain under the lock: every seq once, no gap', { timeout: 600_000 }, async () => {
   const h = await home();
   const kids = Array.from({ length: 4 }, (_, i) => child(h, `for (let j = 0; j < 25; j++) {
   const r = await s.append({ kind: 'post', id: args[0] + '-' + j, at: j, from: args[0], by: 'person', machine: 'm', text: String(j) });
@@ -203,6 +206,30 @@ test('a writer killed mid-write leaves a whole document and a log that still cha
     assert.equal((await s.read(0)).ok, true, `round ${round}: the chain holds`);
     await fs.rm(lockFile(room(h)), { force: true }); // the killed child may have held it
   }
+});
+
+test('the tail: a document write renews its docs stamp at the head, and an append keeps the stamp', async () => {
+  const h = await home();
+  const s = await store(h, { now: () => 7 });
+  const tail = async () => {
+    const t = parseTail(await fs.readFile(tailFile(room(h)), 'utf8'));
+    assert.ok(t.ok);
+    return t.value;
+  };
+  const a = await s.append(post('ann', 'a'));
+  assert.ok(a.ok);
+  assert.equal((await tail()).docs, undefined);
+  await s.putDoc('presence', 'ann', { name: 'ann', state: 'idle', at: 1 });
+  const first = await tail();
+  assert.deepEqual({ ...first, docs: undefined }, { seq: 1, hash: a.value.hash, at: 7, docs: undefined });
+  assert.match(first.docs ?? '', /\S/);
+  const b = await s.append(post('ann', 'b'));
+  assert.ok(b.ok);
+  assert.deepEqual(await tail(), { seq: 2, hash: b.value.hash, at: 7, docs: first.docs });
+  await s.putDoc('presence', 'ann', { name: 'ann', state: 'working', at: 2 });
+  const second = await tail();
+  assert.equal(second.seq, 2);
+  assert.notEqual(second.docs, first.docs);
 });
 
 test('a torn last line is skipped by readers and dropped by the next append', async () => {

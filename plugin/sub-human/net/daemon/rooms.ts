@@ -8,7 +8,6 @@ import path from 'node:path';
 import type { Answers, Message, PlanAct, Pointer, Request, TaskAct } from '../../core/api.js';
 import { API_VERSION, SESSION_ID, sessionFile } from '../../core/api.js';
 import { writeAtomic } from '../../store/atomic.js';
-import { fileKey, roomDir, tailFile } from '../../home.js';
 import { sha256 } from '../../core/hash.js';
 import type { Draft, Kind, RoomState, Snapshot } from '../../core/entries.js';
 import { accept, answer, ask, decide, edit, latestVersion, send } from '../../core/plans.js';
@@ -93,10 +92,7 @@ export class Rooms {
         if (links.hosts(req.code)) return links.forward(req.code, req);
         return this.queue(req.code, async room => {
           if (!member(room.snap.state, req.name)) return err(`${req.name} is not in ${req.code}; nothing was written`);
-          await room.store.putDoc(req.kind, req.name, req.doc);
-          // a new documents stamp in the tail file, so a follower's idle poll stays one small read (module/follow.ts)
-          const head = await room.store.head();
-          if (head.ok) await writeAtomic(tailFile(roomDir(this.o.home, await fileKey(req.code))), JSON.stringify({ ...head.value, at: now, docs: randomUUID() }));
+          await room.store.putDoc(req.kind, req.name, req.doc); // the store renews the tail's documents stamp
           return ok(null);
         });
       case 'put_blob':

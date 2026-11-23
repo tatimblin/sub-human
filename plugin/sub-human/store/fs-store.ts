@@ -12,8 +12,8 @@ import { blobFile, docDir, docFile, fileKey, lockFile, logFile, roomDir, snapsho
 import { writeAtomic } from './atomic.js';
 import type { LockOptions } from './lock.js';
 import { withLock } from './lock.js';
-import type { Catchup, Draft, Head, RoomStore } from './store.js';
-import { BLOB_HASH, headOf, lineHash, nextSnapshot, placeLine, tailText, verifyLines } from './store.js';
+import type { Catchup, Draft, Head, RoomStore, Tail } from './store.js';
+import { BLOB_HASH, headOf, lineHash, nextSnapshot, parseTail, placeLine, tailText, verifyLines } from './store.js';
 import { sha256 } from '../core/hash.js';
 
 export interface FsStoreOptions {
@@ -69,7 +69,7 @@ export class FsStore implements RoomStore {
     } finally { await fh.close(); }
     const { line, entry } = placed.value;
     const hash = await lineHash(line);
-    await writeAtomic(tailFile(this.dir), tailText({ seq: entry.seq, hash, at: this.now() }));
+    await this.writeTail({ seq: entry.seq, hash }, (await this.readTail())?.docs);
     if (snapshotDue(entry.seq, this.snapped, this.every)) await this.snapshot(entry.seq);
     return ok({ entry, hash });
   }
@@ -98,8 +98,26 @@ export class FsStore implements RoomStore {
     return lines.ok ? ok({ snapshot, lines: lines.value }) : lines;
   }
 
+  /** Latest wins, then a new documents stamp in the tail (under the lock, beside the appends that keep it). */
   async putDoc<K extends DocKind>(kind: K, name: string, doc: DocKinds[K]): Promise<void> {
     await writeAtomic(docFile(this.dir, kind, await fileKey(name)), JSON.stringify(doc));
+    const r = await withLock(lockFile(this.dir), async () => {
+      const fh = await fs.open(logFile(this.dir), 'a+', 0o600);
+      let last: string | undefined;
+      try { ({ last } = await lastLine(fh, (await fh.stat()).size)); } finally { await fh.close(); }
+      const head = await headOf(last);
+      if (head.ok) await this.writeTail(head.value, crypto.randomUUID());
+    }, this.lock);
+    if (!r.ok) throw new Error(r.error);
+  }
+
+  private async readTail(): Promise<Tail | null> {
+    const text = await readText(tailFile(this.dir));
+    const t = text === null ? null : parseTail(text);
+    return t?.ok ? t.value : null;
+  }
+  private async writeTail(head: Head, docs: string | undefined): Promise<void> {
+    await writeAtomic(tailFile(this.dir), tailText({ ...head, at: this.now(), ...(docs !== undefined && { docs }) }));
   }
   async getDoc<K extends DocKind>(kind: K, name: string): Promise<DocKinds[K] | null> {
     return decoded(kind, await readText(docFile(this.dir, kind, await fileKey(name))));

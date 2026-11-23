@@ -21,7 +21,8 @@ storeContract('fs', {
   room: async every => {
     const home = await fs.mkdtemp(path.join(process.env.SUB_HUMAN_HOME ?? os.tmpdir(), 'h-'));
     const dir = roomDir(home, 'room');
-    const o = every === undefined ? {} : { every };
+    const lock = { waitMs: 600_000 }; // the contract checks the chain, not the speed
+    const o = every === undefined ? { lock } : { every, lock };
     const log = logFile(dir);
     return {
       open: () => new FsStore(dir, o),

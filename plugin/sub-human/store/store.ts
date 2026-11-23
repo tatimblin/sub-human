@@ -19,8 +19,11 @@ export type Draft = Without<Entry, 'seq' | 'prev'>;
 export interface Head { readonly seq: number; readonly hash: string }
 /** The latest snapshot and the lines after it: what a catch-up folds. */
 export interface Catchup { readonly snapshot: Snapshot | null; readonly lines: readonly LogLine[] }
-/** The small file a follower polls instead of the log: the head and when it moved. */
-export interface Tail extends Head { readonly at: number }
+/**
+ * The small file a follower polls instead of the log: the head, when it moved, and `docs`, a stamp renewed on every
+ * document write, so an idle follower reads the documents only when one changed. Only FsStore writes it.
+ */
+export interface Tail extends Head { readonly at: number; readonly docs?: string }
 
 export interface RoomStore {
   /** Places the draft after the head; the line as stored, with its hash. */
@@ -99,7 +102,9 @@ export function nextSnapshot(snap: Snapshot | null, lines: readonly LogLine[]): 
   return takeSnapshot(fold(snap, lines, NO_DOCS));
 }
 
-const tail = v.object({ seq: v.pipe(v.number(), v.integer(), v.minValue(0)), hash: v.string(), at: v.number() });
+const tail = v.object({
+  seq: v.pipe(v.number(), v.integer(), v.minValue(0)), hash: v.string(), at: v.number(), docs: v.exactOptional(v.string()),
+});
 export function tailText(t: Tail): string { return JSON.stringify(t); }
 export function parseTail(text: string): Result<Tail> {
   try {
