@@ -301,12 +301,16 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 - **Channel.** `net/channel.ts` runs Noise XK (`Noise_XK_25519_ChaChaPoly_SHA256`) on every pathway's stream (R29c). It is the POC's `noise.ts`: `node:crypto` primitives only, no dependencies, checked against the published vectors in CI.
   - The joiner already knows the host's key from the invite. Only that key can complete the handshake, so the secret is never sent to anyone else.
   - The joiner proves its own key in the third message, and that key becomes the link's identity, so a link is a key, not a token.
-  - Messages are length-prefixed frames of at most 64 KB.
-- **Protocol.** JSON messages inside the channel. The hello carries the protocol version and caps (R33). The ops are:
-  - `append`, `put_doc`, `put_blob`;
-  - `subscribe {after_seq, hash}`, answered with the snapshot plus the entries after it;
+  - On the stream, each Noise message is a frame: a 2-byte length, then at most 64 KB. After the handshake, each frame's plaintext starts with a continuation byte (1: the message goes on in the next frame), so a message can be up to 8 MB.
+  - The host reads nothing past message 3 until it answers the admission, and holds at most about 128 KB before then. The handshake times out after 10 s.
+- **Protocol.** JSON messages inside the channel (`core/protocol.ts`). Both sides open with `hello {version, min, caps, name, machine}` (R33). The ops are:
+  - to the host: `append {entry}` (the host stamps seq, at and prev, and deduplicates on the entry's id), `put_doc`, `put_blob`;
+  - `subscribe {after_seq, hash}`, answered with `snapshot` (when the cursor is not on the host's chain, a fork) and then `lines` (entries with their hashes);
+  - `ack` or `refused {reason}` for each write's id;
   - `message {to}`, for private Claude-to-Claude messages, which are forwarded to the recipient's link and never logged;
-  - `ping`.
+  - `put_doc` from the host, for a document that changed;
+  - `ping` and `pong`, both ways;
+  - `bye {reason}` before the host closes a link: `kicked`, `refused`, `skew`, `host_away` or `closed`.
 
   There is no host-key query op. While offline, the member's own documents wait locally and are re-sent on reconnect, and a person's `post` queues for a bounded time under a client id the host deduplicates. Every other write fails fast (R32).
 - **Link engine.** `core/link-engine.ts` is pure, `(state, event, now) → (state, effects[])`. It covers backoff, heartbeat, sleep and network-change detection, and fork. On a fork, it resyncs from the snapshot and re-sends queued posts under their ids (R36). `net/link.ts` executes the effects.
