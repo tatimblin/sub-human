@@ -2,6 +2,7 @@
 // home (`dir`), behind the commands' Daemon seam, with no socket. `calls` records every write; `down` and `failing`
 // make the writes fail as a daemon that isn't up, or one op that fails, would.
 import fs from 'node:fs/promises';
+import type { LinkStatus } from '../../core/api.js';
 import type { Draft, PresenceDoc } from '../../core/entries.js';
 import { err, ok } from '../../core/result.js';
 import type { Result } from '../../core/result.js';
@@ -24,10 +25,12 @@ export interface FakeHome {
   down: string | null;
   /** An error one op answers while it is here, by the op's first word in `calls` (`session`, `retire`, …). */
   readonly failing: Map<string, string>;
-  /** What `link` answers per room: a test sets one to `online` as a host letting it in would. */
-  readonly linked: Map<string, { phase: 'waiting' | 'online' | 'stopped'; why: string | null }>;
+  /** What `link` answers per room: a test sets one to `host_away` as a host gone would. */
+  readonly linked: Map<string, LinkStatus>;
   /** What status says of the modules. */
   sessions: number;
+  /** Whether a session's module has pinged: false is a session where Claude Code's hooks modules are off (C1). */
+  modules: boolean;
   /** The Claude Code versions its live sessions report. */
   cc: string[];
   /** The daemon's clock. */
@@ -59,7 +62,7 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
   };
   const log = async (code: string): Promise<string> => logFile(roomDir(dir, await fileKey(code)));
   const home: FakeHome = {
-    calls: [], dir, down: null, failing: new Map(), linked: new Map(), sessions: 1, cc: ['2.1.330'], now: Date.now(),
+    calls: [], dir, down: null, failing: new Map(), linked: new Map(), sessions: 1, modules: true, cc: ['2.1.330'], now: Date.now(),
     daemon: {
       append: async (code, draft, id) => guard(`append ${code} ${draft.kind} ${draft.from}`) ?? real.handle({ op: 'append', code, draft: { ...draft, id } }),
       putDoc: async (code, d) => guard(`put ${code} ${d.kind} ${d.doc.name}`) ?? real.handle({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
@@ -90,8 +93,9 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
       },
       // the network is test/net's (two homes); here a line is one fixed answer, and no link is up
       invite: async (code, from, name, via) => guard(`invite ${code} ${name} ${via} ${from}`) ?? ok({ line: `ssh://devbox/${code}?port=7420#${'0'.repeat(77)}` }),
-      dial: async (line, name) => guard(`dial ${name}`) ?? ok({ code: /\/([a-z]+-\d{4})/.exec(line)?.[1] ?? 'none', check: '1f2e-3d4c' }),
+      dial: async (line, name, session) => guard(`dial ${name} ${session.id}`) ?? ok({ code: /\/([a-z]+-\d{4})/.exec(line)?.[1] ?? 'none', check: '1f2e-3d4c' }),
       link: async code => guard(`link ${code}`) ?? ok(home.linked.get(code) ?? null),
+      pinged: () => Promise.resolve(home.down === null ? ok(home.modules) : err(home.down)),
       status: () => Promise.resolve(home.down === null ? ok({ sessions: home.sessions, cc: home.cc }) : err(home.down)),
     },
     rooms: fsRooms(dir),

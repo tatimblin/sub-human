@@ -20,7 +20,7 @@ async function room(): Promise<{ fake: FakeHome; alice: Ctx; bob: Ctx; code: str
   return { fake, alice, bob, code: await fake.code() };
 }
 
-test('who lists the members here, their machines, state, focus and where they work (R4, R14)', async () => {
+test('who lists the members here, their machines, state, focus and where they work (R4, R14); and when the host is away (R34)', async () => {
   const { fake, alice, code } = await room();
   await fake.daemon.putDoc(code, { kind: 'focus', doc: { name: 'bob', text: 'paging handler', repo: 'web', branch: 'paging', at: 1 } });
   await fake.daemon.putDoc(code, { kind: 'presence', doc: { name: 'alice', state: 'working', at: 1 } });
@@ -30,6 +30,10 @@ test('who lists the members here, their machines, state, focus and where they wo
     'alice (you) · laptop · working · api on main',
     'bob · laptop · waiting on a permission prompt · paging handler · web on paging',
   ].join('\n') });
+  for (const phase of ['host_away', 'offline'] as const) {
+    fake.linked.set(code, { phase, why: null });
+    assert.equal((await runCommand('who', alice)).text.split('\n')[0], `${code} · 2 here · host away`, phase);
+  }
 });
 
 test('a member is here on each machine whose presence isn\'t away, and nowhere once all are: still a member', async () => {
@@ -86,8 +90,8 @@ test('leave writes left and an away presence, and forgets the session; another s
 
 test('a leave the daemon refuses keeps the session in the room, to try again', async () => {
   const { fake, alice, code } = await room();
-  fake.down = 'sub-human\'s daemon did not answer; nothing was done';
-  assert.deepEqual(await runCommand('leave', alice), { kind: 'refused', text: `You're still in ${code}: sub-human's daemon did not answer; nothing was done` });
+  fake.down = 'sub-human did not answer; nothing was done';
+  assert.deepEqual(await runCommand('leave', alice), { kind: 'refused', text: `You're still in ${code}: sub-human did not answer; nothing was done` });
   assert.equal((await alice.sessions.get('session-1'))?.code, code);
 });
 
@@ -122,11 +126,11 @@ test('help is at most six lines (R4)', async () => {
   assert.deepEqual(fakeHome().calls, []);
 });
 
-test('news reaches the command only where the module is off: one line saying so (the module draws it)', async () => {
+test('news reaches the command only where hooks modules are off: one line saying so (the module draws it)', async () => {
   assert.equal((await runCommand('news', testCtx(fakeHome()))).text, 'This session is in no room. Type /sub-human to join one.');
   const { alice } = await room();
   assert.deepEqual(await runCommand('news', alice), {
-    kind: 'refused', text: "News wasn't shown: sub-human's module draws it, and it isn't running in this session. /sub-human who shows what each member is doing.",
+    kind: 'refused', text: "News wasn't shown: Claude Code's hooks modules are off in this session, and they draw it. /sub-human who shows what each member is doing.",
   });
 });
 
@@ -142,22 +146,17 @@ test('invite: one line for NAME by the pathway asked, else the default; only fro
   assert.match((await runCommand('invite carol', testCtx(fake, { session: 'session-9' }))).text, /in no room/);
 });
 
-test('join: the line is dialled as the git name; let in, the session takes its place; refused, it says so', async () => {
+test('join: the line is dialled for this session as the git name, answered at once with the check (R30); none where modules are off (C1)', async () => {
   const fake = fakeHome();
   const line = `ssh://devbox/otter-4821?port=7420#${'0'.repeat(77)}`;
-  fake.linked.set('otter-4821', { phase: 'stopped', why: 'refused' });
-  const r = await runCommand(`join ${line}`, testCtx(fake));
-  assert.deepEqual(r, { kind: 'refused', text: 'You did not join otter-4821: the host did not let this machine in. Ask them for a new invite.' });
-  assert.deepEqual(fake.calls.filter(c => c.startsWith('dial')), ['dial alice']);
-  // let in: here the room's code is one this home holds, as a mirror would after its first sync
+  fake.modules = false;
+  assert.deepEqual(await runCommand(`join ${line}`, testCtx(fake)), { kind: 'refused', text: "Nobody joined: sharing needs Claude Code's hooks modules, which are off here." });
+  fake.modules = true;
+  assert.deepEqual(await runCommand(`join ${line}`, testCtx(fake)), { kind: 'say', text: 'Tell the host: 1f2e-3d4c. Waiting to be let into otter-4821…' });
+  assert.deepEqual(fake.calls.filter(c => c.startsWith('dial')), ['dial alice session-1'], 'one dial, and nothing before modules were on');
   const host = testCtx(fake, { session: 'session-h' });
   await runCommand('', host);
-  const code = await fake.code();
-  fake.linked.set(code, { phase: 'online', why: null });
-  const bob = testCtx(fake, { session: 'session-b' });
-  const j = await runCommand(`join ssh://devbox/${code}?port=7420#${'0'.repeat(77)} bob`, bob);
-  assert.deepEqual(j, { kind: 'say', text: `You're in ${code} as bob, with alice.` });
-  assert.match((await runCommand(`join ${line}`, bob)).text, /so it joined no other/);
+  assert.match((await runCommand(`join ${line}`, host)).text, /so it joined no other/);
 });
 
 test('doctor: node, the socket path, the module, the version checked on, every room log, sshd and Tailscale (R29b)', async () => {
@@ -176,13 +175,13 @@ test('doctor: node, the socket path, the module, the version checked on, every r
   ].join('\n'));
   assert.deepEqual(ran, ['sshd', 'tailscale'], 'never the claude on PATH');
   await fake.forge(code, ls => ls.map((l, i) => (i === 0 ? l.replace('"alice"', '"mallory"') : l)));
-  fake.down = 'sub-human\'s daemon did not answer; nothing was done';
+  fake.down = 'sub-human did not answer; nothing was done';
   const long = `/${'d'.repeat(100)}`;
   const sick = testCtx(fake, { nodeVersion: '23.4.0', env: { SUB_HUMAN_INVITE: 'carrier-pigeon', SUB_HUMAN_HOME: long }, run: { 'sshd -G': 'AllowTcpForwarding no', 'tailscale status --json': '{"BackendState":"NeedsLogin"}' } });
   const lines = (await runCommand('doctor', sick)).text.split('\n');
   assert.match(must(lines[0], 'node'), /^fix   node 23\.4\.0 can't run sub-human/);
-  assert.equal(lines[1], 'fix   the home\'s path is too long for the daemon\'s socket (113 bytes, at most 103); set SUB_HUMAN_HOME to a shorter path');
-  assert.match(must(lines[2], 'module'), /^fix   the sub-human daemon did not answer/);
+  assert.equal(lines[1], 'fix   the home\'s path is too long for sub-human (113 bytes, at most 103); set SUB_HUMAN_HOME to a shorter path');
+  assert.match(must(lines[2], 'module'), /^fix   sub-human did not answer/);
   assert.match(must(lines[4], 'rooms'), new RegExp(`^fix   room logs that don't read: ${code} \\(the log of ${code} does not read \\(fork`));
   assert.equal(lines[5], 'fix   sshd has AllowTcpForwarding no, so an ssh invite can\'t connect; set it to yes in sshd_config, or invite by URL');
   assert.equal(lines[6], 'fix   Tailscale is NeedsLogin, not running: sign in to it to invite by URL, or use /sub-human invite NAME --ssh');

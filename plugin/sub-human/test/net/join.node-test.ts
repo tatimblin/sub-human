@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import * as v from '../../vendor/valibot.mjs';
+import { decodePointer, sessionFile } from '../../core/api.js';
 import { MirrorStore } from '../../store/mirror-store.js';
 import { openFsStore } from '../../store/fs-store.js';
 import { fileKey, roomDir } from '../../home.js';
@@ -25,13 +26,14 @@ async function hostLog(h: Homes): Promise<string[]> {
   return r.value.map(l => l.entry.kind);
 }
 
-test('join: the line, the same check string on both sides, Let in, the link key bound, the room synced (R30)', async t => {
+test('join: the line, the same check string on both sides, Let in, the link key bound, the room synced, the dialling session in it (R30)', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);
   await h.host.ok({ op: 'append', code: CODE, draft: post('alice', 'before bob') });
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
   assert.match(line, new RegExp(`^ssh://devbox/${CODE}\\?port=\\d+#[0-9a-z]{77}$`));
-  const { check, code } = await h.joiner.ok({ op: 'dial', line, name: 'bob' });
+  const leave = crypto.randomUUID();
+  const { check, code } = await h.joiner.ok({ op: 'dial', line, name: 'bob', session: { id: 'sb', cwd: '/work/b', leave } });
   assert.equal(code, CODE);
   assert.deepEqual(await h.joiner.ok({ op: 'link', code: CODE }), { phase: 'waiting', why: null });
   const ask = await nextAsk(h);
@@ -43,11 +45,14 @@ test('join: the line, the same check string on both sides, Let in, the link key 
     JSON.parse(await fs.readFile(`${h.host.home}/host.json`, 'utf8')));
   assert.deepEqual(host.links.map(l => [l.name, l.machine]), [['bob', 'mB']]);
   assert.deepEqual(host.invites.map(i => i.state), ['used']);
+  // online, the daemon takes the session that dialled into the room, as /sub-human ROOM would
+  const pointer = await until('the session\'s pointer', () => fs.readFile(sessionFile(h.joiner.home, 'sb'), 'utf8').then(decodePointer, () => null));
+  assert.deepEqual(pointer, { code: CODE, name: 'bob', title: `bob.${CODE}`, leave });
+  assert.deepEqual(await hostLog(h), ['joined', 'post', 'invite', 'admit', 'joined']);
   const mine = await (await copy(h)).catchup();
   assert.ok(mine.ok);
-  assert.deepEqual(mine.value.lines.map(l => l.entry.kind), ['joined', 'post', 'invite', 'admit']);
+  assert.deepEqual(mine.value.lines.slice(0, 4).map(l => l.entry.kind), ['joined', 'post', 'invite', 'admit']);
   assert.ok(h.awake.held, 'the host holds off sleep while a link is live');
-  assert.deepEqual(await hostLog(h), ['joined', 'post', 'invite', 'admit']);
 });
 
 test('the secret never reaches the log or the host\'s records (R30)', async t => {
@@ -115,7 +120,7 @@ test('a late joiner syncs from the snapshot and the lines after it, not the whol
   assert.deepEqual(up.value.lines.map(l => l.entry.seq), [101, ...Array.from({ length: 22 }, (_, i) => 102 + i)].slice(0, up.value.lines.length));
   assert.ok(up.value.lines.length < 30, 'only the lines after the snapshot');
   const below = await c.read(0);
-  assert.ok(!below.ok && /starts after seq/.test(below.error));
+  assert.ok(!below.ok && /starts after entry/.test(below.error));
 });
 
 test('a wrong host key fails at the handshake, before anything is sent', async t => {
@@ -234,10 +239,29 @@ test('a link\'s appends are rate-limited per minute (R40)', async t => {
   assert.ok((await h.host.call({ op: 'append', code: CODE, draft: post('alice', 'the host is not limited') })).ok);
 });
 
-test('let in, the joiner\'s session takes its place: a bare join of the room hosted elsewhere, its joined on the host', async t => {
+test('a join that fails after Let in is the link\'s one stopped answer; the bare join it names then takes the place (R30)', async t => {
   const h = await twoHomes(t);
-  await joinBob(h);
+  await hostRoom(h);
+  const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
+  await fs.writeFile(`${h.joiner.home}/sessions`, ''); // no pointer can be written
+  await h.joiner.ok({ op: 'dial', line, name: 'bob', session: { id: 'sb', cwd: '/w', leave: crypto.randomUUID() } });
+  await h.host.ok({ op: 'admit', session: 'sa', code: CODE, id: (await nextAsk(h)).id, answer: 'let_in' });
+  const failed = await until('the failed join', async () => {
+    const s = await h.joiner.ok({ op: 'link', code: CODE });
+    return s?.phase === 'stopped' ? s : null;
+  });
+  assert.match(failed.why ?? '', new RegExp(`^you were let in, but this session did not take its place \\(.+\\); type /sub-human ${CODE}$`));
+  assert.equal((await h.joiner.ok({ op: 'link', code: CODE }))?.phase, 'online', 'said once');
+  await fs.rm(`${h.joiner.home}/sessions`);
   const r = await h.joiner.ok({ op: 'join', id: 'sb', cwd: '/w', name: 'bob', leave: crypto.randomUUID(), code: CODE });
   assert.ok('code' in r && r.code === CODE && r.title === `bob.${CODE}`, JSON.stringify(r));
   assert.deepEqual((await hostLog(h)).at(-1), 'joined');
+});
+
+test('a copy the sweep deletes loses its link for good: closed, and its file gone (R3)', async t => {
+  const h = await twoHomes(t);
+  await joinBob(h);
+  await h.joinNet.links.forget(CODE);
+  assert.equal(await h.joiner.ok({ op: 'link', code: CODE }), null);
+  await assert.rejects(fs.access(`${h.joiner.home}/links/${CODE}.json`));
 });

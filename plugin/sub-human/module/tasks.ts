@@ -15,7 +15,7 @@ import { err, ok } from '../core/result.js';
 import { bridgeOp, parseTag, tag, taskLines } from '../core/tasks.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
-import { session } from './session.js';
+import { off, session } from './session.js';
 import { toolName } from './tools.js';
 
 const N = v.pipe(v.number(), v.integer(), v.minValue(1));
@@ -100,7 +100,7 @@ export function registerTasks(on: On): void {
     const room = session.room;
     if (!room) return { deny: 'This session is in no room; no task was changed. Your person can join one with /sub-human.' };
     const tools = e.op === 'claim' ? await $.tool.list().catch(() => []) : [];
-    const c = taskCall(e, room, session.state, tools.some(t => t.name === 'TaskCreate'));
+    const c = taskCall(e, room, session.state, tools.some(t => t.name === 'TaskCreate') && !off(session, 'tasks-bridge'));
     if (!c.ok) return { deny: c.error };
     if ('text' in c.value) return { result: c.value.text };
     const q = request(c.value.req, room.home);

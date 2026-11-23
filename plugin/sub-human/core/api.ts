@@ -26,12 +26,15 @@
 //   handoff  {id, cwd}                 → null         /clear or /resume: moves the pointer aside for the next session in cwd
 //   claim    {id, cwd}                 → {pointer}    the next session takes the oldest handoff under HANDOFF_MS old, else
 //                                                     null; the member of one gone stale is away
-//   ping     {session, code?, name?,   → null         `session` is the session id (it keeps that pointer fresh); with
+//   ping     {session, code?, name?,   → {notes}|null `session` is the session id (it keeps that pointer fresh); with
 //             cc?}                                    code and name, this session is NAME in CODE, for messages; `cc` is
-//                                                     the Claude Code version it runs, for doctor
+//                                                     the Claude Code version it runs, for doctor. A module pings once
+//                                                     even in no room, so the command knows it runs (C1); `notes` are
+//                                                     the daemon's debug lines (a room swept, R3), each told once
 //   message  {code, to, from, text}    → null         private Claude-to-Claude: into the recipient's inbox, never the log
 //   inbox    {session}                 → {messages}   takes this session's messages in all its rooms, once
-//   status   {}                        → {version, pid, sessions, cc}  cc: the Claude Code versions live sessions run
+//   status   {session?}                → {version, pid, sessions, cc, pinged?}  cc: the Claude Code versions live
+//                                                     sessions run; `pinged`: whether that session's module ever pinged
 //
 // Across machines (net/, U15):
 //   invite   {code, from, name, via}   → {line}       a line for NAME (via public, tailnet or ssh); starts the listener
@@ -40,8 +43,9 @@
 //   admit    {session, code, id, answer}  → null      a session's answer to an ask of its room: let_in or refuse,
 //                                                     or kick the member a leaked line let in
 //   kick     {code, from, name}        → null         NAME is out for good; their link is cut at once
-//   dial     {line, name}              → {code, check}  dials the line's host and proves the line; the host's answer
-//                                                     comes later (link)
+//   dial     {line, name, session?}    → {code, check}  dials the line's host and proves the line; the host's answer
+//                                                     comes later (link). Once let in and online, the daemon joins
+//                                                     `session` ({id, cwd, leave}) to the room as `join` would
 //   link     {code}                    → {phase, why} | null  how this machine's link to a room hosted elsewhere is
 //                                                     doing; waiting until the host lets it in
 // An append to a room hosted elsewhere while its host is away answers seq 0 for a person's post, queued for a while
@@ -56,7 +60,7 @@ import { err, ok } from './result.js';
 import { decodeDoc, decodeEntry } from './schema.js';
 
 /** Bumped when a request or an answer changes shape; status carries it. */
-export const API_VERSION = 4;
+export const API_VERSION = 5;
 /** A request body larger than this is refused unread. */
 export const MAX_BODY: number = 1024 * 1024;
 export const DAEMON_URL: string = 'http://daemon/';
@@ -68,6 +72,8 @@ export const SOCKET_MAX = 103;
 export const CODE: RegExp = /^[a-z]+-\d{4}$/;
 /** Where a session finds its room: a Pointer, written by the join op. `id` is a SESSION_ID. */
 export function sessionFile(home: string, id: string): string { return `${home}/sessions/${id}.json`; }
+/** A session whose module has pinged this home's daemon (C1); empty, kept a day. */
+export function pingedFile(home: string, id: string): string { return `${home}/pinged/${id}`; }
 /** Where a session ending for /clear or /resume leaves its pointer for the next one in its cwd (by the cwd's hash). */
 export function handoffFile(home: string, cwdHash: string): string { return `${home}/handoff/${cwdHash}.json`; }
 /** The room a cwd last joined, `{code}`, by the cwd's hash. */
@@ -85,6 +91,13 @@ export const LIVE_MS: number = 3 * PING_MS;
 export const SESSION_ID: RegExp = /^[A-Za-z0-9_-]{1,128}$/;
 /** `title` is the session's NAME.CODE, given once at the join; `leave` is the id its `left` entry will carry. */
 export interface Pointer { readonly code: string; readonly name: string; readonly title: string; readonly leave: string }
+/** The title for a new session as `name` in `code` (R5): `NAME.CODE`, else the lowest free `NAME-N.CODE`. */
+export function titleFor(name: string, code: string, held: readonly string[]): string {
+  for (let i = 1; ; i++) {
+    const t = i === 1 ? `${name}.${code}` : `${name}-${i}.${code}`;
+    if (!held.includes(t)) return t;
+  }
+}
 /** A pointer handed on, and when. */
 export interface Handoff extends Pointer { readonly at: number }
 /** A session pointer as the module reads it, or null when it is not one. */
@@ -112,7 +125,9 @@ export type AppendDraft = Without<Entry, 'seq' | 'at' | 'prev' | 'machine'>;
 /** The documents a member writes about itself; `members` is the host's. */
 export type MemberDocKind = 'presence' | 'activity' | 'focus';
 export interface Message { readonly code: string; readonly from: string; readonly text: string; readonly at: number }
-export interface Status { readonly version: number; readonly pid: number; readonly sessions: number; readonly cc: readonly string[] }
+export interface Status { readonly version: number; readonly pid: number; readonly sessions: number; readonly cc: readonly string[]; readonly pinged?: boolean }
+/** The session a dial takes into the room once it is let in. */
+export interface Joining { readonly id: string; readonly cwd: string; readonly leave: string }
 export interface Version { readonly version: number; readonly hash: string }
 
 export type PlanAct =
@@ -164,12 +179,12 @@ export type Request =
   | { readonly op: 'ping'; readonly session: string; readonly code?: string; readonly name?: string; readonly cc?: string }
   | { readonly op: 'message'; readonly code: string; readonly to: string; readonly from: string; readonly text: string }
   | { readonly op: 'inbox'; readonly session: string }
-  | { readonly op: 'status' }
+  | { readonly op: 'status'; readonly session?: string }
   | ({ readonly op: 'invite'; readonly name: string; readonly via: Via } & Writer)
   | { readonly op: 'asks'; readonly session: string }
   | { readonly op: 'admit'; readonly session: string; readonly code: string; readonly id: string; readonly answer: 'let_in' | 'refuse' | 'kick' }
   | ({ readonly op: 'kick'; readonly name: string } & Writer)
-  | { readonly op: 'dial'; readonly line: string; readonly name: string }
+  | { readonly op: 'dial'; readonly line: string; readonly name: string; readonly session?: Joining }
   | { readonly op: 'link'; readonly code: string };
 export type Op = Request['op'];
 /** The ops net/ answers (the host's side and the links); every other op is the rooms'. */
@@ -187,7 +202,7 @@ export interface Answers {
   retire: null;
   handoff: null;
   claim: { readonly pointer: Pointer | null };
-  ping: null;
+  ping: { readonly notes: readonly string[] } | null;
   message: null;
   inbox: { readonly messages: readonly Message[] };
   status: Status;
@@ -208,6 +223,7 @@ const version = v.pipe(count, v.minValue(1));
 const text = v.pipe(v.string(), v.maxLength(LIMITS.text));
 const blob = v.pipe(v.string(), v.maxLength(MAX_BODY / 2));
 const opt = v.exactOptional;
+const cwd = v.pipe(v.string(), v.minLength(1), v.maxLength(4096));
 function pointerFields() {
   return { code: name, name, title: v.pipe(v.string(), v.minLength(1), v.maxLength(LIMITS.short)), leave: v.pipe(v.string(), v.uuid()) };
 }
@@ -234,22 +250,22 @@ const request = v.variant('op', [
   v.object({ op: v.literal('put_doc'), code: name, kind: v.picklist(['presence', 'activity', 'focus']), name, doc: v.unknown() }),
   v.object({ op: v.literal('put_blob'), code: name, text: blob }),
   v.object({
-    op: v.literal('join'), id: sessionId, cwd: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)), name,
+    op: v.literal('join'), id: sessionId, cwd, name,
     leave: v.pipe(v.string(), v.uuid()), code: opt(v.pipe(v.string(), v.regex(CODE))), repo: opt(short), branch: opt(short),
   }),
   v.object({ op: v.literal('leave'), id: sessionId }),
   v.object({ op: v.literal('retire'), id: sessionId }),
-  v.object({ op: v.literal('handoff'), id: sessionId, cwd: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)) }),
-  v.object({ op: v.literal('claim'), id: sessionId, cwd: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)) }),
+  v.object({ op: v.literal('handoff'), id: sessionId, cwd }),
+  v.object({ op: v.literal('claim'), id: sessionId, cwd }),
   v.object({ op: v.literal('ping'), session, code: opt(name), name: opt(name), cc: opt(name) }),
   v.object({ op: v.literal('message'), code: name, to: name, from: name, text }),
   v.object({ op: v.literal('inbox'), session }),
-  v.object({ op: v.literal('status') }),
+  v.object({ op: v.literal('status'), session: opt(sessionId) }),
   v.object({ op: v.literal('invite'), ...writer, name, via: v.picklist(['public', 'tailnet', 'ssh']) }),
   v.object({ op: v.literal('asks'), session }),
   v.object({ op: v.literal('admit'), session, code: name, id: name, answer: v.picklist(['let_in', 'refuse', 'kick']) }),
   v.object({ op: v.literal('kick'), ...writer, name }),
-  v.object({ op: v.literal('dial'), line: v.pipe(v.string(), v.maxLength(LIMITS.short)), name }),
+  v.object({ op: v.literal('dial'), line: v.pipe(v.string(), v.maxLength(LIMITS.short)), name, session: opt(v.object({ id: sessionId, cwd, leave: v.pipe(v.string(), v.uuid()) })) }),
   v.object({ op: v.literal('link'), code: name }),
 ]);
 
@@ -269,10 +285,10 @@ const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
   retire: v.null(),
   handoff: v.null(),
   claim: v.object({ pointer: v.nullable(v.object(pointerFields())) }),
-  ping: v.null(),
+  ping: v.nullable(v.object({ notes: v.array(v.string()) })),
   message: v.null(),
   inbox: v.object({ messages: v.array(v.object({ code: name, from: name, text, at: count })) }),
-  status: v.object({ version: count, pid: count, sessions: count, cc: v.array(v.string()) }),
+  status: v.object({ version: count, pid: count, sessions: count, cc: v.array(v.string()), pinged: opt(v.boolean()) }),
   invite: v.object({ line: v.string() }),
   asks: v.object({ asks: v.array(v.object({
     id: name, code: name, kind: v.picklist(['admit', 'again', 'leaked']), name, expected: name, machine: v.string(), check: v.string(), member: v.boolean(),
@@ -323,10 +339,10 @@ export function decodeRequest(input: unknown): Result<Request> {
 /** The daemon's answer to an `op` request, from the response's status and body. */
 export function readAnswer<O extends Op>(op: O, status: number, body: string): Result<Answers[O]> {
   let json: unknown;
-  try { json = JSON.parse(body); } catch { return err(`the sub-human daemon answered ${status} with no result; nothing was done`); }
+  try { json = JSON.parse(body); } catch { return err(`sub-human answered ${status} with no result; nothing was done`); }
   const e = decode(envelope, json);
-  if (!e.ok) return err(`the sub-human daemon's answer was not understood; nothing was done`);
+  if (!e.ok) return err(`sub-human's answer was not understood; nothing was done`);
   if (!e.value.ok) return err(e.value.error);
   const a = decode(answers[op], e.value.value);
-  return a.ok ? a : err(`the sub-human daemon's answer to ${op} was not understood (${a.error})`);
+  return a.ok ? a : err(`sub-human's answer to ${op} was not understood (${a.error})`);
 }

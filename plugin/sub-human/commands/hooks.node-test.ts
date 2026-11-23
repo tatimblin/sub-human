@@ -60,8 +60,8 @@ test('a permission prompt marks the member waiting; no room, or another notifica
   assert.deepEqual(await HOOKS.notify({ ...notification, notification_type: 'idle_prompt' }, ctx), { exit: 0 });
   assert.deepEqual(await HOOKS.notify(notification, ctx), { exit: 0 });
   assert.deepEqual(await fake.presence(code, 'alice'), { name: 'alice', state: 'working', waiting: true, at: 5_000, machine: 'laptop' });
-  fake.down = 'sub-human\'s daemon did not answer; nothing was done';
-  assert.deepEqual(await HOOKS.notify(notification, ctx), { err: `sub-human: alice isn't shown as waiting in ${code}: sub-human's daemon did not answer; nothing was done`, exit: 1 });
+  fake.down = 'sub-human did not answer; nothing was done';
+  assert.deepEqual(await HOOKS.notify(notification, ctx), { err: `sub-human: alice isn't shown as waiting in ${code}: sub-human did not answer; nothing was done`, exit: 1 });
 });
 
 test('SessionEnd posts no left: the pointer goes and the member is away; a session in no room writes nothing (R3)', async () => {
@@ -71,7 +71,7 @@ test('SessionEnd posts no left: the pointer goes and the member is away; a sessi
   assert.deepEqual(fake.calls, []);
   await HOOKS.expand(expansion(''), ctx);
   const code = await fake.code();
-  fake.down = 'sub-human\'s daemon did not answer; nothing was done';
+  fake.down = 'sub-human did not answer; nothing was done';
   assert.equal((await HOOKS.end(end, ctx)).exit, 1);
   fake.down = null;
   assert.deepEqual(await HOOKS.end(end, ctx), { exit: 0 });

@@ -8,7 +8,8 @@ import type { Result } from '../../core/result.js';
 import type { Daemon } from '../../net/daemon.js';
 import { call } from '../../net/daemon/client.js';
 import type { Net, NetOptions } from '../../net/daemon/net.js';
-import { homeKey, makeNet } from '../../net/daemon/net.js';
+import { makeNet } from '../../net/daemon/net.js';
+import { machineKey } from '../../keys.js';
 import { connect } from '../../net/channel.js';
 import type { ToHost, ToLink } from '../../core/protocol.js';
 import { decodeToLink, encode } from '../../core/protocol.js';
@@ -28,6 +29,7 @@ export interface Homes {
   /** How many times the host held off sleep, and whether it holds now. */
   readonly awake: { count: number; held: boolean };
   readonly hostNet: Net;
+  readonly joinNet: Net;
   /** Closes the host's daemon and starts another on its home, as a restart does; the host's session pings again. */
   restartHost(): Promise<void>;
 }
@@ -55,14 +57,15 @@ export async function twoHomes(t: TestContext, o: {
   // the host's net of the moment: a restarted host is dialled as the same machine
   const now: Net = { links: hn.links, start: () => hn.start(), stop: () => hn.stop(), handle: r => hn.handle(r), accept: (s, src) => { made.net?.accept(s, src); } };
   const dial = o.dial?.(now) ?? pipe((s, src) => { now.accept(s, src); });
-  await started(t, { home: jh, machine: 'mB', net: rooms => makeNet(rooms, { home: jh, machine: 'mB', now: Date.now, dial, ...o.joinOpts }) });
+  let joinNet: Net | null = null;
+  await started(t, { home: jh, machine: 'mB', net: rooms => (joinNet = makeNet(rooms, { home: jh, machine: 'mB', now: Date.now, dial, ...o.joinOpts })) });
   const host = side(hh);
   const restartHost = async (): Promise<void> => {
     await hd.close();
     hd = await startHost();
     await host.ok({ op: 'ping', session: 'sa', code: CODE, name: 'alice' });
   };
-  return { host, joiner: side(jh), awake, hostNet: now, restartHost };
+  return { host, joiner: side(jh), awake, hostNet: now, joinNet: joinNet ?? assert.fail('no joiner net'), restartHost };
 }
 
 function side(h: string): Side {
@@ -120,7 +123,8 @@ export interface RawLink {
 }
 
 export async function rawLink(h: Homes, o: { code?: string; name?: string } = {}): Promise<RawLink> {
-  const [me, host] = [await homeKey(h.joiner.home), await homeKey(h.host.home)];
+  const key = async (home: string) => { const k = await machineKey(home); assert.ok(k.ok); return k.value; };
+  const [me, host] = [await key(h.joiner.home), await key(h.host.home)];
   const dial = pipe((s, src) => { h.hostNet.accept(s, src); });
   const payload = Buffer.from(JSON.stringify({ code: o.code ?? CODE, name: o.name ?? 'bob', machine: 'mB' }));
   const ch = await connect(await dial({ kind: 'ssh', host: 'devbox', user: null, sshPort: null, port: 1 }, CODE), { s: me, rs: host.pub, payload });

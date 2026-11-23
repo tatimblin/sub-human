@@ -12,11 +12,18 @@ export const NEWS_PANE = 'sub-human-news';
 const FOCUS_MAX = 24;
 const LINE_MAX = 300;
 
-/** `CODE · bob (working on paging), carol here · 2 updates`: who else is here, and what I haven't seen. */
-export function statusLine(room: RoomState, me: { readonly code: string; readonly name: string }, count: number): string {
+/**
+ * `CODE · bob (working on paging), carol here · 1 task · 2 updates`: who else is here (or that the host is away, R34,
+ * when nobody's presence can be known), my open room tasks (R24), and what I haven't seen.
+ */
+export function statusLine(room: RoomState, me: { readonly code: string; readonly name: string }, count: number, away = false): string {
   const here = room.members.filter(m => m.name !== me.name && !m.kicked && m.machines.length > 0).map(doing);
-  return [me.code, ...(here.length ? [`${here.join(', ')} here`] : []), ...(count ? [`${count} update${count === 1 ? '' : 's'}`] : [])].join(' · ');
+  const tasks = room.tasks.filter(t => t.owner === me.name && t.status !== 'done').length;
+  return [
+    me.code, ...(away ? ['host away'] : here.length ? [`${here.join(', ')} here`] : []), ...plural(tasks, 'task'), ...plural(count, 'update'),
+  ].join(' · ');
 }
+const plural = (n: number, word: string): string[] => (n ? [`${n} ${word}${n === 1 ? '' : 's'}`] : []);
 
 function doing(m: Member): string {
   if (m.presence?.waiting) return `${m.name} (waiting)`;
@@ -63,7 +70,7 @@ export function registerStatus(on: On): void {
     if (!opened.isPlaced) return { drop: `sub-human: news isn't shown here (${opened.reason}); /sub-human who says what each member is doing.` };
     session.unseen = [];
     session.count = 0;
-    session.shown = statusLine(session.state, room, 0);
+    session.shown = statusLine(session.state, room, 0, session.away);
     $.ui.status(session.shown);
     return { drop: 'sub-human: news is open; Esc closes it.' };
   });

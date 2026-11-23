@@ -1,11 +1,12 @@
-// The seven knobs (ARCHITECTURE §10), read here and nowhere else, and the timings, which are constants: tests pass
+// The six knobs (ARCHITECTURE §10), read here and nowhere else, and the timings, which are constants: tests pass
 // their own values in through parameters, never through the environment. A knob set to a value it can't take keeps
 // its default, and `problems` says which, for doctor.
-import { FEATURES } from './core/cc/contract.js';
-import type { Feature } from './core/cc/contract.js';
 import { homeDir } from './home.js';
 
 export type Pathway = 'public' | 'tailnet' | 'ssh';
+/** The features SUB_HUMAN_CC_OFF can turn off: the module's parts that rest on a Claude Code surface a release may break. */
+export const GATED = ['wake', 'messages', 'tasks-bridge'] as const;
+export type Gated = (typeof GATED)[number];
 export interface Config {
   readonly home: string;
   /** The default member name, else the git name. */
@@ -15,9 +16,8 @@ export interface Config {
   readonly sshAddr?: string;
   /** The listener's port; 0 lets the system pick one. */
   readonly port: number;
-  readonly debug: boolean;
   /** The gated features turned off. */
-  readonly off: readonly Feature[];
+  readonly off: readonly Gated[];
   readonly problems: readonly string[];
 }
 
@@ -31,7 +31,7 @@ export const TIMINGS = {
 
 const PATHWAYS: readonly Pathway[] = ['public', 'tailnet', 'ssh'];
 const isPathway = (s: string): s is Pathway => PATHWAYS.some(p => p === s);
-const isFeature = (s: string): s is Feature => FEATURES.some(f => f === s);
+const isGated = (s: string): s is Gated => GATED.some(f => f === s);
 
 export function readConfig(env: Env, userHome: string): Config {
   const problems: string[] = [];
@@ -46,7 +46,7 @@ export function readConfig(env: Env, userHome: string): Config {
   if (!portOk) problems.push(`SUB_HUMAN_PORT=${portText} is not a port; one is picked`);
 
   const off = (set('SUB_HUMAN_CC_OFF') ?? '').split(',').map(s => s.trim()).filter(s => s !== '');
-  for (const f of off) if (!isFeature(f)) problems.push(`SUB_HUMAN_CC_OFF names ${f}, which is not a feature`);
+  for (const f of off) if (!isGated(f)) problems.push(`SUB_HUMAN_CC_OFF names ${f}; only ${GATED.join(', ')} can be turned off`);
 
   const name = set('SUB_HUMAN_NAME');
   const sshAddr = set('SUB_HUMAN_SSH_ADDR');
@@ -56,8 +56,7 @@ export function readConfig(env: Env, userHome: string): Config {
     invite: isPathway(invite) ? invite : 'public',
     ...(sshAddr !== undefined && { sshAddr }),
     port: portOk ? port : 0,
-    debug: ['1', 'true', 'yes'].includes(set('SUB_HUMAN_DEBUG')?.toLowerCase() ?? ''),
-    off: off.filter(isFeature),
+    off: off.filter(isGated),
     problems,
   };
 }

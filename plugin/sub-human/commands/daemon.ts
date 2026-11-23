@@ -10,6 +10,9 @@ import type { Daemon } from './types.js';
 const START_MS = 8_000;
 /** How long one write may take: a join is several crash-safe writes, and a busy disk syncs slowly. */
 const CALL_MS = 10_000;
+/** A daemon this command just started hears the module's ping within a poll or two (module/follow.ts POLL_MS): up to 3 s. */
+const PINGED_TRIES = 12;
+const PINGED_STEP_MS = 250;
 
 export function daemonFor(home: string): Daemon {
   let up: Promise<Result<unknown>> | null = null;
@@ -24,7 +27,7 @@ export function daemonFor(home: string): Daemon {
     putDoc: (code, d) => send({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
     kick: (code, name, from) => send({ op: 'kick', code, from, name }),
     invite: (code, from, name, via) => send({ op: 'invite', code, from, name, via }),
-    dial: (line, name) => send({ op: 'dial', line, name }),
+    dial: (line, name, session) => send({ op: 'dial', line, name, session }),
     link: code => send({ op: 'link', code }),
     join: r => send({ op: 'join', ...r }),
     leave: id => send({ op: 'leave', id }),
@@ -33,6 +36,13 @@ export function daemonFor(home: string): Daemon {
     claim: async (id, cwd) => {
       const r = await send({ op: 'claim', id, cwd });
       return r.ok ? ok(r.value.pointer) : r;
+    },
+    pinged: async id => {
+      for (let i = 1; ; i++) {
+        const s = await send({ op: 'status', session: id });
+        if (!s.ok || s.value.pinged === true || i >= PINGED_TRIES) return s.ok ? ok(s.value.pinged === true) : s;
+        await new Promise(res => { setTimeout(res, PINGED_STEP_MS); });
+      }
     },
     status: async () => {
       const s = await (await client()).call(home, { op: 'status' }, 1000);

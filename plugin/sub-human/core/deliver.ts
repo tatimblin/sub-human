@@ -167,7 +167,7 @@ function wake(s: State, code: string, now: number, budget: number, key: string, 
   if (src.by === 'claude' && runs(src.text)) {
     const drawKey = `${key}:draw`;
     const prev = s.bursts[drawKey];
-    const line = clip(`${src.label} ${src.verb} your Claude with a command or link, held for you: ${src.text}`);
+    const line = clip(`${src.label} ${src.verb} your Claude with a command or URL, held for you: ${src.text}`);
     // never counted against the wake budget, but drawn only as its burst's first, while that budget lasts, and within
     // the hour's own cap on drawn lines
     const unread = (prev !== undefined && now - prev < BURST_MS) || s.wakes.length >= budget || s.draws.length >= DRAWS_PER_HOUR;

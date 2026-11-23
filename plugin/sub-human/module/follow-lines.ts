@@ -27,7 +27,7 @@ export async function linesAfter(text: string, head: Head): Promise<Result<{ lin
   for (const raw of done.split('\n').slice(0, -1)) {
     const json = parseJson(v.unknown(), raw);
     const c = v.safeParse(Chained, json);
-    if (!c.success || c.output.seq !== h.seq + 1 || c.output.prev !== h.hash) return err(`fork: the log's chain breaks at seq ${h.seq + 1}`);
+    if (!c.success || c.output.seq !== h.seq + 1 || c.output.prev !== h.hash) return err(`fork: the log's chain breaks at entry ${h.seq + 1}`);
     h = { seq: c.output.seq, hash: await lineHash(raw) };
     const entry = decodeEntry(json); // a kind from a newer writer chains but is left out
     if (entry.ok) lines.push({ entry: entry.value, hash: h.hash });

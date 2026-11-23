@@ -309,8 +309,11 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 2. The joiner types `/sub-human join LINE`. `net/link.ts` dials through the line's pathway and runs Noise XK against the host key named in the line.
    - The third message carries the secret's MAC, so the host refuses anyone else before doing any per-connection work.
    - The secret itself travels only inside the channel.
-3. Both sides see the same check string. The host's module shows **Let in / Refuse** through `ui.ask`, naming the joiner, their machine, any name mismatch, and the check string. A second dial of a pending or used line refuses both and alerts the host.
+3. Both sides see the same check string: the joiner's command answers with it at once ("Tell the host: CHECK. Waiting to be let in…"). The host's module shows **Let in / Refuse** through `ui.ask`, naming the joiner, their machine, any name mismatch, and the check string. A second dial of a pending or used line refuses both and alerts the host.
 4. On Let in, the host binds the joiner's link key. The mirror fetches the snapshot plus the entries after it.
+5. Once the link is online, the joiner's daemon takes the session that dialled into the room as `join` would (its pointer, `joined`, presence). That session's module finds the pointer at its next poll and draws "You're in CODE as NAME"; a link that stopped instead (refused, or no answer in six minutes) is one line too. One command, end to end.
+
+**Retention (R3).** At each start the daemon deletes a room hosted here once nobody has used it for 30 days (`store/retention.ts`: the tail's `at`, which every entry and member document renews) and no pointer or fresh handoff holds it. The next ping carries one debug line saying so, which the module writes to Claude Code's debug log.
 
 ## 8. Network
 
@@ -388,7 +391,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 
 ## 10. Configuration
 
-Seven knobs, read only by `config.ts` (a value a knob can't take keeps the default and is listed by doctor):
+Six knobs, read only by `config.ts` (a value a knob can't take keeps the default and is listed by doctor):
 
 | Knob | Values |
 |---|---|
@@ -397,8 +400,7 @@ Seven knobs, read only by `config.ts` (a value a knob can't take keeps the defau
 | `SUB_HUMAN_INVITE` | default pathway: `public`, `tailnet` or `ssh` |
 | `SUB_HUMAN_SSH_ADDR` | how others reach this host over ssh |
 | `SUB_HUMAN_PORT` | listener port |
-| `SUB_HUMAN_DEBUG` | verbose debug log |
-| `SUB_HUMAN_CC_OFF` | turn a gated feature off |
+| `SUB_HUMAN_CC_OFF` | turn `wake`, `messages` or `tasks-bridge` off (the module's gated parts) |
 
 Timings are constants in `config.ts`. Tests pass their own values in through parameters.
 

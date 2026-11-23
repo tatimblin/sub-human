@@ -3,12 +3,12 @@
 // A subagent's calls (`agentId`) are mine too (R16a). Presence: working from a main turn's start (which also clears a
 // permission wait), idle at its end; follow.ts pings the daemon.
 // Every write goes to the daemon over its Unix socket (§5); module/bridge.ts builds the call. The native task bridge's
-// rules are module/tasks.ts; this hook makes its calls.
+// rules are module/tasks.ts; this hook makes its calls, unless SUB_HUMAN_CC_OFF turns it off (said once).
 import type { On } from 'claude-code';
 import { capture } from '../core/activity.js';
 import { err } from '../core/result.js';
 import { answer, request } from './bridge.js';
-import { once, session } from './session.js';
+import { off, once, session } from './session.js';
 import { bridgeCall, fill, native, needsList, remember } from './tasks.js';
 
 export function registerCapture(on: On): void {
@@ -31,7 +31,9 @@ export function registerCapture(on: On): void {
       session.touched = [...session.touched.filter(t => t.path !== rel), { path: rel, at: now }];
     }
     const bridged = bridgeCall(r, tasks, room, session.state);
-    if (bridged === 'already') $.ui.log(`sub-human: room ${room.code} already shows that task change`, { to: 'debug' });
+    if (bridged && off(session, 'tasks-bridge')) {
+      if (once(session, 'off tasks-bridge')) $.ui.log(`sub-human isn't updating ${room.code}'s tasks from your task list here (SUB_HUMAN_CC_OFF); /sub-human tasks shows them.`);
+    } else if (bridged === 'already') $.ui.log(`sub-human: room ${room.code} already shows that task change`, { to: 'debug' });
     else if (bridged) {
       const q = request(bridged, room.home);
       const res = await $.http.fetch(q.url, q).then(x => answer('task', x), (x: unknown) => err(String(x).slice(0, 200)));

@@ -2,6 +2,8 @@
 // leaves the hook that holds it, so the parts share this instead). follow.ts fills it; nothing here does I/O.
 import type { Input, Item, Me } from '../core/deliver.js';
 import type { ActivityDoc, RoomState } from '../core/entries.js';
+import type { Gated } from '../config.js';
+import type { LinkStatus, Pointer } from '../core/api.js';
 
 /** The /sub-human command's name in a prompt.submit, as Claude Code gives it. */
 export const COMMAND: RegExp = /^(?:sub-human:)?sub-human$/;
@@ -40,10 +42,16 @@ export interface Session {
   titled: boolean;
   /** The problems already said this session: each is one line (C3). */
   said: readonly string[];
+  /** The features SUB_HUMAN_CC_OFF turns off. */
+  off: readonly Gated[];
+  /** The room's host can't be reached (R34): its link is host_away or offline. */
+  away: boolean;
+  /** The room a /sub-human join is waiting to be let into (R30), until its pointer appears or the link stops. */
+  joining: string | null;
 }
 export const fresh = (): Session => ({
   room: null, state: null, queue: [], touched: [], mine: null, count: 0, unseen: [], since: [], shown: '', wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
-  titled: false, said: [],
+  titled: false, said: [], off: [], away: false, joining: null,
 });
 export const session: Session = fresh();
 
@@ -54,7 +62,22 @@ export function once(s: Session, key: string): boolean {
   return true;
 }
 
+/** Whether SUB_HUMAN_CC_OFF turns `f` off. */
+export function off(s: Session, f: Gated): boolean { return s.off.includes(f); }
+
+/**
+ * The one line a /sub-human join under way ends with (R30): in, once the daemon wrote this session's pointer; or why
+ * not, once the room's link stopped. Null while it waits, and for a session that joined some other way.
+ */
+export function joined(s: Session, p: Pointer | null, l: LinkStatus | null): string | null {
+  const code = s.joining;
+  if (code === null || (!p && l?.phase !== 'stopped')) return null;
+  s.joining = null;
+  if (p) return p.code === code ? `sub-human: You're in ${p.code} as ${p.name}.` : null;
+  return `sub-human: you did not join ${code}: ${l?.why ?? 'the host did not let you in'}.`;
+}
+
 /** What the session knew of a room it is no longer in. */
 export function forget(s: Session): void {
-  Object.assign(s, { state: null, queue: [], mine: null, count: 0, unseen: [], since: [], shown: '', wakes: [] });
+  Object.assign(s, { state: null, queue: [], mine: null, count: 0, unseen: [], since: [], shown: '', wakes: [], away: false });
 }

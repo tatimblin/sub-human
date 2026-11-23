@@ -55,7 +55,7 @@ test('verifyLines refuses a line whose prev chains but whose seq is wrong, here 
   const [one = '', two = ''] = await chain([body('a'), body('b')]);
   const skipped = JSON.stringify({ ...body('c'), seq: 7, prev: await lineHash(two) });
   const r = await verifyLines([one, two, skipped], 0);
-  assert.ok(!r.ok && /seq 3/.test(r.error));
+  assert.ok(!r.ok && /entry 3/.test(r.error));
   const misplaced = JSON.stringify({ ...body('b'), seq: 5, prev: await lineHash(one) });
   const at = await verifyLines([one, misplaced], 2);
   assert.ok(!at.ok && /no line 2/.test(at.error));

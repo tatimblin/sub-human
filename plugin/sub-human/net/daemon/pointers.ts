@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import type { Handoff, Pointer } from '../../core/api.js';
-import { CODE, HANDOFF_MS, LIVE_MS, decodeHandoffs, decodePointer, handoffFile, lastFile, sessionFile } from '../../core/api.js';
+import { CODE, HANDOFF_MS, LIVE_MS, decodeHandoffs, decodePointer, handoffFile, lastFile, sessionFile, titleFor } from '../../core/api.js';
 import type { Result } from '../../core/result.js';
 import { ok } from '../../core/result.js';
 import { writeAtomic } from '../../store/atomic.js';
@@ -18,14 +18,8 @@ import { writeAtomic } from '../../store/atomic.js';
 const cwdKey = (cwd: string): string => createHash('sha256').update(cwd).digest('hex');
 /** A pointer nobody has pinged for this long is swept: its session ended with no SessionEnd. */
 const POINTER_STALE_MS = 24 * 3600_000;
-
-/** The title for a new session as `name` in `code` (R5): `NAME.CODE`, else the lowest free `NAME-N.CODE`. */
-export function titleFor(name: string, code: string, held: readonly string[]): string {
-  for (let i = 1; ; i++) {
-    const t = i === 1 ? `${name}.${code}` : `${name}-${i}.${code}`;
-    if (!held.includes(t)) return t;
-  }
-}
+/** A pointer for the same name in the same room as `p`. */
+const sameName = (p: Pointer) => (q: Pointer): boolean => q.code === p.code && q.name === p.name;
 
 export interface PointersOptions {
   readonly home: string;
@@ -63,7 +57,7 @@ export class Pointers {
   async leave(id: string): Promise<Result<null>> {
     const p = await this.read(id);
     if (!p) return ok(null); // already left
-    if (!(await this.held(p, id, false))) {
+    if (!(await this.held(sameName(p), id, false))) {
       const r = await this.o.left(p);
       if (!r.ok) return r;
       await this.o.away(p);
@@ -76,7 +70,7 @@ export class Pointers {
     const p = await this.read(id);
     if (!p) return ok(null);
     await this.end(id);
-    if (!(await this.held(p, id, true))) await this.o.away(p);
+    if (!(await this.held(sameName(p), id, true))) await this.o.away(p);
     return ok(null);
   }
 
@@ -104,6 +98,9 @@ export class Pointers {
     });
   }
 
+  /** Whether a pointer or a fresh handoff here holds room `code` (R3: it is not swept). */
+  holds(code: string): Promise<boolean> { return this.held(q => q.code === code, '', false); }
+
   /** The room `cwd` last joined, or null. */
   async last(cwd: string): Promise<string | null> {
     try {
@@ -121,9 +118,8 @@ export class Pointers {
     return at === undefined || this.o.now() - at <= LIVE_MS;
   }
 
-  /** Whether another pointer (a live one, when `live`) or a fresh handoff holds `p`'s name in its room. */
-  private async held(p: Pointer, id: string, live: boolean): Promise<boolean> {
-    const same = (q: Pointer): boolean => q.code === p.code && q.name === p.name;
+  /** Whether another pointer than `id`'s (a live one, when `live`) or a fresh handoff is `same`. */
+  private async held(same: (q: Pointer) => boolean, id: string, live: boolean): Promise<boolean> {
     if ((await this.all()).some(([o, q]) => o !== id && same(q) && (!live || this.live(o)))) return true;
     for (const n of await fs.readdir(`${this.o.home}/handoff`).catch(() => [])) {
       if ((await this.list(n.slice(0, -5))).some(h => same(h) && this.o.now() - h.at <= HANDOFF_MS)) return true;
@@ -149,7 +145,7 @@ export class Pointers {
     const fresh = all.filter(h => this.o.now() - h.at <= HANDOFF_MS);
     if (fresh.length === all.length) return fresh;
     await this.save(key, fresh);
-    for (const h of all) if (!fresh.includes(h) && !(await this.held(h, '', true))) await this.o.away(h);
+    for (const h of all) if (!fresh.includes(h) && !(await this.held(sameName(h), '', true))) await this.o.away(h);
     return fresh;
   }
 

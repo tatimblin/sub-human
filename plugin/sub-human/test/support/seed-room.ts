@@ -8,7 +8,7 @@ import type { DocKind, DocKinds, Draft } from '../../core/entries.js';
 import { blobFile, docFile, fileKey, logFile, roomDir, tailFile } from '../../home.js';
 import { MemoryStore } from '../../store/memory-store.js';
 import { tailText } from '../../store/store.js';
-import type { Answers, Message, PlanAct, Request, TaskAct } from '../../core/api.js';
+import type { Answers, LinkStatus, Message, PlanAct, Request, TaskAct } from '../../core/api.js';
 import { decodeRequest, sessionFile, socketFile } from '../../core/api.js';
 import { toolFixture } from './fixtures.js';
 import { kitReader } from './kit-fixtures.js';
@@ -25,6 +25,8 @@ export interface SeedOptions {
   readonly code?: string;
   /** The clock entries and documents are stamped with: the test's mock clock. */
   readonly now?: () => number;
+  /** More environment for the session (SUB_HUMAN_CC_OFF). */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 /** A colleague, scripted: what their session's module and Claude would write. */
@@ -68,8 +70,12 @@ export interface Room {
   readonly surfaces: RenderSurface[];
   /** Moves my pointer to session `id`, which `$.session.id` then answers (a /clear's handoff), or removes it (a leave). */
   pointer(id: string | null): void;
+  /** Makes `$.session.id` answer `id` from now, with no pointer moved (a /clear of a session in no room). */
+  resume(id: string): void;
   /** The tools the module registered, by name. */
   readonly registered: string[];
+  /** What the daemon's `link` answers for the room: null for a room hosted here. */
+  link: LinkStatus | null;
   /**
    * What the test breaks: the daemon refusing every write, the socket refused (the fetch rejects), the log's file
    * refusing reads, tool registration refused.
@@ -147,7 +153,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   const read = (path: string): string | undefined =>
     path === logFile(dir) ? store.room.lines.map(l => `${l}\n`).join('') : files.get(path)?.text;
 
-  mock.env(on, { HOME: '/home/me', SUB_HUMAN_HOME: HOME });
+  mock.env(on, { HOME: '/home/me', SUB_HUMAN_HOME: HOME, ...o.env });
   let current = SESSION;
   on('session.id', () => ({ value: current }));
   on('session.start', (_, e) => ({ cwd: e.cwd }));
@@ -205,6 +211,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     if (req.op === 'message') return reply(200, { ok: true, value: null }); // carried to a colleague: they're scripted
     if (req.op === 'inbox') return reply(200, { ok: true, value: { messages: inbox.splice(0) } });
     if (req.op === 'asks') return reply(200, { ok: true, value: { asks: [] } }); // nobody knocks
+    if (req.op === 'link') return reply(200, { ok: true, value: result.link });
     if (req.op === 'append' && req.code === code) {
       const line = await store.append({ ...req.draft, at: now(), machine: 'my-laptop' });
       if (!line.ok) return reply(400, { ok: false, error: line.error });
@@ -290,7 +297,8 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     await until(clock, want);
   };
   const settled = (clock: MockClock): Promise<void> => until(clock, 1);
-  return { code, home: HOME, store, as, status, logs, spawned, reads, requests, submitted, surfaces, registered, pointer, broken, poll, settled, hold };
+  const result: Room = { code, home: HOME, store, as, status, logs, spawned, reads, requests, submitted, surfaces, registered, link: null, pointer, resume: id => { current = id; }, broken, poll, settled, hold };
+  return result;
 }
 
 /** A main-loop turn's start and end, as the engine fires them around a model turn; `turns` stubs both. */

@@ -6,6 +6,9 @@ import { nameFrom } from './membership.js';
 import type { Ctx, Verb } from './types.js';
 import { refused, say } from './types.js';
 
+/** Where the hooks module isn't running, nothing would be shared (C1): the command joins nobody and says so. */
+export const MODULES_OFF = "Nobody joined: sharing needs Claude Code's hooks modules, which are off here.";
+
 export const bare: Verb = async (args, ctx) => {
   const code = args.find(a => CODE.test(a));
   const named = args.filter(a => a !== code);
@@ -23,6 +26,8 @@ export const bare: Verb = async (args, ctx) => {
       ? 'Nobody joined: there is no git name to join as. Type /sub-human NAME.'
       : `Nobody joined: ${asked} can't be a name (one lowercase word, not a verb, not ending in -digits). Type /sub-human NAME.`);
   }
+  const on = await ctx.daemon.pinged(ctx.session);
+  if (!on.ok || !on.value) return refused(on.ok ? MODULES_OFF : `Nobody joined: ${on.error}`);
   const [repo, branch] = await Promise.all([
     ctx.run('git', ['rev-parse', '--show-toplevel'], ctx.cwd),
     ctx.run('git', ['branch', '--show-current'], ctx.cwd),

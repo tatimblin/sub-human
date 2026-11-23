@@ -8,8 +8,11 @@ export const who: Verb = async (_args, ctx) => {
   if (!mine) return say('This session is in no room. Type /sub-human to join one.');
   const s = await ctx.rooms.state(mine.code);
   if (!s.ok) return refused(`Nobody could be listed: ${s.error}`);
+  // R34: a room hosted elsewhere whose host can't be reached shows who was here when it went
+  const link = await ctx.daemon.link(mine.code);
+  const away = link.ok && (link.value?.phase === 'host_away' || link.value?.phase === 'offline') ? ' · host away' : '';
   const here = s.value.members.filter(m => m.machines.length > 0 && !m.kicked);
-  return say([`${mine.code} · ${here.length} here`, ...here.map(m => line(m, m.name === mine.name))].join('\n'));
+  return say([`${mine.code} · ${here.length} here${away}`, ...here.map(m => line(m, m.name === mine.name))].join('\n'));
 };
 
 function line(m: Member, me: boolean): string {

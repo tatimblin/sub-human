@@ -2,7 +2,9 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { tokens } from '../core/deliver.js'
 import { docFile, fileKey, roomDir } from '../home.js'
-import { EDIT, EDITED, END, HOME, START, seedRoom } from '../test/support/seed-room.js'
+import { EDIT, EDITED, END, HOME, SESSION, START, seedRoom } from '../test/support/seed-room.js'
+import { PING_MS } from '../core/api.js'
+import { POLL_MS } from './follow.js'
 
 const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer' } }) as const
 /** The room's updates in a prompt's context: the blocks past the mechanics the first prompt also carries. */
@@ -181,7 +183,55 @@ test('a daemon that is down while I am idle is one line a session, not a line a 
   await room.settled(clock)
   for (let i = 0; i < 40; i++) await room.poll(clock) // two more pings
   expect(room.requests.filter(r => r.op === 'ping')).toHaveLength(3)
-  expect(room.logs).toEqual([`sub-human's daemon didn't answer, so ${room.code} may show you away: the daemon is broken for this test. /sub-human doctor says why.`])
+  expect(room.logs).toEqual([`sub-human didn't answer, so ${room.code} may show you away: the daemon is broken for this test. /sub-human doctor says why.`])
+  await $.session.end(END)
+})
+
+test('a session in no room pings each poll until one gets through, then each PING_MS, and at once under a new id after /clear (C1)', { timeoutMs: 15_000 }, async ($, on) => {
+  const clock = mock.clock(on)
+  const room = await seedRoom(on, { me: 'alice', others: [], now: clock.now })
+  room.pointer(null)
+  room.broken.socket = true
+  await $.session.start(START)
+  await room.settled(clock)
+  await room.poll(clock)
+  room.broken.socket = false
+  for (let i = 0; i < 3; i++) await room.poll(clock)
+  const pings = () => room.requests.flatMap(r => (r.op === 'ping' && !('code' in r) ? [r.session] : []))
+  expect(pings()).toEqual([SESSION, SESSION, SESSION]) // two refused, one through
+  for (let i = 0; i < PING_MS / POLL_MS; i++) await room.poll(clock)
+  expect(pings()).toHaveLength(4) // a session open for days stays known
+  await $.session.end({ ...END, reason: 'clear' })
+  room.resume('session-2')
+  await room.poll(clock)
+  expect(pings().at(-1)).toBe('session-2')
+  expect(room.logs).toEqual([])
+  await $.session.end(END)
+})
+
+test('after /sub-human join, the pointer the daemon writes once let in is one line; a link that stopped is another (R30)', async ($, on) => {
+  const clock = mock.clock(on)
+  const room = await seedRoom(on, { me: 'bob', others: ['alice'], now: clock.now })
+  room.pointer(null)
+  await $.session.start(START)
+  await room.settled(clock)
+  const join = (code: string) => $.prompt.submit({ ...typed('/sub-human join'), command: { name: 'sub-human', args: `join ssh://devbox/${code}?port=7420#0000 bob` } })
+  await join(room.code)
+  room.link = { phase: 'waiting', why: null }
+  await room.poll(clock)
+  room.link = { phase: 'online', why: null }
+  room.pointer(SESSION) // the daemon's join, once the room synced
+  await room.poll(clock)
+  await room.poll(clock)
+  expect(room.logs).toEqual([`sub-human: You're in ${room.code} as bob.`])
+  room.pointer(null)
+  await room.poll(clock)
+  await join('vole-1234')
+  room.link = { phase: 'stopped', why: 'the host did not let this machine in; ask them for a new invite' }
+  await room.poll(clock)
+  await room.poll(clock)
+  expect(room.logs.slice(1)).toEqual(['sub-human: you did not join vole-1234: the host did not let this machine in; ask them for a new invite.'])
+  expect(room.requests.filter(r => r.op === 'link').map(r => 'code' in r && r.code)).toContain('vole-1234')
   await $.session.end(END)
 })
 

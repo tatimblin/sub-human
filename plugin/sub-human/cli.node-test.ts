@@ -80,9 +80,13 @@ test('node.sh expand help: one block, nothing on stderr', () => {
   assert.match(String(Reflect.get(out, 'reason')), /^sub-human: \/sub-human \[NAME\]/);
 });
 
-test('node.sh: a join, its title at the next SessionStart, and SessionEnd removing its pointer, through the real daemon', () => {
+test('node.sh, through the real daemon: no join before the module pings (C1); then a join, its title at the next SessionStart, and SessionEnd removing its pointer', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-')); // short: a socket path holds at most 103 bytes
   homes.push(home);
+  const off = run('expand', expansion(''), home);
+  assert.equal(Reflect.get(JSON.parse(off.out), 'reason'), "sub-human: Nobody joined: sharing needs Claude Code's hooks modules, which are off here.");
+  assert.ok(!fs.existsSync(path.join(home, 'rooms')), 'no room, so no presence');
+  assert.ok((await call(home, { op: 'ping', session: SID })).ok); // the module's first ping, in no room
   const joined = run('expand', expansion(''), home);
   assert.equal(joined.err, '');
   const reason = String(Reflect.get(JSON.parse(joined.out), 'reason'));

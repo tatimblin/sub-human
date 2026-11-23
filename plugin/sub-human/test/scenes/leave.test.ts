@@ -30,9 +30,10 @@ test('after I leave, the room reaches neither my Claude nor my status line, and 
   expect(room.status.at(-1)).toBeUndefined()
   expect(room.requests.filter(q => q.op === 'put_doc')).toHaveLength(writes)
   expect(room.logs).toEqual([])
-  const pings = room.requests.filter(q => q.op === 'ping').length
+  const pings = room.requests.length
   for (let i = 0; i < 20; i++) await room.poll(clock)
-  expect(room.requests.filter(q => q.op === 'ping')).toHaveLength(pings) // no room: nothing keeps it live
+  // no room: the pings name none, so nothing keeps alice live in it (the daemon still hears the module runs, C1)
+  expect(room.requests.slice(pings).filter(q => q.op === 'ping' && 'code' in q)).toEqual([])
   expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
 })

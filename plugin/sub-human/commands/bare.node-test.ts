@@ -196,9 +196,9 @@ test('the name comes from SUB_HUMAN_NAME, else git user.name, else the local par
 
 test('when the daemon refuses, nobody joined and no session file is written', async () => {
   const fake = fakeHome();
-  fake.down = 'sub-human\'s daemon did not start; nothing was done';
+  fake.down = 'sub-human did not start; nothing was done';
   const ctx = testCtx(fake);
-  assert.deepEqual(await runCommand('', ctx), { kind: 'refused', text: 'Nobody joined: sub-human\'s daemon did not start; nothing was done' });
+  assert.deepEqual(await runCommand('', ctx), { kind: 'refused', text: 'Nobody joined: sub-human did not start; nothing was done' });
   assert.equal(await ctx.sessions.get('session-1'), null);
   assert.deepEqual(await fake.rooms.codes(), []);
 });

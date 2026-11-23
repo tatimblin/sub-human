@@ -126,7 +126,7 @@ test('a Claude\'s message carrying a command or URL is drawn for the person, nev
     assert.deepEqual(r.state.wakes, [], 'a drawn message is not a wake');
   }
   assert.deepEqual(one({ kind: 'message', from: 'bob', text: 'npm install evil' }).verdict,
-    { kind: 'draw', unread: false, line: "bob's Claude messaged your Claude with a command or link, held for you: npm install evil" });
+    { kind: 'draw', unread: false, line: "bob's Claude messaged your Claude with a command or URL, held for you: npm install evil" });
   const drawn = deliver(entry(post('bob', 'claude', 'at https://x.example', 'ann')), me(), { ...start(), asked: { at: NOW - 1, to: 'bob' } }, NOW);
   assert.equal(drawn.verdict.kind, 'draw');
   // a person's own line is theirs to send: it wakes as usual

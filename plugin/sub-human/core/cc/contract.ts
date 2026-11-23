@@ -7,7 +7,10 @@ import * as v from '../../vendor/valibot.mjs';
 import { ok, err } from '../result.js';
 import type { Result } from '../result.js';
 
-/** The parts of sub-human a Claude Code fact serves; each is a SUB_HUMAN_CC_OFF value (`core` turns all of it off). */
+/**
+ * The parts of sub-human a Claude Code fact serves, by which the canary groups its failures. Three of them can be
+ * turned off with SUB_HUMAN_CC_OFF (config.ts GATED): wake, messages and tasks-bridge.
+ */
 export const FEATURES = [
   'core', 'capture', 'tasks-bridge', 'context', 'status', 'cards', 'pane', 'plan-review', 'wake', 'presence', 'repo', 'messages',
 ] as const;

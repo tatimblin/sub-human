@@ -78,8 +78,8 @@ export async function headOf(last: string | undefined): Promise<Result<Head>> {
  * A mirror's copy starts after `base` (raws[0] is seq base + 1), the first line's prev taken as the host's.
  */
 export async function verifyLines(raws: readonly string[], afterSeq: number, expect?: string, base = 0): Promise<Result<readonly LogLine[]>> {
-  if (afterSeq < base) return err(`the copy here starts after seq ${base}; nothing older is kept`);
-  if (afterSeq > base + raws.length) return expect === undefined ? ok([]) : err(`fork: the log ends before seq ${afterSeq}`);
+  if (afterSeq < base) return err(`the copy here starts after entry ${base}; nothing older is kept`);
+  if (afterSeq > base + raws.length) return expect === undefined ? ok([]) : err(`fork: the log ends before entry ${afterSeq}`);
   const anchor = afterSeq > base ? raws[afterSeq - base - 1] : undefined;
   let prev = anchor !== undefined ? await lineHash(anchor) : afterSeq > 0 ? expect ?? chainOf(raws[0] ?? '')?.prev ?? '' : '';
   if (anchor !== undefined && chainOf(anchor)?.seq !== afterSeq) return err(`fork: no line ${afterSeq} where it belongs`);
@@ -90,7 +90,7 @@ export async function verifyLines(raws: readonly string[], afterSeq: number, exp
   for (const [i, line] of rest.entries()) {
     const seq = afterSeq + i + 1;
     const c = chainOf(line);
-    if (c?.seq !== seq || c.prev !== prev) return err(`fork: the log's chain breaks at seq ${seq}`);
+    if (c?.seq !== seq || c.prev !== prev) return err(`fork: the log's chain breaks at entry ${seq}`);
     const hash = hashes[i] ?? '';
     const entry = decodeEntry(JSON.parse(line));
     if (entry.ok) out.push({ entry: entry.value, hash });

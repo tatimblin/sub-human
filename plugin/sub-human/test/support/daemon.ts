@@ -33,7 +33,7 @@ export async function started(t: TestContext, o: DaemonOptions): Promise<Daemon>
 /** A net with only these links: no listener, and every net op refused. */
 export function linksOnly(l: Pick<Links, 'hosts' | 'forward'>): () => Net {
   return () => ({
-    links: { ...l, relay: () => false, state: () => Promise.resolve(null) },
+    links: { ...l, relay: () => false, state: () => Promise.resolve(null), forget: () => Promise.resolve() },
     start: () => Promise.resolve(),
     stop: () => Promise.resolve(),
     handle: () => Promise.resolve(err('no net in this test')),

@@ -4,17 +4,22 @@
 // docs/internals/v2-risks.md) and carried by the daemon, stamped with my name: into the recipient's inbox on this
 // machine, over the room's link to another. It is never written to the log. The recipient's follow.ts takes it and
 // wake.ts wakes their Claude. A throwing session.send hook is skipped and the send goes native, so this one never
-// throws: a send it can't carry is answered undelivered, with the reason the Claude reads.
+// throws: a send it can't carry is answered undelivered, with the reason the Claude reads. SUB_HUMAN_CC_OFF=messages
+// leaves every send to Claude Code, said once.
 import type { On, SessionSendResult } from 'claude-code';
 import type { RoomState } from '../core/entries.js';
 import { answer, request } from './bridge.js';
-import { session } from './session.js';
+import { off, once, session } from './session.js';
 
 export function registerMessages(on: On): void {
   on('session.send', async ($, e, next) => {
     const room = session.room;
     const to = room && addressed(e.to, room.code);
     if (!room || to === null) return next(e);
+    if (off(session, 'messages')) {
+      if (once(session, 'off messages')) $.ui.log('sub-human isn\'t carrying Claude\'s messages to colleagues here (SUB_HUMAN_CC_OFF); Claude Code sends them itself.');
+      return next(e);
+    }
     const refused = (why: string): SessionSendResult => ({ isDelivered: false, reason: `sub-human didn't send it to ${to}.${room.code}: ${why}` });
     try {
       const name = recipient(to, session.state);
@@ -23,7 +28,7 @@ export function registerMessages(on: On): void {
       const r = answer('message', await $.http.fetch(q.url, q));
       return r.ok ? { isDelivered: true } : refused(r.error);
     } catch (x) {
-      return refused(`the daemon didn't answer (${String(x).slice(0, 200)}); /sub-human doctor says why`);
+      return refused(`sub-human didn't answer (${String(x).slice(0, 200)}); /sub-human doctor says why`);
     }
   });
 }

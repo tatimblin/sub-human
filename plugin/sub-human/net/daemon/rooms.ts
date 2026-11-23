@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import type { Answers, Message, Op, PlanAct, RoomRequest, TaskAct } from '../../core/api.js';
-import { API_VERSION, CODE, SESSION_ID, sessionFile } from '../../core/api.js';
+import { API_VERSION, CODE, SESSION_ID, pingedFile, sessionFile } from '../../core/api.js';
 import { sha256 } from '../../core/hash.js';
 import { Pointers } from './pointers.js';
 import { asRoom, fold } from '../../core/fold.js';
@@ -21,6 +21,9 @@ import type { FsStore } from '../../store/fs-store.js';
 import { openFsStore } from '../../store/fs-store.js';
 import type { Draft as StoreDraft } from '../../store/store.js';
 import { nextSnapshot } from '../../store/store.js';
+import { RETAIN_MS, dropOld, unused } from '../../store/retention.js';
+import { writeAtomic } from '../../store/atomic.js';
+import { fileKey, roomDir } from '../../home.js';
 
 /** Rooms hosted on another machine: their writes and messages go over that room's link (net/link.ts). */
 export interface Links {
@@ -30,6 +33,8 @@ export interface Links {
   relay(code: string, to: string, from: string, text: string): boolean;
   /** Such a room's state as this machine's copy holds it, or null when there is none. */
   state(code: string): Promise<RoomState | null>;
+  /** R3: closes the room's link for good and deletes its file (the copy is the caller's to delete). */
+  forget(code: string): Promise<void>;
 }
 /** No links: every room is hosted here. */
 export const NO_LINKS: Links = {
@@ -37,6 +42,7 @@ export const NO_LINKS: Links = {
   forward: () => Promise.resolve(err('the room\'s host is away; nothing was sent')),
   relay: () => false,
   state: () => Promise.resolve(null),
+  forget: () => Promise.resolve(),
 };
 /** A link following a room hosted here: each line placed and each document put, as they happen. */
 export interface Follower { line(l: LogLine): void; doc(key: string, doc: unknown): void }
@@ -66,7 +72,7 @@ export interface RoomsOptions {
   readonly machine: string;
   /** A session not heard from for this long is gone. */
   readonly idleMs: number;
-  readonly links: Links;
+  readonly links?: Links;
 }
 
 export class Rooms {
@@ -78,14 +84,19 @@ export class Rooms {
   private readonly inboxes = new Map<string, Message[]>();
   /** When any request last came; the daemon's start counts as one. */
   lastSeen: number;
+  /** Rooms hosted elsewhere: the daemon sets net/'s once it is made from these rooms. */
+  links: Links;
 
   private readonly pointers: Pointers;
   /** When each session last pinged: what liveness reads (core/api.ts LIVE_MS). Kept a day. */
   private readonly pinged = new Map<string, number>();
+  /** Debug lines for the next ping to take (core/api.ts ping). */
+  private notes: string[] = [];
 
   constructor(o: RoomsOptions) {
     this.o = o;
     this.lastSeen = o.now();
+    this.links = o.links ?? NO_LINKS;
     this.pointers = new Pointers({
       home: o.home, now: o.now, pingedAt: id => this.pinged.get(id),
       left: p => this.handle({ op: 'append', code: p.code, draft: { kind: 'left', from: p.name, by: 'system', id: p.leave } }),
@@ -95,7 +106,7 @@ export class Rooms {
 
   /** `machine` is a link's, for a write that came over it. */
   handle(req: RoomRequest, machine: string = this.o.machine): Promise<Result<Answers[Op]>> {
-    const { links } = this.o;
+    const { links } = this;
     const now = (this.lastSeen = this.o.now());
     switch (req.op) {
       case 'append': {
@@ -143,21 +154,7 @@ export class Rooms {
       case 'retire': return this.pointers.retire(req.id);
       case 'handoff': return this.pointers.handoff(req.id, req.cwd);
       case 'claim': return this.pointers.claim(req.id, req.cwd);
-      case 'ping': {
-        if (SESSION_ID.test(req.session)) {
-          const d = new Date(now);
-          void fs.utimes(sessionFile(this.o.home, req.session), d, d).catch(() => undefined); // still alive: keep its pointer
-        }
-        this.pinged.set(req.session, now);
-        for (const [id, at] of this.pinged) if (now - at > DAY_MS) this.pinged.delete(id);
-        const s = this.sessions.get(req.session) ?? { at: now, rooms: new Map<string, string>() };
-        s.at = now;
-        if (req.cc !== undefined) s.cc = req.cc;
-        if (req.code !== undefined && req.name !== undefined) s.rooms.set(req.code, req.name);
-        this.sessions.set(req.session, s);
-        for (const [id, x] of this.sessions) if (now - x.at > this.o.idleMs) this.sessions.delete(id);
-        return Promise.resolve(ok(null));
-      }
+      case 'ping': return this.ping(req, now);
       case 'message':
         if (this.receive(req.code, req.to, req.from, req.text) || links.relay(req.code, req.to, req.from, req.text)) return Promise.resolve(ok(null));
         if (links.hosts(req.code)) return links.forward(req.code, req);
@@ -171,13 +168,57 @@ export class Rooms {
         }
         return Promise.resolve(ok({ messages }));
       }
-      case 'status':
-      {
-        const live = [...this.live()];
-        const cc = [...new Set(live.flatMap(([, s]) => (s.cc === undefined ? [] : [s.cc])))].sort();
-        return Promise.resolve(ok({ version: API_VERSION, pid: process.pid, sessions: live.length, cc }));
-      }
+      case 'status': return this.status(req.session);
     }
+  }
+
+  /** Keeps the session live and its pointer fresh; a session first heard from leaves a marker, which outlives this daemon. */
+  private async ping(req: Extract<RoomRequest, { op: 'ping' }>, now: number): Promise<Result<Answers['ping']>> {
+    if (SESSION_ID.test(req.session)) {
+      const d = new Date(now);
+      void fs.utimes(sessionFile(this.o.home, req.session), d, d).catch(() => undefined); // still alive: keep its pointer
+      if (!this.pinged.has(req.session)) await writeAtomic(pingedFile(this.o.home, req.session), '').catch(() => undefined);
+    }
+    this.pinged.set(req.session, now);
+    for (const [id, at] of this.pinged) if (now - at > DAY_MS) this.pinged.delete(id);
+    const s = this.sessions.get(req.session) ?? { at: now, rooms: new Map<string, string>() };
+    s.at = now;
+    if (req.cc !== undefined) s.cc = req.cc;
+    if (req.code !== undefined && req.name !== undefined) s.rooms.set(req.code, req.name);
+    this.sessions.set(req.session, s);
+    for (const [id, x] of this.sessions) if (now - x.at > this.o.idleMs) this.sessions.delete(id);
+    const notes = this.notes.splice(0);
+    return ok(notes.length ? { notes } : null);
+  }
+
+  private async status(session: string | undefined): Promise<Result<Answers['status']>> {
+    const live = [...this.live()];
+    const cc = [...new Set(live.flatMap(([, s]) => (s.cc === undefined ? [] : [s.cc])))].sort();
+    const pinged = session === undefined ? {} : { pinged: this.pinged.has(session) || (await fs.access(pingedFile(this.o.home, session)).then(() => true, () => false)) };
+    return ok({ version: API_VERSION, pid: process.pid, sessions: live.length, cc, ...pinged });
+  }
+
+  /**
+   * R3: deletes each room here, hosted here or a copy with its link, that no pointer or fresh handoff holds and nobody
+   * has used for RETAIN_MS, with one debug line; and the ping markers a day old.
+   */
+  async sweep(): Promise<void> {
+    for (const code of await this.codes()) {
+      if (await this.pointers.holds(code)) continue;
+      await this.serial(code, async () => {
+        const dir = roomDir(this.o.home, await fileKey(code));
+        if (!(await unused(dir, this.o.now()))) return;
+        this.rooms.delete(code);
+        await this.links.forget(code);
+        await fs.rm(dir, { recursive: true, force: true });
+        this.notes.push(`sub-human: deleted room ${code}: nobody had been in it for ${RETAIN_MS / DAY_MS} days`);
+      });
+    }
+    await dropOld(`${this.o.home}/pinged`, this.o.now() - DAY_MS);
+  }
+
+  private async codes(): Promise<string[]> {
+    return (await fs.readdir(`${this.o.home}/rooms`).catch(() => [])).filter(c => CODE.test(c));
   }
 
   /** A private message into the inbox of each session here that is `to` in the room; false when there is none. */
@@ -233,9 +274,9 @@ export class Rooms {
    */
   private async join(req: Extract<RoomRequest, { op: 'join' }>): Promise<Result<Answers['join']>> {
     const rooms = new Map<string, RoomState>();
-    for (const code of (await fs.readdir(`${this.o.home}/rooms`).catch(() => [])).filter(c => CODE.test(c))) {
-      if (this.o.links.hosts(code)) {
-        const s = await this.o.links.state(code); // a room hosted elsewhere, as its copy here stands
+    for (const code of await this.codes()) {
+      if (this.links.hosts(code)) {
+        const s = await this.links.state(code); // a room hosted elsewhere, as its copy here stands
         if (s) rooms.set(code, s);
         continue;
       }

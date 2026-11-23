@@ -8,7 +8,7 @@ happens. Nobody writes a status update, and nobody copies between chats.
 
 - Your Claude learns, by your next prompt, what a colleague changed that bears on your work: a file you touched, an
   interface a plan you're on names, a line that names you.
-- Your status line shows who is here, what each is working on, and how many updates came in.
+- Your status line shows who is here, what each is working on, your open room tasks, and how many updates came in.
 - Your Claude can ask a colleague's Claude a question directly; the answer comes back after your turn, not in the
   middle of it.
 - Plans you write in plan mode can be shared, agreed version by version, or sent to someone.
@@ -41,12 +41,12 @@ Also:
   several rooms open, a bare `/sub-human` lists them.
 - `/sub-human join LINE` joins a room on another machine, from the line its host sent you.
 - `/sub-human news` opens what each colleague changed and found since you last looked, and clears the count.
-- `/sub-human kick NAME` removes a member for good.
-- `/sub-human doctor` checks this machine; `/sub-human help` lists the commands.
+- `/sub-human kick NAME` removes a member for good; `/sub-human doctor` checks this machine; `/sub-human help` lists
+  the commands.
 
 Your name is your git name unless you give one. The others' Claudes reach yours as `NAME.CODE` (`bob.vole-8126`).
 Leaving keeps your session going. Ending a session doesn't leave: you show as away until a session of yours comes
-back. A room with nobody left in it closes.
+back. A room with nobody left in it closes, and one nobody has used for 30 days is deleted.
 
 ## Working together on one machine
 
@@ -70,8 +70,9 @@ Claude Code:
 /sub-human join https://your-mac.tail1234.ts.net/vole-8126#…
 ```
 
-Jess sees a short check string. You get a card naming jess, her machine and the same check string, with **Let in** and
-**Refuse**: compare the two, then answer. Once you let her in, her session takes its place in the room. If someone
+Jess sees a short check string at once, to tell you. You get a card naming jess, her machine and the same check
+string, with **Let in** and **Refuse**: compare the two, then answer. Once you let her in, her session takes its place
+in the room by itself, and she sees one line saying so. If someone
 else uses the line too, nobody gets in with it and you are told, with a one-key removal if it had already let someone
 in.
 
@@ -85,8 +86,8 @@ machine, with their own ssh config, agent and `known_hosts`. Nothing is written 
 in as you. The host's sshd must allow TCP forwarding (`AllowTcpForwarding yes`), which `doctor` checks.
 `SUB_HUMAN_SSH_ADDR` sets the address others use to reach this machine.
 
-While the host is away (asleep, or its last session ended), the room waits and the others see that it is away. Their
-own updates are kept and go out when the host is back.
+While the host is away (asleep, or its last session ended), the room waits and the others see `host away` on their
+status line and in `/sub-human who`. Their own updates are kept and go out when the host is back.
 
 ## What is shared
 
@@ -168,9 +169,9 @@ The host holds the room's history and applies every write, so everyone who joins
 
 ## When the hooks module is off
 
-sub-human runs as a Claude Code hooks module. Where modules are off (a managed machine's policy, or an older Claude
-Code), the `/sub-human` command still answers, but nothing is shared and nothing reaches your Claude; `/sub-human
-news` and `/sub-human doctor` each say so in one line. The others don't see such a session as here.
+sub-human runs as a Claude Code hooks module. Where hooks modules are off (a managed machine's policy, or an older
+Claude Code), nothing would be shared, so `/sub-human` and `/sub-human join` join no room and say so in one line, and
+`/sub-human news` and `/sub-human doctor` say so too. The others never see such a session as here.
 
 ## Doctor
 
@@ -189,8 +190,7 @@ All optional, as environment variables:
 | `SUB_HUMAN_SSH_ADDR` | how others reach this machine over ssh |
 | `SUB_HUMAN_PORT` | the local port the host listens on (one is picked if unset) |
 | `SUB_HUMAN_HOME` | where sub-human keeps its files (default `~/.sub-human`) |
-| `SUB_HUMAN_DEBUG` | more detail in Claude Code's debug log |
-| `SUB_HUMAN_CC_OFF` | turn a feature off by name, if a Claude Code release breaks it |
+| `SUB_HUMAN_CC_OFF` | `wake`, `messages` or `tasks-bridge` (comma-separated) off, if a Claude Code release breaks it |
 
 sub-human never writes your Claude Code settings files and never pins a model.
 

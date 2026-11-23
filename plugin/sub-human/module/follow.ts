@@ -2,7 +2,11 @@
 // reads the room as it stands, then each poll reads the small tail file and, only when it moved, the log by byte ranges
 // and (when its documents stamp moved) the document folders; follow-lines.ts absorb() says what that is for me. The
 // pointer is read again after a /sub-human command, a /clear or resume (the id changes and no session.start fires) and
-// every PING_MS, when the session pings the daemon: a pointer gone is a leave, and following stops quietly.
+// every PING_MS, when the session pings the daemon: a pointer gone is a leave, and following stops quietly. A session
+// in no room pings too, every poll until one gets through under its id, then each PING_MS, so /sub-human knows the
+// module runs here (C1). After /sub-human join,
+// the daemon writes the pointer once the host lets this machine in (R30): its appearing is drawn as one line. The link
+// to a room hosted elsewhere is asked at each ping, so the status line says when its host is away (R34).
 import type { On } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import type { DocKinds, LogLine, RoomState } from '../core/entries.js';
@@ -11,6 +15,7 @@ import type { Me } from '../core/deliver.js';
 import { enqueue, terms } from '../core/deliver.js';
 import { decodeDoc } from '../core/schema.js';
 import { PING_MS, decodePointer, sessionFile } from '../core/api.js';
+import { readConfig } from '../config.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { blobFile, docDir, fileKey, homeDir, logFile, roomDir, tailFile } from '../home.js';
@@ -19,7 +24,7 @@ import type { Absorbed, Kind } from './follow-lines.js';
 import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, parseJson, planTerms, unreadPlans } from './follow-lines.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
-import { forget, fresh, once, session } from './session.js';
+import { forget, fresh, joined, once, session } from './session.js';
 import { statusLine } from './status.js';
 import { TOOLS } from './tools.js';
 
@@ -38,12 +43,14 @@ export function registerFollow(on: On): void {
     timer?.cancel();
     Object.assign(session, fresh());
     const home = homeDir({ SUB_HUMAN_HOME: await $.env.get('SUB_HUMAN_HOME') }, (await $.env.get('HOME')) ?? '');
+    session.off = readConfig({ SUB_HUMAN_CC_OFF: (await $.env.get('SUB_HUMAN_CC_OFF')) ?? undefined }, '').off;
     let c = freshCursor();
     let busy = false;
     let beat = 0;
     let registered = false;
     let cc: string | undefined; // the Claude Code version, told to the daemon with each ping for doctor
     let stopped = false; // a fork: this session follows the room no more
+    let pinged = { id: '', at: 0 }; // the id that last got a ping through, and when: in no room, one each PING_MS
     let id = '';
     const say = (line: string, key = line): void => { if (once(session, key)) $.ui.log(line); };
 
@@ -115,7 +122,7 @@ export function registerFollow(on: On): void {
       session.count += a.count;
     };
     const shown = (room: InRoom): void => {
-      const line = c.state ? statusLine(c.state.room, room, session.count) : session.shown;
+      const line = c.state ? statusLine(c.state.room, room, session.count, session.away) : session.shown;
       if (line !== session.shown) { session.shown = line; $.ui.status(line); }
     };
     // colleagues' Claudes' direct messages (R6), which the daemon keeps for this session until taken; a daemon that
@@ -130,8 +137,8 @@ export function registerFollow(on: On): void {
       take(absorb(st, [], [], me(room, st.room), await $.clock.now(), messages));
       shown(room);
     };
-    // where this session's pointer says it is: the same room, another (joined elsewhere), or none (it left); a session
-    // in a room then pings the daemon, which keeps it live even while idle at the prompt
+    // where this session's pointer says it is: the same room, another (joined elsewhere), or none (it left); then a
+    // ping, which keeps a session in a room live even while idle at the prompt, and the room's link
     const locate = async (): Promise<void> => {
       session.recheck = false;
       id = await $.session.id();
@@ -146,17 +153,30 @@ export function registerFollow(on: On): void {
         }
         session.room = p && { home, code: p.code, name: p.name, title: p.title, dir: roomDir(home, await fileKey(p.code)), root: e.cwd };
       }
+      cc ??= (await $.session.version().catch(() => null))?.version ?? '';
+      const now = await $.clock.now();
+      if (p || pinged.id !== id || now - pinged.at >= PING_MS) {
+        const q = request({ op: 'ping', session: id, ...(p && { code: p.code, name: p.name }), ...(cc && { cc }) }, home);
+        const r = await $.http.fetch(q.url, q).then(x => answer('ping', x), (x: unknown) => err(String(x).slice(0, 200)));
+        if (r.ok) pinged = { id, at: now };
+        for (const n of r.ok ? r.value?.notes ?? [] : []) $.ui.log(n, { to: 'debug' }); // the daemon's (a room swept)
+        if (!r.ok && p) say(`sub-human didn't answer, so ${p.code} may show you away: ${r.error}. /sub-human doctor says why.`, 'ping');
+      }
+      const code = p?.code ?? session.joining;
+      const q = code === null ? null : request({ op: 'link', code }, home);
+      const got = q && (await $.http.fetch(q.url, q).then(x => answer('link', x), () => null));
+      const l = got?.ok ? got.value : null;
+      const line = joined(session, p, l);
+      if (line !== null) $.ui.log(line);
       if (!p) return;
+      const away = l?.phase === 'host_away' || l?.phase === 'offline';
+      if (away !== session.away && session.room) { session.away = away; shown(session.room); }
       if (!registered) { // Claude's tools, from the next prompt on, once this session is in a room
         registered = true;
         const failed = await Promise.all(TOOLS.map(t => $.tool.register(t).then(() => null, (x: unknown) => String(x).slice(0, 200))));
         const why = failed.find(f => f !== null);
         if (why) say(`sub-human's tools aren't available in this session: ${why}`); // C3: one line, no fallback
       }
-      cc ??= (await $.session.version().catch(() => null))?.version ?? '';
-      const q = request({ op: 'ping', session: id, code: p.code, name: p.name, ...(cc && { cc }) }, home);
-      const r = await $.http.fetch(q.url, q).then(x => answer('ping', x), (x: unknown) => err(String(x).slice(0, 200)));
-      if (!r.ok) say(`sub-human's daemon didn't answer, so ${p.code} may show you away: ${r.error}. /sub-human doctor says why.`, 'ping');
     };
     const poll = async (): Promise<void> => {
       if (busy) return;

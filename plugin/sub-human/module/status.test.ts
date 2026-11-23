@@ -19,6 +19,22 @@ test('the status line names who is here, what they work on, and counts updates (
   await room.as('bob').finding('listTasks returns {items, next}')
   await room.poll(clock)
   expect(room.status.at(-1)).toBe(`${room.code} · bob (working on cursor paging for listT…), carol here · 2 updates`)
+  const n = await room.as('bob').task({ act: 'add', title: 'store paging' })
+  await room.as('alice').task({ act: 'claim', n })
+  await room.as('bob').task({ act: 'claim', n: await room.as('bob').task({ act: 'add', title: 'handler' }) })
+  await room.poll(clock)
+  expect(room.status.at(-1)).toMatch(new RegExp(`^${room.code} · .* here · 1 task · \\d+ updates$`)) // mine only (R24)
+  await $.session.end(END)
+})
+
+test('a room whose host is away says so in place of who is here, whose presence can\'t be known (R34)', async ($, on) => {
+  const clock = mock.clock(on)
+  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
+  room.link = { phase: 'host_away', why: 'the host is away' }
+  await $.session.start(START)
+  await room.settled(clock)
+  expect(room.status.at(-1)).toBe(`${room.code} · host away`)
+  expect(room.requests.filter(r => r.op === 'link')).toEqual([{ op: 'link', code: room.code }])
   await $.session.end(END)
 })
 

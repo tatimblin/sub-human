@@ -8,7 +8,7 @@ import { tag } from '../core/tasks.js'
 import { toolFixture, toolListFixture } from '../test/support/fixtures.js'
 import { kitReader } from '../test/support/kit-fixtures.js'
 import { must } from '../test/support/must.js'
-import { END, START, seedRoom } from '../test/support/seed-room.js'
+import { END, START, seedRoom, turns } from '../test/support/seed-room.js'
 import { toolName } from './tools.js'
 
 const CREATE = toolFixture('tool-task-create', 'TaskCreate', kitReader)
@@ -205,5 +205,35 @@ test('completing a tagged task someone else owns writes nothing and says so in o
   await $.tool.call(DONE.input)
   expect(room.store.room.lines).toHaveLength(before)
   expect(room.logs).toEqual([`sub-human couldn't update task #${n} in ${room.code}: Task #${n} was not marked done: bob has it.`])
+  await $.session.end(END)
+})
+
+test('SUB_HUMAN_CC_OFF turns off the task bridge, Claude\'s messages and wakes, each said once', async ($, on) => {
+  const clock = mock.clock(on)
+  engine(on)
+  turns(on)
+  on('tool.call', { tool: 'TaskUpdate' }, () => DONE.result)
+  const native: string[] = []
+  on('session.send', (_, e) => { native.push(e.to); return { isDelivered: false, reason: 'native' } })
+  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now, env: { SUB_HUMAN_CC_OFF: 'tasks-bridge,messages,wake' } })
+  const n = await room.as('bob').task({ act: 'add', title: 'store paging' })
+  await $.session.start(START)
+  await room.settled(clock)
+  expect(await $.tool.run(task({ op: 'claim', n }))).toEqual({ result: `Task #${n} in ${room.code} is yours.` }) // no tag asked for
+  await $.tool.call({ ...CREATE.input, subject: `store paging ${tag(room.code, n)}` })
+  for (let i = 0; i < 2; i++) await $.tool.call(DONE.input)
+  for (let i = 0; i < 2; i++) await $.session.send({ to: `bob.${room.code}`, text: 'paging is in', origin: { kind: 'model' } })
+  room.as('bob').message('which port?')
+  for (let i = 0; i < 3; i++) await room.poll(clock)
+  room.as('bob').message('and the host?')
+  for (let i = 0; i < 3; i++) await room.poll(clock)
+  expect(room.requests.filter(r => r.op === 'task' && r.act === 'done')).toEqual([])
+  expect(native).toEqual([`bob.${room.code}`, `bob.${room.code}`])
+  expect(room.submitted).toEqual([])
+  expect(room.logs.filter(l => l.includes('SUB_HUMAN_CC_OFF'))).toEqual([
+    `sub-human isn't updating ${room.code}'s tasks from your task list here (SUB_HUMAN_CC_OFF); /sub-human tasks shows them.`,
+    'sub-human isn\'t carrying Claude\'s messages to colleagues here (SUB_HUMAN_CC_OFF); Claude Code sends them itself.',
+    'sub-human won\'t wake Claude for the room here (SUB_HUMAN_CC_OFF); the lines above are for you to pass on.',
+  ])
   await $.session.end(END)
 })

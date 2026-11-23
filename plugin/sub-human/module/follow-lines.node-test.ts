@@ -58,7 +58,7 @@ test('a line that does not follow the head is a fork (R36)', async () => {
   const first = await linesAfter(`${lines[0]}\n`, START);
   assert.ok(first.ok);
   const r = await linesAfter(`${lines[1]}\n`, { ...first.value.head, hash: 'f'.repeat(64) });
-  assert.ok(!r.ok && /^fork: .*seq 2/.test(r.error));
+  assert.ok(!r.ok && /^fork: .*entry 2/.test(r.error));
   const skipped = await linesAfter(`${lines[2]}\n`, first.value.head);
   assert.ok(!skipped.ok && /^fork/.test(skipped.error));
 });
@@ -67,7 +67,7 @@ test('a tampered line breaks the chain at the line after it', async () => {
   const lines = await log('one', 'two');
   const tampered = [lines[0], (lines[1] ?? '').replace('"one"', '"0ne"'), lines[2]].map(l => `${l}\n`).join('');
   const r = await linesAfter(tampered, START);
-  assert.ok(!r.ok && /seq 3/.test(r.error));
+  assert.ok(!r.ok && /entry 3/.test(r.error));
   assert.ok(!(await linesAfter('not json\n', START)).ok);
 });
 

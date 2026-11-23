@@ -6,12 +6,13 @@
 // not at all where nobody watches (a session that isn't interactive, or `$.session.surfaces()` empty). It never
 // touches the permission mode. Claude Code takes one hook per event without a matcher, and follow.ts and capture.ts
 // hold session.start and the turn events, so these two are matched: capture.ts counts the turns in session.turns.
+// SUB_HUMAN_CC_OFF=wake starts no turn: the wakes are dropped, said once (their drawn lines stay).
 import type { On } from 'claude-code';
 import { context, tokens } from '../core/deliver.js';
 import { mechanics } from '../core/mechanics.js';
 import { POLL_MS } from './follow.js';
 import type { InRoom, Session } from './session.js';
-import { session } from './session.js';
+import { off, once, session } from './session.js';
 
 /** A wake's prompt is submitted at most this many times: once, and once more after an aborted turn. */
 export const WAKE_TRIES = 2;
@@ -61,6 +62,11 @@ export function registerWake(on: On): void {
         if (flight && t.ended > flight.ended && !retry) flight = null; // the woken turn ended
         if ((flight && !retry) || (!retry && !session.wakes.length)) return;
         if (!(await $.session.surfaces()).length) { session.wakes = []; flight = null; return; } // the drawn lines stay
+        if (off(session, 'wake')) {
+          session.wakes = [];
+          if (once(session, 'off wake')) $.ui.log('sub-human won\'t wake Claude for the room here (SUB_HUMAN_CC_OFF); the lines above are for you to pass on.');
+          return;
+        }
         const text = retry?.text ?? compose(session, session.room);
         flight = { text, tries: (retry?.tries ?? 0) + 1, ended: session.turns.ended, aborted: false };
         const r = await $.prompt.submit({ text });

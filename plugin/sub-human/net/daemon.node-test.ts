@@ -146,19 +146,19 @@ test('a start lock held by a live daemon past the wait is said in one line', asy
   const held = await withLock(path.join(h, 'daemon.lock'), () => startDaemon({ home: h }), { staleMs: 1000 });
   assert.ok(held.ok);
   const got = held.value;
-  assert.ok(!got.ok && /^sub-human's daemon did not start: another one held its start lock for 3 s$/.test(got.error));
+  assert.ok(!got.ok && /^sub-human did not start: another start held its lock for 3 s$/.test(got.error));
 });
 
 test('the home is private: others\' write refused, otherwise made 0700; a folder at the socket refused in one line', async () => {
   const open = await home();
   await fs.chmod(open, 0o777);
   const r1 = await startDaemon({ home: open });
-  assert.ok(!r1.ok && /can be written by other users; the daemon did not start$/.test(r1.error));
+  assert.ok(!r1.ok && /can be written by other users, so sub-human did not start$/.test(r1.error));
   const loose = await home();
   await fs.chmod(loose, 0o750);
   await fs.mkdir(socketFile(loose));
   const r2 = await startDaemon({ home: loose });
-  assert.ok(!r2.ok && /^sub-human's daemon can't use .*daemon\.sock: /.test(r2.error) && !r2.error.includes('\n'), r2.ok ? '' : r2.error);
+  assert.ok(!r2.ok && /^sub-human can't use .*daemon\.sock: /.test(r2.error) && !r2.error.includes('\n'), r2.ok ? '' : r2.error);
   assert.equal((await fs.stat(loose)).mode & 0o777, 0o700);
 });
 
@@ -197,7 +197,7 @@ test('a session\'s whole process group killed: the daemon it started survives an
 test('a home too long for a socket is said in one line by the process the module spawns', async () => {
   const r = await run([path.join(await home(), 'x'.repeat(120))]);
   assert.equal(r.code, 1);
-  assert.match(r.out, /^sub-human's home path is too long for its socket: [^\n]*\n$/);
+  assert.match(r.out, /^sub-human's home path is too long: [^\n]*\n$/);
 });
 
 test('ensure starts the daemon when nothing answers, and finds the running one after', async () => {

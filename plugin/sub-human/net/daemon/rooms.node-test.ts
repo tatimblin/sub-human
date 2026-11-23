@@ -5,13 +5,14 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { RoomRequest as Request } from '../../core/api.js';
-import { HANDOFF_MS, decodePointer, sessionFile } from '../../core/api.js';
+import { HANDOFF_MS, decodePointer, sessionFile, titleFor } from '../../core/api.js';
 import type { Kind } from '../../core/entries.js';
 import { openFsStore } from '../../store/fs-store.js';
 import { fileKey, roomDir } from '../../home.js';
 import { NO_LINKS, Rooms } from './rooms.js';
-import { titleFor } from './pointers.js';
+import { RETAIN_MS } from '../../store/retention.js';
 import { home, joined, post } from '../../test/support/daemon.js';
+import { must } from '../../test/support/must.js';
 
 const BOB = { code: 'vole-0001', name: 'bob', title: 'bob.vole-0001', leave: '7d9c2a1e-4b3f-4c5d-8e6f-0a1b2c3d4e5f' };
 const rooms = (h: string): Rooms => new Rooms({ home: h, now: () => 5, machine: 'm', idleMs: 60_000, links: NO_LINKS });
@@ -246,13 +247,40 @@ test('messages go to inboxes by session and room, never the log, and are taken o
   await assert.rejects(fs.access(`${h}/rooms`), 'nothing was written');
 });
 
-test('status counts live sessions and names the Claude Code versions their pings told it, once each', async () => {
-  const r = rooms(await home());
+test('status counts live sessions, names the Claude Code versions their pings told it once each, and says whether one ever pinged (C1)', async () => {
+  const h = await home();
+  const r = rooms(h);
   await okv(r, { op: 'ping', session: 's-a', cc: '2.1.330' });
   await okv(r, { op: 'ping', session: 's-b', cc: '2.1.331' });
   await okv(r, { op: 'ping', session: 's-c', cc: '2.1.330' });
   await okv(r, { op: 'ping', session: 's-d' });
   assert.partialDeepStrictEqual(await okv(r, { op: 'status' }), { sessions: 4, cc: ['2.1.330', '2.1.331'] });
+  assert.partialDeepStrictEqual(await okv(r, { op: 'status', session: 's-d' }), { pinged: true });
+  assert.partialDeepStrictEqual(await okv(rooms(h), { op: 'status', session: 's-d' }), { pinged: true }, 'and after the daemon restarts');
+  assert.partialDeepStrictEqual(await okv(r, { op: 'status', session: 's-off' }), { pinged: false }, 'a session whose module is off');
+});
+
+test('the sweep deletes a room or copy nobody has used for 30 days and no pointer or fresh handoff holds, with its link; the next ping says so once (R3)', async () => {
+  const h = await home();
+  let now = 1_000;
+  const forgot: string[] = [];
+  const r = new Rooms({ home: h, now: () => now, machine: 'm', idleMs: 60_000, links: { ...NO_LINKS, forget: code => { forgot.push(code); return Promise.resolve(); } } });
+  const [OLD, MOVED] = ['vole-0002', 'vole-0003'].map(code => ({ ...BOB, code, title: `bob.${code}` }));
+  await joinAs(r, 'held', BOB);
+  await joinAs(r, 'gone', must(OLD, 'old'));
+  await joinAs(r, 'moving', must(MOVED, 'moved'));
+  await okv(r, { op: 'retire', id: 'gone' });
+  now += RETAIN_MS + 1;
+  await okv(r, { op: 'handoff', id: 'moving', cwd: '/w' });
+  await r.sweep();
+  const there = (code: string): Promise<boolean> => fs.access(roomDir(h, code)).then(() => true, () => false);
+  assert.deepEqual(await Promise.all([BOB.code, 'vole-0002', 'vole-0003'].map(there)), [true, false, true], 'held by a pointer, deleted, held by a handoff');
+  assert.deepEqual(await okv(r, { op: 'ping', session: 's' }), { notes: ['sub-human: deleted room vole-0002: nobody had been in it for 30 days'] });
+  assert.deepEqual(forgot, ['vole-0002'], 'a copy\'s link goes with it');
+  assert.equal(await okv(r, { op: 'ping', session: 's' }), null, 'told once');
+  await okv(r, { op: 'retire', id: 'held' }); // its presence goes away now: the room was used today
+  await r.sweep();
+  assert.ok(await there(BOB.code));
 });
 
 test('a put_doc renews the tail file\'s documents stamp and keeps its head, so a follower lists documents only then', async () => {

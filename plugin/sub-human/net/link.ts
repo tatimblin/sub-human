@@ -60,6 +60,8 @@ export interface LinkSetOptions {
   readonly dial: Dial;
   readonly clock?: Clock;
   readonly timings?: Timings;
+  /** Each phase a room's link enters. */
+  readonly phase?: (code: string, phase: LinkStatus['phase']) => void;
 }
 
 export class LinkSet implements Links {
@@ -86,6 +88,11 @@ export class LinkSet implements Links {
     const m = this.links.get(code)?.mirror;
     const c = m ? await m.catchup() : null;
     return m && c?.ok ? fold(c.value.snapshot, c.value.lines, await m.docs()) : null;
+  }
+  async forget(code: string): Promise<void> {
+    this.links.get(code)?.close();
+    this.links.delete(code);
+    await fs.rm(`${this.o.home}/links/${await fileKey(code)}.json`, { force: true });
   }
   status(code: string): LinkStatus | null { return this.links.get(code)?.status ?? this.joining.get(code) ?? null; }
   mirror(code: string): MirrorStore | null { return this.links.get(code)?.mirror ?? null; }
@@ -268,7 +275,7 @@ class Link {
         break;
       case 'clearTimer': this.timers.get(fx.name)?.(); this.timers.delete(fx.name); break;
       case 'expired': for (const id of fx.ids) { this.posts.delete(id); this.waits.get(id)?.(err('the room\'s host stayed away; the post was not sent')); } break;
-      case 'status': this.status = { phase: fx.phase, why: fx.why }; break;
+      case 'status': this.status = { phase: fx.phase, why: fx.why }; this.o.phase?.(this.file.code, fx.phase); break;
       case 'finish': void this.finish(fx.why); break;
     }
   }

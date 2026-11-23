@@ -9,7 +9,7 @@ import type { Result } from '../../core/result.js';
 import { err } from '../../core/result.js';
 
 const PLUGIN = path.join(import.meta.dirname, '..', '..');
-const NO_ANSWER = 'sub-human\'s daemon did not answer; nothing was done';
+const NO_ANSWER = 'sub-human did not answer; nothing was done';
 
 /** One request to the home's daemon; an error when nothing answers within `timeoutMs`. */
 export function call<R extends Request>(home: string, req: R, timeoutMs = 5000): Promise<Result<Answers[R['op']]>> {
@@ -39,6 +39,6 @@ export async function ensure(home: string, waitMs = 3000): Promise<Result<Status
   for (;;) {
     await sleep(20);
     const r = await call(home, { op: 'status' }, 500);
-    if (r.ok || Date.now() > deadline) return r.ok ? r : err('sub-human\'s daemon did not start; nothing was done');
+    if (r.ok || Date.now() > deadline) return r.ok ? r : err('sub-human did not start; nothing was done');
   }
 }

@@ -336,13 +336,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
   - The POC had 101 entries in total. With the typed and documented ones counted, v2 will have about 18–22.
 - **C3. No fallback chains.** A feature either works or degrades straight to "not available" with one line to the person.
 - **C4. Runtime.** The module runs in Claude Code's own runtime. Node-side code (link, listener, Noise, ws, command hooks) needs Node 22.18+ with type stripping. Neither side has a build step.
-- **C5. Process count.** Per session there is one piece: the module, in-process, which does the following, delivery, the status line and Claude's tools. There is no MCP server and no tail child. Node children run only for the link, listener, Noise and ws work.
-
-  Per machine, only for rooms that span machines:
-  - the **listener**, on the host, while it hosts such a room;
-  - one **link daemon** per room, on each mirror.
-
-  Nothing else is started.
+- **C5. Process count.** Per session there is one piece: the module, in-process, which does the following, delivery, the status line and Claude's tools. There is no MCP server and no tail child. The one daemon per home (a node process that makes every write, and runs the links, the listener, Noise and ws work) is the only process sub-human starts; the command hooks are Claude Code's, run once per event.
 - **C6. Open-source dependencies for solved problems.**
   - **The rule:** where a small, maintained open-source package solves a problem, v2 uses it instead of writing its own. The POC's no-dependency rule is dropped. The chosen set covers validation, ignore-pattern matching, plan diffs and the Funnel WebSocket wire (ARCHITECTURE §2a). Locks and crash-safe writes come from `node:fs`; the candidate packages failed the maintenance rule or the Node range.
   - **Deliberate exceptions,** each weighed and recorded: the Noise channel (Q2), the log (Q14) and invites (Q14) stay ours, because the packaged alternatives cost far more than the code they would replace.

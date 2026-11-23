@@ -57,7 +57,7 @@ export function admitCards(on: On): void {
             if (!r.ok) $.ui.log(`sub-human: ${r.error}`)
           }
         } catch {
-          fail('sub-human\'s daemon did not answer') // the next poll asks again
+          fail('sub-human did not answer') // the next poll asks again
         } finally { busy = false }
       })()
     })
