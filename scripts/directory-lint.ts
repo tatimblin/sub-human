@@ -486,14 +486,14 @@ export function checkLimits(root: string, files: readonly string[]): Finding[] {
 
 // ---------------------------------------------------------------------------------------------------------------
 // rule 6: plugin code imports its own files as `./x.js`; `claude plugin validate` refuses a `.ts` import path
-// (TS5097), and plugin/sub-human/resolve-ts.mjs maps `.js` to `.ts` for node.
+// (TS5097), and plugin/sub-human/resolve-ts.ts maps `.js` to `.ts` for node.
 
 const R6 = 'TS_IMPORT_PATH';
 const TS_IMPORT = /\b(?:from|import)\s*\(?\s*['"](\.\.?\/[^'"]*\.ts)['"]/g;
 
 /** Rule 6 over one plugin .ts file's text. */
 export function checkImportPaths(text: string, file: string): Finding[] {
-  return [...text.matchAll(TS_IMPORT)].map(hit => ({ file, line: lineAt(text, hit.index), rule: R6, message: `imports ${hit[1] ?? ''}`, fix: 'import it as .js (resolve-ts.mjs finds the .ts for node)' }));
+  return [...text.matchAll(TS_IMPORT)].map(hit => ({ file, line: lineAt(text, hit.index), rule: R6, message: `imports ${hit[1] ?? ''}`, fix: 'import it as .js (resolve-ts.ts finds the .ts for node)' }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------

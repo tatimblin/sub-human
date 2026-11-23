@@ -19,7 +19,7 @@ This is ARCHITECTURE §3's plan: the directories exist, empty, and the build uni
 
 - `plugin/sub-human/`: the plugin, ESM `.ts` run by node 22.18+ type stripping (no build). Plugin files import each
   other as `./x.js` (validate refuses `.ts` paths); every node process loading plugin code starts with
-  `node --import plugin/sub-human/resolve-ts.mjs`, which finds the `.ts` (directory-lint rule 6).
+  `node --import plugin/sub-human/resolve-ts.ts`, which finds the `.ts` (directory-lint rule 6).
   - `core/` (coming) pure rules (folds, delivery, plans, tasks, the link state machine); no I/O, relative imports
     only. The Claude Code contract will be `core/cc/contract.json`.
   - `store/` (coming) the room store interface and its fs, mirror and memory backends.

@@ -153,7 +153,7 @@ plugin/sub-human/
   keys.ts          machine key, link keys
   home.ts          where files live (~/.sub-human)
   config.ts        the knobs (§10)
-  resolve-ts.mjs   node's resolve hook: plugin files import `./x.js` (validate refuses `.ts` paths), node loads `x.ts`
+  resolve-ts.ts   node's resolve hook: plugin files import `./x.js` (validate refuses `.ts` paths), node loads `x.ts`
 test/              scenes (§12) and unit tests, beside the code they test
 ```
 

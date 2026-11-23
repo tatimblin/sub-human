@@ -12,8 +12,8 @@
   },
   "scripts": {
     "test": "npm run --silent typecheck && node scripts/vendor.ts --check && npm run --silent test:node && npm run --silent test:scripts && npm run --silent test:module && npm run --silent validate",
-    "test:node": "node --test --import ./plugin/sub-human/resolve-ts.mjs --import ./plugin/sub-human/test/helpers.ts 'plugin/sub-human/**/*.node-test.ts'",
-    "test:scripts": "node --test --import ./plugin/sub-human/resolve-ts.mjs 'scripts/test/**/*.test.ts'",
+    "test:node": "node --test --import ./plugin/sub-human/resolve-ts.ts --import ./plugin/sub-human/test/helpers.ts 'plugin/sub-human/**/*.node-test.ts'",
+    "test:scripts": "node --test --import ./plugin/sub-human/resolve-ts.ts 'scripts/test/**/*.test.ts'",
     "test:module": "node scripts/test-mods.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && tsc -p scripts/tsconfig.json",
     "lint": "node scripts/lint.ts",
