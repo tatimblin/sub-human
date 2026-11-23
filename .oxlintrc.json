@@ -77,6 +77,24 @@
       "rules": {
         "typescript/switch-exhaustiveness-check": "error"
       }
+    },
+    {
+      "files": [
+        "plugin/sub-human/module/**",
+        "plugin/sub-human/test/**",
+        "plugin/sub-human/**/*.test.ts",
+        "scripts/record-fixtures/plugin/module/**"
+      ],
+      "rules": {
+        "typescript/no-misused-promises": [
+          "error",
+          {
+            "checksVoidReturn": {
+              "arguments": false
+            }
+          }
+        ]
+      }
     }
   ]
 }
