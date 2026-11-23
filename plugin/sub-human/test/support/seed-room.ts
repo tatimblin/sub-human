@@ -8,7 +8,7 @@ import type { DocKind, DocKinds, Draft } from '../../core/entries.js';
 import { blobFile, docFile, fileKey, logFile, roomDir, tailFile } from '../../home.js';
 import { MemoryStore } from '../../store/memory-store.js';
 import { tailText } from '../../store/store.js';
-import type { Answers, Message, PlanAct, Request } from '../../core/api.js';
+import type { Answers, Message, PlanAct, Request, TaskAct } from '../../core/api.js';
 import { decodeRequest, sessionFile, socketFile } from '../../core/api.js';
 import { toolFixture } from './fixtures.js';
 import { kitReader } from './kit-fixtures.js';
@@ -16,6 +16,7 @@ import { planRule, roomState } from './kit-plans.js';
 import { latestVersion } from '../../core/plans.js';
 import type { Result } from '../../core/result.js';
 import { ok } from '../../core/result.js';
+import { taskRule } from './kit-tasks.js';
 import { POLL_MS, POLLED } from '../../module/follow.js';
 
 export interface SeedOptions {
@@ -44,6 +45,8 @@ export interface Colleague {
   message(text: string, code?: string): void;
   /** A plan act of theirs (answer, accept, send, …) through the host's plan rules; throws when they refuse it. */
   planAct(act: PlanAct): Promise<void>;
+  /** A task act of theirs through the host's task rules; the task's number, or it throws when refused. */
+  task(act: TaskAct): Promise<number>;
 }
 
 export interface Room {
@@ -135,6 +138,12 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     const s = await roomState(store);
     return ok({ seq: s.seq, hash: s.hash, latest: latestVersion(s, act.name) });
   };
+  // the daemon's `task`: the host's rules, then their entries
+  const task = async (from: string, act: TaskAct): ReturnType<typeof taskRule> => {
+    const r = await taskRule(store, from, act);
+    if (r.ok) for (const d of r.value.drafts) await append(d);
+    return r;
+  };
   const read = (path: string): string | undefined =>
     path === logFile(dir) ? store.room.lines.map(l => `${l}\n`).join('') : files.get(path)?.text;
 
@@ -205,6 +214,12 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
       const r = await plan(req.from, req);
       return r.ok ? reply(200, { ok: true, value: r.value }) : reply(400, { ok: false, error: r.error });
     }
+    if (req.op === 'task' && req.code === code) {
+      const t = await task(req.from, req);
+      if (!t.ok) return reply(400, { ok: false, error: t.error });
+      const head = await store.head();
+      return head.ok ? reply(200, { ok: true, value: { ...head.value, n: t.value.n } }) : reply(500, { ok: false, error: head.error });
+    }
     if (req.op !== 'put_doc' || req.code !== code) return reply(400, { ok: false, error: `the kit's daemon takes no ${req.op} here` });
     const doc = req.doc;
     if ('state' in doc) await putDoc('presence', req.name, { ...doc, machine: 'my-laptop' }, `${req.name}@my-laptop`);
@@ -253,6 +268,11 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
       const r = await plan(name, act);
       if (!r.ok) throw new Error(r.error);
       if ('refused' in r.value) throw new Error(r.value.refused);
+    },
+    async task(act) {
+      const r = await task(name, act);
+      if (!r.ok) throw new Error(r.error);
+      return r.value.n;
     },
   });
   // the poll's host round trips run on real time (hashing, the stubs); bounded well inside the test's own limit

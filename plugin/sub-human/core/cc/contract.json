@@ -48,6 +48,21 @@
    "note": "Whether they are on is typed; why they are off is task-tool-gate."
   },
   {
+   "id": "tool-call-tasklist",
+   "kind": "api",
+   "feature": "tasks-bridge",
+   "surface": "$.tool.call({tool: 'TaskList'}) from the module: the bridge re-derives its id map from tagged subjects (result tasks[{id, subject}])",
+   "typings": [
+    "call: EventCalls['tool']['call'];",
+    "TaskList: {",
+    "tasks: Array<{"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "A module's own call runs with the mod_own_call layer and opens no dialog; Claude Code's task files are never read."
+  },
+  {
    "id": "prompt-context",
    "kind": "api",
    "feature": "context",

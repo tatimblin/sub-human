@@ -3,7 +3,7 @@
 // since, plan: the catch-up, R16). Each answers in one line, or with the data asked for, framed as data. What to do
 // is pure (`shareCall`, `readCall`); the hook bodies make the one daemon call or file read it names.
 //
-// The seam for U12/U13: add a spec to TOOLS, and a `tool.run` hook on `toolName(spec.name)` in their own file (`plan`: plans.ts).
+// The seam for U12/U13: add a spec to TOOLS, and a `tool.run` hook on `toolName(spec.name)` in their own file (`plan`: plans.ts, `task`: tasks.ts).
 import type { On, ToolSpec } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import type { AppendDraft, Request } from '../core/api.js';
@@ -59,6 +59,20 @@ export const TOOLS: readonly ToolSpec[] = [
       properties: {
         op: { enum: ['edit', 'ask', 'send'] }, name: { type: 'string' }, base: { type: 'integer', minimum: 0 }, text: { type: 'string' },
         version: { type: 'integer', minimum: 1 }, people: { type: 'array', items: { type: 'string' } }, to: { type: 'string' }, note: { type: 'string' },
+      },
+    },
+    isDeferred: false,
+  },
+  { // answered in tasks.ts
+    name: 'task',
+    description: 'Your sub-human room\'s task list, for work handed between people. op add: a task with `title`, optionally '
+      + 'waiting on tasks `blockedBy`. op claim: task `n` for yourself (refused while someone else has it). op release: give '
+      + 'back task `n`. op done: mark your task `n` done, with an optional `note`. op list: the tasks, owners and blockers.',
+    inputSchema: {
+      type: 'object', required: ['op'],
+      properties: {
+        op: { enum: ['add', 'claim', 'release', 'done', 'list'] }, title: { type: 'string' }, n: { type: 'integer', minimum: 1 },
+        blockedBy: { type: 'array', items: { type: 'integer', minimum: 1 } }, note: { type: 'string' },
       },
     },
     isDeferred: false,

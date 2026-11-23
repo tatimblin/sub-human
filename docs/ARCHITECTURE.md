@@ -279,9 +279,9 @@ How a wake is delivered:
 **Sent plan (R22b–R22c).** At approval, "send to NAME" writes `plan_sent` with the text, branch, files and note. The recipient gets one notice and opens it on the same card and pane. Accepting writes `plan_accept`, and their context then carries the plan.
 
 **Task bridge (R23–R24a).** This is on only when `$.tool.list` shows TaskCreate. The person opts in with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` at launch. Without it, room tasks work through the `task` tool alone.
-1. A room `task claim` answers with the tag `[room CODE#N]`. The Claude creates its native task with that tag in the subject, and with `metadata {room, roomTask}`.
-2. `capture.ts` wraps `tool.call` on TaskCreate and TaskUpdate. It keeps a map of (session, taskId) → {subject, tag}, filled from create results and rename inputs, because update results carry neither. The map is persisted in the plugin home. After `/clear`, resume or a restart, it is re-derived from tagged subjects with `TaskList`.
-3. A `statusChange.to` on an untagged task becomes activity. On a tagged task, `completed` maps to room `done`, and `deleted` maps to `release`. A reopen (pending ↔ in progress) is no change.
+1. A room `task claim` answers with the tag `[room CODE#N]` when the session has TaskCreate. The Claude creates its native task with that tag in the subject; no metadata is set on it.
+2. `capture.ts` wraps `tool.call` on TaskCreate and TaskUpdate. It keeps a map of (session, taskId) → subject, filled from create results and rename inputs, because update results carry no subject. The map is not persisted. After `/clear`, resume or a restart (a new session id), it starts empty, and an update of an id it lacks re-derives it from tagged subjects with the module's own `TaskList` call, made before the update runs, since a deleted task is gone from the list after. A list that refuses is asked again at the next unknown id.
+3. A `statusChange.to` on an untagged task becomes activity. On a tagged task (the tag for this room, among any others in the subject), `completed` maps to room `done`, and `deleted` maps to `release`. A reopen (pending ↔ in progress) is no change, and so is a change the room task already shows; a real refusal (someone else has it) is one line.
 4. Subagents' calls arrive the same way, with `agentId`.
 
 No Claude Code task file is read or written, and the mirror never waits on a deletion event, because auto-reset and retention delete tasks silently.

@@ -79,6 +79,9 @@ test('waitingOn lists the blockers not yet done', () => {
 test('the bridge tag round-trips inside a native subject', () => {
   assert.equal(tag('vole-8126', 3), '[room vole-8126#3]');
   assert.deepEqual(parseTag(`Paging handler ${tag('vole-8126', 3)}`), { code: 'vole-8126', n: 3 });
+  const two = `${tag('otter-4821', 1)} paging ${tag('vole-8126', 3)}`;
+  assert.deepEqual(parseTag(two, 'vole-8126'), { code: 'vole-8126', n: 3 }); // every tag, mine taken
+  assert.equal(parseTag(two, 'mole-1111'), null);
   for (const s of ['paging', '[room vole-8126]', '[room #3]', '[room vole 8126#3]', 'room vole-8126#3']) assert.equal(parseTag(s), null, s);
 });
 

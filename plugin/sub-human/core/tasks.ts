@@ -89,11 +89,14 @@ export function tag(code: string, n: number): string {
   return `[room ${code}#${n}]`;
 }
 
-const TAG = /\[room ([^\s#\]]+)#(\d+)\]/;
+const TAG = /\[room ([^\s#\]]+)#(\d+)\]/g;
 
-export function parseTag(subject: string): Tag | null {
-  const m = TAG.exec(subject);
-  return m?.[1] && m[2] ? { code: m[1], n: Number(m[2]) } : null;
+/** The subject's tag for room `code`, or with no code its first tag; a subject may carry several rooms' tags. */
+export function parseTag(subject: string, code?: string): Tag | null {
+  for (const m of subject.matchAll(TAG)) {
+    if (m[1] && m[2] && (code === undefined || m[1] === code)) return { code: m[1], n: Number(m[2]) };
+  }
+  return null;
 }
 
 export interface StatusChange { readonly from: string; readonly to: string }
@@ -109,4 +112,13 @@ export function bridgeOp(change: StatusChange | undefined, t: Tag | null): Bridg
   if (change.to === 'completed') return { kind: 'done', ...t };
   if (change.to === 'deleted') return { kind: 'release', ...t };
   return { kind: 'none' };
+}
+
+/** Room `code`'s open tasks with their owners and blockers, and how many are done: `/sub-human tasks` and `task list`. */
+export function taskLines(code: string, all: readonly Task[]): string[] {
+  if (all.length === 0) return [`${code} has no tasks yet.`];
+  const open = all.filter(t => t.status !== 'done');
+  const done = all.length - open.length;
+  const line = (t: Task): string => `#${t.n} ${t.owner ? `${t.owner}'s` : 'open'} · ${t.title}${t.blockedBy.length ? ` · after #${t.blockedBy.join(', #')}` : ''}`;
+  return [`${code} · ${open.length} open`, ...open.map(line), ...(done ? [`${done} done`] : [])];
 }
