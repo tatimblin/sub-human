@@ -10,7 +10,11 @@ export const COMMAND: RegExp = /^(?:sub-human:)?sub-human$/;
 
 export interface InRoom {
   readonly home: string; readonly code: string; readonly name: string; readonly title: string;
-  readonly dir: string; readonly root: string;
+  readonly dir: string;
+  /** Where my work is: the repo's root (else the session's cwd), its name, branch and ignore text, read at the join. */
+  readonly root: string; readonly repo?: string; readonly branch?: string; readonly ignore?: string;
+  /** The session's plans folder, once an approved plan showed it: plan files there are no edits. */
+  readonly plans?: string;
 }
 /** What this session's module knows of its room, shared by every part as plain data. */
 export interface Session {

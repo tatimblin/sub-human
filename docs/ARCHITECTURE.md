@@ -147,6 +147,7 @@ plugin/sub-human/
     context.ts       prompt.submit context: mechanics once, relevant updates capped (R15a); mid-loop heads-up (R15d)
     status.ts        ui.status line; /sub-human news pane (R15b)
     messages.ts      session.send caught at the sender for NAME.CODE (R6)
+    at-room.ts       prompt.submit: an `@room` line posted as the person's, dropped from the model (R8)
     wake.ts          $.prompt.submit once idle; retry on turn.complete.isAborted (R10)
     plans.ts         ExitPlanMode result → keep / room / send; the plan tool (R17–R18, R22b)
     plans-review.ts  the reviewer's card (ui.ask) and pane (ui.open) (R21–R22c); plans-cards.ts, plans-pending.ts,

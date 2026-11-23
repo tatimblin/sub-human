@@ -326,6 +326,8 @@ export function decodeAppendDraft(input: unknown): Result<AppendDraft> {
  * tool, except a person's own post (the @room line): from this machine's socket only for a session here that is `from`
  * in the room (`personHere`), and over a link for the link's member, whom the host checks `from` against first. A link
  * writes nothing else as `system` than its member's joined and left, which that machine's daemon writes for them.
+ * The socket's check is labelling, not a security boundary: any process of this user can reach the 0600 socket and
+ * ping as any name, and the threat model is outsiders only (SECURITY.md); the link's check is the boundary.
  */
 export function refusedAppend(d: AppendDraft, via: 'socket' | 'link', personHere: boolean): string | null {
   if (via === 'link' && d.by === 'system' && d.kind !== 'joined' && d.kind !== 'left') return `another machine can't write a ${d.kind} as the system`;

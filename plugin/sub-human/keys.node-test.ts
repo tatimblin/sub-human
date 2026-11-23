@@ -18,6 +18,21 @@ test('the machine key is made once, kept 0600, and read back the same', async ()
   assert.deepEqual(fs.readdirSync(`${home}/keys`), ['machine.key']);
 });
 
+test('a home from an earlier v2 build keeps its key: noise.key is taken as the machine key, its mode checked', async () => {
+  const home = tempHome();
+  const priv = keyPair(Buffer.alloc(32, 7)).priv;
+  fs.mkdirSync(`${home}/keys`, { recursive: true });
+  fs.writeFileSync(`${home}/keys/noise.key`, priv.toString('hex'), { mode: 0o600 });
+  const k = await machineKey(home);
+  assert.ok(k.ok);
+  assert.deepEqual(k.value.priv, priv);
+  assert.deepEqual(fs.readdirSync(`${home}/keys`), ['machine.key']);
+  const open = tempHome();
+  fs.mkdirSync(`${open}/keys`, { recursive: true });
+  fs.writeFileSync(`${open}/keys/noise.key`, priv.toString('hex'), { mode: 0o644 });
+  assert.deepEqual(await machineKey(open), { ok: false, error: `the machine key in ${machineKeyFile(open)} can be read by others; run chmod 600 on it` });
+});
+
 test('first uses at once all get the one key that won', async () => {
   const home = tempHome();
   const keys = await Promise.all(Array.from({ length: 8 }, () => machineKey(home)));

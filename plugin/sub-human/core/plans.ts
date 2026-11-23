@@ -8,6 +8,8 @@ import type { Acceptance, Answer, Draft, Plan, PlanAnswerRecord, PlanScope, Plan
 import { err, ok, type Result } from './result.js';
 import { LIMITS } from './entries.js';
 import { entry, nextN, unclaimed } from './tasks.js';
+import { terms } from './deliver.js';
+import { refusedPath } from './secrets.js';
 
 /** Reads a stored plan text by its hash. */
 export type Texts = (hash: string) => string;
@@ -87,6 +89,15 @@ export interface Send {
   readonly branch?: string;
   readonly files?: readonly string[];
   readonly by: Author;
+}
+
+// a file's path as a plan names it: `src/store.js`, `README.md`; not `e.g` or a route
+const FILE = /^(?:[\w.-]+\/)*[\w-]{2,}[\w.-]*\.[A-Za-z0-9]{1,8}$/;
+
+/** The files a sent plan goes with (R22b): those its text names, then those touched, once each, none ignored (R14a). */
+export function sentFiles(text: string, touched: readonly string[], ignore?: string): string[] {
+  const named = terms(text).filter(t => FILE.test(t));
+  return [...new Set([...named, ...touched])].filter(f => !refusedPath(f, ignore)).slice(0, LIMITS.files);
 }
 
 /** Send a version (the latest by default) to one member, or with no `to`, to the room (R22b). */

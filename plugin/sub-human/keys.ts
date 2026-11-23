@@ -17,6 +17,12 @@ export async function machineKey(home: string): Promise<Result<KeyPair>> {
   const file = machineKeyFile(home);
   const have = await readKey(file);
   if (have.ok || !(await missing(file))) return have;
+  // an earlier v2 build kept the key as noise.key: renamed (a link, which never replaces a key) so its links still hold
+  const old = `${home}/keys/noise.key`;
+  if (await fs.link(old, file).then(() => true, () => false)) {
+    await fs.unlink(old).catch(() => undefined);
+    return readKey(file); // and its mode checked
+  }
   const made = generateKeyPair();
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   try {

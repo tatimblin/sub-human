@@ -27,6 +27,8 @@ export interface SeedOptions {
   readonly now?: () => number;
   /** More environment for the session (SUB_HUMAN_CC_OFF). */
   readonly env?: Readonly<Record<string, string>>;
+  /** Files of my own the session reads, by absolute path (a repo's .gitignore). */
+  readonly files?: Readonly<Record<string, string>>;
 }
 
 /** A colleague, scripted: what their session's module and Claude would write. */
@@ -119,6 +121,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   let polls = 0;
   const dir = roomDir(HOME, await fileKey(code));
   const put = (path: string, text: string): void => { files.set(path, { text, mtime: ++writes }); };
+  for (const [path, text] of Object.entries(o.files ?? {})) put(path, text);
 
   const putDoc = async <K extends DocKind>(kind: K, name: string, doc: DocKinds[K], key = name): Promise<void> => {
     await store.putDoc(kind, key, doc);

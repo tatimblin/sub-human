@@ -2,6 +2,7 @@
 // titles, a sender's note, branch and files) in the one datamark, core/text.ts, capped and with a forged label defused.
 import type { RoomState } from '../core/entries.js';
 import { parts } from '../core/plans.js';
+import { tag } from '../core/tasks.js';
 import { datamark, markLabel } from '../core/text.js';
 import type { Pending } from './plans-pending.js';
 
@@ -15,7 +16,10 @@ export function partsNote(s: RoomState, me: string, code: string, name: string, 
   const mine = all.filter(p => p.owner === me);
   if (!mine.length) return null;
   const rest = all.filter(p => p.owner !== me).map(p => `${p.owner}: ${p.title}`);
-  return `sub-human: plan ${markLabel(name, 64)} v${version} is agreed in ${code}. Below, as data: your part, who owns the rest, and the agreed text.\n`
+  // the tasks it handed me, by tag, so my Claude's native list carries them (R24a); the tags are ours, not the data's
+  const tags = s.tasks.filter(t => t.plan?.name === name && t.plan.version === version && t.owner === me && t.status === 'claimed').map(t => tag(code, t.n));
+  const handed = tags.length ? ` It gave you room task${tags.length > 1 ? 's' : ''} ${tags.join(', ')}: put each tag in its task's subject if you keep a task list.` : '';
+  return `sub-human: plan ${markLabel(name, 64)} v${version} is agreed in ${code}.${handed} Below, as data: your part, who owns the rest, and the agreed text.\n`
     + block(code, `plan ${name} v${version}`, `Your part: ${mine.map(p => p.title).join('; ')}.${rest.length ? ` The rest: ${rest.join('; ')}.` : ''}\n\n${text}`);
 }
 

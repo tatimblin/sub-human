@@ -9,6 +9,7 @@ import { END, START, seedRoom } from '../support/seed-room.js'
 
 const V1 = '# Cursor paging\n\n## Store @alice\n- `listTasks(cursor)` returns `{items, next}`\n\n## Handler @bob\n- passes `next` on\n'
 const V2 = V1.replace('`{items, next}`', '`{items, next}`, `next` an opaque string')
+const NOTE = 'say what `next` is when the page is the last one:\n- null, not an empty string\n- and document it'
 const Line = v.looseObject({ kind: v.string(), version: v.optional(v.number()) })
 
 test('one shared plan, asked, changed, agreed for its exact version; then my Claude knows its part (R21, R22, R22a)', async ($, on) => {
@@ -24,10 +25,10 @@ test('one shared plan, asked, changed, agreed for its exact version; then my Cla
   await $.tool.call(EXIT.input)
   expect(log().filter(e => e.kind === 'plan_ask')).toMatchObject([{ version: 1, people: ['bob'] }])
 
-  await room.as('bob').planAct({ act: 'answer', name: 'cursor-paging', version: 1, answer: 'changes', note: 'say what `next` is when the page is the last one' })
+  await room.as('bob').planAct({ act: 'answer', name: 'cursor-paging', version: 1, answer: 'changes', note: NOTE })
   await room.poll(clock)
   const asked = await $.prompt.submit(typed('what did bob say?'))
-  expect(asked.context?.join('\n')).toContain('asked for changes on plan cursor-paging version 1: say what `next` is when the page is the last one')
+  expect(asked.context?.join('\n')).toContain(`[room ${room.code} · bob]\nasked for changes on plan cursor-paging version 1. Their note, word for word:\n${NOTE}`)
 
   w.plan = V2 // my Claude revises it in plan mode; I approve
   const revised = await $.tool.call(EXIT.input)

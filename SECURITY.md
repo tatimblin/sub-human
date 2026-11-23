@@ -33,7 +33,7 @@ a room, members and their Claudes are trusted collaborators.
   machine but that member's own joined and left. A machine hosting a room never takes a line for a room of the same
   code.
 - **Secrets.** Nothing that matches a curated secret-pattern list (from gitleaks), in an update, a message between
-  Claudes, a plan or a task, no `.env`-style or key file, no ignored file and no file outside the repo is shared. Invite secrets are never written to the room's history or the
+  Claudes, a plan or a task, no `.env`-style or key file, no file the repo's top-level `.gitignore` ignores and no file outside the repo is shared. Invite secrets are never written to the room's history or the
   host's records.
 - **Permissions.** No hook ever answers a permission check with allow; every permission decision stays the person's.
 

@@ -31,7 +31,8 @@ export function nextPending(s: RoomState, me: string, skip: ReadonlySet<string>)
   for (const x of s.sent) {
     const key = `sent:${x.from}:${x.name}:${x.version}`;
     const v = s.plans.find(p => p.name === x.name)?.versions.find(y => y.version === x.version);
-    if (x.from === me || (x.to ?? me) !== me || x.answers.some(a => a.name === me) || skip.has(key) || !v) continue;
+    // a sent version I was asked to agree on is the review's card, not a second one (R22d)
+    if (x.from === me || (x.to ?? me) !== me || x.answers.some(a => a.name === me) || skip.has(key) || !v || v.asked.includes(me)) continue;
     return { kind: 'sent', key, name: x.name, version: x.version, from: x.from, hash: v.hash, files: x.files, ...(x.note && { note: x.note }), ...(x.branch && { branch: x.branch }) };
   }
   return null;

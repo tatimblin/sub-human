@@ -121,7 +121,10 @@ export function readCall(input: unknown, room: InRoom, state: RoomState | null, 
       const at = version === undefined ? plan?.versions.at(-1) : plan?.versions.find(x => x.version === version);
       if (!plan || !at) return err(`Room ${room.code} has no plan ${oneLine(name, 64)}${version === undefined ? '' : ` version ${version}`}.`);
       const what = `plan ${markLabel(plan.name, 64)} version ${at.version} by ${markLabel(at.from, 64)}`;
-      return ok({ blob: blobFile(room.dir, at.hash), show: text => `${frame(`The ${what}`)}\n${datamark(room.code, what, text, { block: true, max: MAX_BODY })}` });
+      // the answers' notes on this version, word for word (R22)
+      const notes = at.answers.flatMap(a => (a.note === undefined ? []
+        : [datamark(room.code, `${a.name} ${a.answer === 'agree' ? 'agreed' : 'asked for changes'}, with a note`, a.note, { block: true, max: LIMITS.text })]));
+      return ok({ blob: blobFile(room.dir, at.hash), show: text => [`${frame(`The ${what}`)}`, datamark(room.code, what, text, { block: true, max: MAX_BODY }), ...notes].join('\n') });
     }
   }
 }

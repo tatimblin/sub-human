@@ -15,11 +15,11 @@ export interface Context {
   /** The absolute directory paths are shared relative to (the repo's root, else the session's cwd). */
   readonly root: string;
   /** The repo's ignore text: an ignored file is never shared. */
-  readonly ignore?: string;
-  readonly repo?: string;
-  readonly branch?: string;
+  readonly ignore?: string | undefined;
+  readonly repo?: string | undefined;
+  readonly branch?: string | undefined;
   /** The session's plans directory (`plansDir`): plan files written there are no edits. */
-  readonly plans?: string;
+  readonly plans?: string | undefined;
   /** The member's activity document as it stands. */
   readonly doc?: ActivityDoc;
   /** Native task id → subject, which an update's result doesn't carry (the bridge's map, ARCHITECTURE §7). */

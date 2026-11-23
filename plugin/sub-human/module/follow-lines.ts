@@ -113,9 +113,15 @@ export function absorb(
   state: State, lines: readonly LogLine[], activity: readonly { readonly before?: ActivityDoc; readonly doc: ActivityDoc }[], me: Me, now: number,
   messages: readonly { readonly from: string; readonly text: string }[] = [],
 ): Absorbed {
+  const edited = activity.flatMap(d => edits(d.before?.files ?? [], d.doc) ?? []);
+  // a file a colleague and I both took up in one poll is one overlap, told as theirs (R15d)
+  const theirs = new Set(edited.flatMap(i => (i.from === me.name ? [] : i.files)));
   const inputs: Input[] = [
     ...lines.map(l => ({ kind: 'entry', entry: l.entry }) satisfies Input),
-    ...activity.flatMap(d => edits(d.before?.files ?? [], d.doc) ?? []),
+    ...edited.flatMap(i => {
+      const files = i.from === me.name ? i.files.filter(f => !theirs.has(f)) : i.files;
+      return files.length ? [{ ...i, files }] : [];
+    }),
     ...messages.map(m => ({ kind: 'message', from: m.from, text: m.text }) satisfies Input),
   ];
   let s = state;

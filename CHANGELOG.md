@@ -21,6 +21,8 @@ module. Your work keeps your colleagues and their Claudes up to date as you do i
   recipient, never into the room's history; it wakes the recipient's Claude after its turn ends, framed as a
   colleague's request, under a burst rule and an hourly budget. Broadcasts never wake anyone, and a message that
   carries a command or URL is shown to its person instead.
+- **`@room TEXT`** at your prompt posts your exact words to the room as yours, with no model turn; a line that names
+  someone (`@room bob, …`) is the one way a person's words wake a colleague's Claude.
 - **Plans** are written in plan mode as ever; at approval you keep one, make it a room plan, or send it. Room plans
   are versioned under compare-and-swap, reviewed on a native card with the full text and diff in a scrollable pane,
   and agreed per version; owned parts become tasks.
@@ -40,9 +42,10 @@ module. Your work keeps your colleagues and their Claudes up to date as you do i
 - **The MCP server and its tools**: Claude's tools (`share`, `read`, `plan`, `task`) are registered by the module.
 - **The PIN** and its throttling, the ssh shim and login as the host, `--forward`, and the old protocol: one invite
   line plus Let in, on two pathways.
-- `@room` posts are not in 2.0.0.
 
 ### Known items
+- **Merging two sent plans** (R22e) is not built: two people can each send a plan for the same work, but there is
+  no step that merges them into one room plan.
 - **The live gate is run by the owner** before release (three permission modes, an injection scene); it is not part
   of CI, and its command-rule false positives on past-tense report lines are measured there.
 - **A real Funnel join** from a machine with no Tailscale is a manual check per release.

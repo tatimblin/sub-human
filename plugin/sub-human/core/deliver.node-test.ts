@@ -231,8 +231,14 @@ test('plans, sent plans and tasks reach those they are about (R25)', () => {
   assert.equal(v({ kind: 'plan', from: 'bob', by: 'claude', name: 'other', version: 2, hash: 'h', base: 1, scope: 'group' }).kind, 'none');
   assert.deepEqual(v({ kind: 'plan_ask', from: 'bob', by: 'claude', name: 'other', version: 1, people: ['ann'] }), { kind: 'notice', line: "bob's Claude asked you to agree on plan other version 1." });
   assert.equal(v({ kind: 'plan_ask', from: 'bob', by: 'claude', name: 'other', version: 1, people: ['cat'] }).kind, 'none');
-  const changes = v({ kind: 'plan_answer', from: 'bob', by: 'person', name: 'paging', version: 1, answer: 'changes', note: 'use a cursor' });
-  assert.ok(changes.kind === 'context' && changes.item.text === 'asked for changes on plan paging version 1: use a cursor' && changes.line === 'bob: asked for changes on plan paging version 1: use a cursor');
+  // a note reaches the author word for word, in a block of its own the cap never cuts (R22)
+  const note = `use a cursor:\n- opaque\n${'x'.repeat(2000)}`;
+  const changes = v({ kind: 'plan_answer', from: 'bob', by: 'person', name: 'paging', version: 1, answer: 'changes', note });
+  assert.ok(changes.kind === 'context' && changes.item.block && changes.line?.startsWith('bob: asked for changes on plan paging version 1. Their note, word for word: use a cursor: - opaque'));
+  const told = context([changes.item, { at: 0, label: 'cat', text: 'later', value: 1 }], CODE);
+  assert.equal(told, `[room ${CODE} · cat] later\n[room ${CODE} · bob]\nasked for changes on plan paging version 1. Their note, word for word:\n${note}`, 'the block last, whole');
+  const sentBack = v({ kind: 'plan_accept', from: 'bob', by: 'person', name: 'mine', version: 1, answer: 'changes', note: 'a\nb' });
+  assert.ok(sentBack.kind === 'context' && sentBack.item.block && sentBack.item.text.endsWith('word for word:\na\nb'));
   assert.equal(v({ kind: 'plan_answer', from: 'bob', by: 'person', name: 'other', version: 1, answer: 'agree' }).kind, 'none');
   const decided = v({ kind: 'decision', from: 'ann', by: 'system', name: 'paging', version: 1, agreed: ['bob'], changes: [] });
   assert.ok(decided.kind === 'context' && decided.line === 'Plan paging version 1 is decided: it was agreed by bob.', 'my own decision counts');
@@ -244,12 +250,18 @@ test('plans, sent plans and tasks reach those they are about (R25)', () => {
   const t = (task: Task): Draft => ({ kind: 'task', from: 'bob', by: 'system', task });
   const unblocked = v(t({ n: 1, title: 'store', status: 'done', addedBy: 'bob', owner: 'bob', blockedBy: [] }));
   assert.ok(unblocked.kind === 'context' && unblocked.item.value === 2);
+  // released, like finished: a task I wait on with no owner now
+  const released = v(t({ n: 1, title: 'store', status: 'open', addedBy: 'bob', blockedBy: [] }));
+  assert.ok(released.kind === 'context' && released.item.value === 2 && released.line === 'bob: task #1 store, which your task waits on, has no owner now');
   assert.equal(v(t({ n: 4, title: 'docs', status: 'claimed', addedBy: 'ann', owner: 'bob', blockedBy: [] })).kind, 'context', 'one I added');
-  assert.equal(v(t({ n: 2, title: 'handler', status: 'claimed', addedBy: 'bob', owner: 'ann', blockedBy: [1], note: 'n' })).kind, 'context', 'one I own');
+  // one handed to me carries its tag for my Claude's native list, outside the data (R24a)
+  const mine = v(t({ n: 2, title: 'handler', status: 'claimed', addedBy: 'bob', owner: 'ann', blockedBy: [1], note: 'n', plan: { name: 'paging', version: 1 } }));
+  assert.ok(mine.kind === 'context' && mine.item.tag === `[room ${CODE}#2]`, 'one I own');
+  assert.equal(context([mine.item], CODE), `[room ${CODE} · bob] task #2 handler is claimed (ann) · for your task list: [room ${CODE}#2]`);
   assert.equal(v(t({ n: 3, title: 'docs', status: 'claimed', addedBy: 'bob', owner: 'bob', blockedBy: [] })).kind, 'none');
 });
 
-test('overlap (R15d): a colleague editing a file I edited recently, or one a plan I am on names, is an urgent context item', () => {
+test('overlap (R15d): a colleague editing a file I edited recently, or one a plan I am on names, is an urgent context item, both ways', () => {
   const touched = [{ path: 'src/store.js', at: NOW - 1000 }];
   const r = one({ kind: 'edits', from: 'bob', files: ['src/server.js', 'src/store.js'] }, me({ touched }));
   assert.deepEqual(r.verdict, {
@@ -260,7 +272,15 @@ test('overlap (R15d): a colleague editing a file I edited recently, or one a pla
   assert.ok(named.verdict.kind === 'context' && named.verdict.item.overlap && named.verdict.line === 'bob is editing src/schema.ts, which a plan you are on names.');
   assert.equal(kind(one({ kind: 'edits', from: 'bob', files: ['src/other.js'] }, me({ touched }))), 'none');
   assert.equal(kind(one({ kind: 'edits', from: 'bob', files: ['src/store.js'] }, me({ touched: [{ path: 'src/store.js', at: NOW - RECENT_MS }] }))), 'none');
-  assert.equal(kind(one({ kind: 'edits', from: 'ann', files: ['src/store.js'] }, me({ touched }))), 'none');
+  // and my own edits, told to me too: a file a colleague edited recently, or one a plan I share with someone names
+  const bobs = (at: number) => start(room({ members: [member('ann'), member('bob', { activity: { name: 'bob', files: ['src/store.js'], at } })] }));
+  const own = one({ kind: 'edits', from: 'ann', files: ['src/a.js', 'src/store.js'] }, me({ touched }), bobs(NOW - 1000));
+  assert.ok(own.verdict.kind === 'context' && own.verdict.item.overlap && own.verdict.line === 'You are editing src/store.js, which bob edited recently.');
+  assert.equal(kind(one({ kind: 'edits', from: 'ann', files: ['src/store.js'] }, me({ touched }), bobs(NOW - RECENT_MS))), 'none', 'not recently');
+  const shared = start(room({ plans: [{ name: 'paging', scope: 'group', versions: [version('bob', ['ann'])] }] }));
+  const planned = one({ kind: 'edits', from: 'ann', files: ['src/schema.ts'] }, me({ terms: ['src/schema.ts'] }), shared);
+  assert.ok(planned.verdict.kind === 'context' && planned.verdict.line === 'You are editing src/schema.ts, which a plan you are on with bob names.');
+  assert.equal(kind(one({ kind: 'edits', from: 'ann', files: ['src/schema.ts'] }, me({ terms: ['src/schema.ts'] }))), 'none', 'a plan of mine alone');
   assert.deepEqual(edits(['a.ts'], { name: 'bob', files: ['a.ts', 'b.ts'] }), { kind: 'edits', from: 'bob', files: ['b.ts'] });
   assert.equal(edits(['a.ts'], { name: 'bob', files: ['a.ts'] }), null);
 });

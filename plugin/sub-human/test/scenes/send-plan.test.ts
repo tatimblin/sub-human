@@ -1,5 +1,5 @@
 // S-Send a plan (R22b, R22c): I make my own plan in plan mode and send it to one person, packed with my branch, the
-// files I touched and a note; their answer reaches my Claude. A plan sent to me is one line, opened on the same card
+// files it names and those I touched, and a note; their answer reaches my Claude. A plan sent to me is one line, opened on the same card
 // with the full text one choice away; accepting it gives my Claude the plan whole, and nothing starts a turn. At most
 // 6 lines are drawn for me (R41).
 import { expect, mock, test } from 'claude-code/testing'
@@ -23,7 +23,7 @@ test('I send my plan to bob, packed for his Claude; his answer reaches mine', as
   w.answer('Send to bob', 'build the handler on this')
   await $.tool.call(EXIT.input)
   const sent = room.store.room.lines.map(l => v.parse(Line, JSON.parse(l))).filter(e => e.kind === 'plan_sent')
-  expect(sent).toMatchObject([{ name: 'store-paging', version: 1, to: 'bob', branch: 'alice/paging', files: ['src/store.js'], note: 'build the handler on this' }])
+  expect(sent).toMatchObject([{ name: 'store-paging', version: 1, to: 'bob', branch: 'alice/paging', files: ['src/store.js', 'test/store-paging.test.js'], note: 'build the handler on this' }])
   await room.as('bob').planAct({ act: 'accept', name: 'store-paging', version: 1, answer: 'accept' })
   await room.poll(clock)
   const r = await $.prompt.submit(typed('did bob take it?'))

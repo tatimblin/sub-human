@@ -10,7 +10,7 @@ import type { On } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import type { PlanAct } from '../core/api.js';
 import { sha256 } from '../core/hash.js';
-import { latestVersion } from '../core/plans.js';
+import { latestVersion, sentFiles } from '../core/plans.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { secretIn } from '../core/secrets.js';
@@ -105,7 +105,7 @@ export function registerPlans(on: On): void {
       const branch = (await $.vcs.detect({ path: room.root }).catch(() => null))?.branch;
       const note = picked === SEND ? '' : picked.trim();
       const sent = await plan({
-        act: 'send', name: as, version: at.value, files: session.mine?.files ?? [], by: 'person',
+        act: 'send', name: as, version: at.value, files: sentFiles(text, session.mine?.files ?? [], room.ignore), by: 'person',
         ...(c.to !== undefined && { to: c.to }), ...(note && { note }), ...(branch && { branch }),
       });
       return sent.ok ? told(`your person sent this plan to ${c.to ?? 'the room'} in ${room.code} as ${as} v${at.value}.`) : r;
@@ -127,8 +127,11 @@ export function registerPlans(on: On): void {
     if (!room) return refuse('This session is in no room; nothing was done. Your person can join one with /sub-human.');
     const c = planCall(e, room);
     if (!c.ok) return refuse(c.error);
-    const branch = c.value.act === 'send' ? (await $.vcs.detect({ path: room.root }).catch(() => null))?.branch : null;
-    const req = c.value.act === 'send' ? { ...c.value, files: session.mine?.files ?? [], ...(branch && { branch }) } : c.value;
+    const send = c.value.act === 'send';
+    const branch = send ? (await $.vcs.detect({ path: room.root }).catch(() => null))?.branch : null;
+    const latest = send && session.state ? latestVersion(session.state, c.value.name) : null;
+    const text = latest ? (await $.fs.read(blobFile(room.dir, latest.hash)).catch(() => null)) ?? '' : '';
+    const req = c.value.act === 'send' ? { ...c.value, files: sentFiles(text, session.mine?.files ?? [], room.ignore), ...(branch && { branch }) } : c.value;
     const q = request(req, room.home);
     const a = await $.http.fetch(q.url, q).then(x => answer('plan', x), (x: unknown) => err(String(x).slice(0, 200)));
     if (!a.ok) return refuse(`Nothing was done in ${room.code}: ${a.error}`);

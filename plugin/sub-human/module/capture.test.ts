@@ -4,7 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import * as v from '../vendor/valibot.mjs'
 import { toolFixture } from '../test/support/fixtures.js'
 import { kitReader } from '../test/support/kit-fixtures.js'
-import { EDIT, EDITED, END, START, seedRoom } from '../test/support/seed-room.js'
+import { CWD, EDIT, EDITED, END, START, seedRoom } from '../test/support/seed-room.js'
 
 const COMMIT = toolFixture('tool-bash-git-commit', 'Bash', kitReader)
 const NPM_TEST = toolFixture('tool-bash-test', 'Bash', kitReader)
@@ -68,6 +68,29 @@ test('a subagent\'s edit is mine (R16a)', async ($, on) => {
   await room.settled(clock)
   await $.tool.call({ ...EDIT.input, agentId: 'helper-1' })
   expect(JSON.parse(room.store.room.docs.get('activity/alice') ?? '{}')).toMatchObject({ name: 'alice', files: [EDITED] })
+  await $.session.end(END)
+})
+
+test('my work is shared from its repo: an ignored file never, a plans folder\'s file is no edit, and entries name the repo and branch (R1, R12, R14a)', async ($, on) => {
+  const clock = mock.clock(on)
+  const repo = CWD.split('/').at(-1) ?? ''
+  on('vcs.detect', () => ({ vcs: 'git', root: CWD, mainRoot: null, revision: null, branch: 'alice/paging', defaultBranch: 'main', remote: null }))
+  on('tool.call', { tool: 'Edit' }, () => EDIT.result)
+  on('tool.call', { tool: 'Bash' }, () => NPM_TEST.result)
+  on('tool.call', { tool: 'ExitPlanMode' }, () => ({ result: { plan: '# p', filePath: `${CWD}/plans/p.md` }, text: 'approved' }))
+  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now, files: { [`${CWD}/.gitignore`]: 'private/\n*.log\n' } })
+  await $.session.start({ ...START, cwd: `${CWD}/sub`, isInteractive: false }) // a folder inside the repo
+  await room.settled(clock)
+  for (const ignored of ['debug.log', 'private/a.md']) await $.tool.call({ ...EDIT.input, file_path: `${CWD}/${ignored}` })
+  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_exit' })
+  await $.tool.call({ ...EDIT.input, file_path: `${CWD}/plans/p.md` })
+  await $.tool.call(EDIT.input)
+  await $.tool.call(NPM_TEST.input)
+  const docs = room.requests.flatMap(r => (r.op === 'put_doc' && r.kind === 'activity' && 'files' in r.doc ? [r.doc.files] : []))
+  expect(docs).toEqual([[EDITED]])
+  expect(JSON.stringify(room.requests)).not.toMatch(/debug\.log|private|plans\/p\.md/)
+  const Where = v.looseObject({ kind: v.string(), event: v.optional(v.string()), repo: v.optional(v.string()), branch: v.optional(v.string()) })
+  expect(room.store.room.lines.map(l => v.parse(Where, JSON.parse(l))).filter(e => e.kind === 'activity')).toMatchObject([{ event: 'test', repo, branch: 'alice/paging' }])
   await $.session.end(END)
 })
 

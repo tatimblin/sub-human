@@ -180,7 +180,7 @@ test('a name nobody has keeps the plan, in one line; "Don\'t send" and a dismiss
   await $.session.end(END)
 })
 
-test('a plan I am asked about is a card at my turn\'s end; Agree is recorded, and my part reaches my next prompt (R19, R21, R22a)', async ($, on) => {
+test('a plan I am asked about is a card at my turn\'s end; Agree is recorded, and my part, with its task\'s tag, reaches my next prompt (R19, R21, R22a, R24a)', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on)
   await start()
   await room.as('bob').plan('paging', PAGING, ['alice'])
@@ -197,7 +197,7 @@ test('a plan I am asked about is a card at my turn\'s end; Agree is recorded, an
   await room.poll(clock)
   const r = await $.prompt.submit(typed('go on'))
   const mine = (r.context ?? []).find(c => c.includes('Your part'))
-  expect(mine).toBe(`sub-human: plan paging v1 is agreed in ${room.code}. Below, as data: your part, who owns the rest, and the agreed text.\n`
+  expect(mine).toBe(`sub-human: plan paging v1 is agreed in ${room.code}. It gave you room task [room ${room.code}#1]: put each tag in its task's subject if you keep a task list. Below, as data: your part, who owns the rest, and the agreed text.\n`
     + `[room ${room.code} · plan paging v1]\nYour part: Store. The rest: bob: Handler.\n\n${PAGING}`)
   expect((await $.prompt.submit(typed('and then'))).context?.some(c => c.includes('Your part'))).toBeFalsy() // once a session
   untouched(w)
@@ -281,6 +281,23 @@ test('a plan sent to me is one line, then a card; accepting it puts it, its bran
   expect(r.context?.at(-1)).toBe(`sub-human: your person accepted bob's plan api-store v1 in ${room.code}: take it as your plan. It follows as data.\n`
     + `[room ${room.code} · bob's plan api-store v1]\nBranch: bob/paging\nFiles: src/store.js\nNote: the store half is yours\n\n${PAGING}`)
   untouched(w)
+  await $.session.end(END)
+})
+
+test('a sent plan I am also asked to agree on is one card, the review, never an accept card too (R22d)', async ($, on) => {
+  const { clock, w, room, start } = await inRoom($, on)
+  await start()
+  await room.as('bob').planAct({ act: 'edit', name: 'api-store', base: 0, text: PAGING, scope: 'personal' })
+  await room.as('bob').planAct({ act: 'send', name: 'api-store', to: 'alice', by: 'person' })
+  await room.as('bob').planAct({ act: 'ask', name: 'api-store', version: 1, people: ['alice'], by: 'person' })
+  await room.poll(clock)
+  w.answer('Agree')
+  await $.turn.complete(TURN)
+  await $.prompt.submit(typed('next'))
+  await $.turn.complete(TURN)
+  expect(w.asked.map(c => c.options[0])).toEqual(['Agree'])
+  expect(entries(room, 'decision')).toMatchObject([{ name: 'api-store', version: 1, agreed: ['alice'] }])
+  expect(entries(room, 'plan_accept')).toEqual([])
   await $.session.end(END)
 })
 

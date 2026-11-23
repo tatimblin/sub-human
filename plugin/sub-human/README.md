@@ -43,6 +43,10 @@ Also:
 - `/sub-human news` opens what each colleague changed and found since you last looked, and clears the count.
 - `/sub-human kick NAME` removes a member for good; `/sub-human doctor` checks this machine; `/sub-human help` lists
   the commands.
+- `@room TEXT` at your prompt posts your exact words to the room as yours; your Claude never sees it, and one line
+  says it went. Start with a name (`@room bob, which port does the server use?`) to address one person: a line of
+  yours naming someone is the one thing you type that can start their Claude's turn. Nothing that looks like a secret
+  is sent.
 
 Your name is your git name unless you give one. The others' Claudes reach yours as `NAME.CODE` (`bob.vole-8126`).
 Leaving keeps your session going. Ending a session doesn't leave: you show as away until a session of yours comes
@@ -105,7 +109,7 @@ What is never shared:
 
 - anything that looks like a secret (a curated pattern list, from gitleaks), and secret-holding files (`.env*`,
   `*.pem`, keys, credentials);
-- files your repo ignores (`.gitignore`), and files outside the repo;
+- files your repo ignores (its top-level `.gitignore`), and files outside the repo;
 - file contents, beyond a short excerpt your Claude chose to quote.
 
 Messages between two Claudes are private to them: they never go into the room's history, on any machine.
@@ -139,8 +143,8 @@ permission mode.
 ## Tasks
 
 The room has a small task list. Anyone adds a task; you claim one for yourself (refused while someone else has it);
-only its owner releases it or marks it done. A task can wait on others, and when one you're waiting on is done, your
-Claude hears of it. `/sub-human tasks` lists them, and your Claude has a task tool.
+only its owner releases it or marks it done. A task can wait on others, and when one you're waiting on is done or released,
+your Claude hears of it. `/sub-human tasks` lists them, and your Claude has a task tool.
 
 Your own native task list stays yours and works as it does alone. If you launch Claude Code with
 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (Claude Code's own setting, which sub-human never sets), two more things happen: your

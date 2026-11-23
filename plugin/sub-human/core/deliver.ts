@@ -5,6 +5,8 @@
 // Broadcasts never do. Context is only what bears on my work (R15c) or overlaps it (R15d); the rest is counted by
 // fold's updatesSince and left to the catch-up.
 import type { By, Entry, RoomState } from './entries.js';
+import { LIMITS } from './entries.js';
+import { tag } from './tasks.js';
 import { datamark, markLabel, oneLine, ZERO_WIDTH } from './text.js';
 
 export const WAKES_PER_HOUR = 6;
@@ -56,6 +58,10 @@ export interface Item {
   readonly text: string;
   readonly value: number;
   readonly overlap?: true;
+  /** A note to pass on word for word (R22): its own datamarked block, outside the cap. */
+  readonly block?: true;
+  /** A room task of mine, by its `[room CODE#N]` tag, said after the data for my Claude's native list (R24a). */
+  readonly tag?: string;
 }
 
 export type Verdict =
@@ -84,8 +90,8 @@ export function deliver(input: Input, me: Me, state: State, now: number, budget:
   }
 }
 
-/** The files a colleague's activity document gained, as deliver's input, or null when it gained none. */
-export function edits(before: readonly string[], after: { readonly name: string; readonly files: readonly string[] }): Input | null {
+/** The files a member's activity document gained, as deliver's input, or null when it gained none. */
+export function edits(before: readonly string[], after: { readonly name: string; readonly files: readonly string[] }): Extract<Input, { kind: 'edits' }> | null {
   const files = after.files.filter(f => !before.includes(f));
   return files.length ? { kind: 'edits', from: after.name, files } : null;
 }
@@ -93,11 +99,13 @@ export function edits(before: readonly string[], after: { readonly name: string;
 function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Delivered {
   const keep = (verdict: Verdict): Delivered => ({ verdict, state: s });
   const who = label(e.from, e.by);
-  const item = (text: string, value: number, line = true): Extract<Verdict, { kind: 'context' }> => {
-    const it: Item = { at: e.at, label: who, text, value };
+  const item = (text: string, value: number, line = true, more: Pick<Item, 'block' | 'tag'> = {}): Extract<Verdict, { kind: 'context' }> => {
+    const it: Item = { at: e.at, label: who, text, value, ...more };
     return { kind: 'context', item: it, ...(line && { line: clip(`${who}: ${text}`) }) };
   };
   const notice = (text: string): Verdict => ({ kind: 'notice', line: clip(text) });
+  // an answer's note reaches the plan's author word for word (R22): a block of its own, never one clipped line
+  const noted = (what: string, note: string | undefined): Verdict => (note ? item(`${what}. Their note, word for word:\n${note}`, 2, true, { block: true }) : item(what, 2));
   if (e.from === me.name && e.kind !== 'decision') {
     // my Claude's question: a post addressed to someone that ends in `?`
     const asks = e.kind === 'post' && e.by === 'claude' && e.to !== undefined && e.text.trim().endsWith('?');
@@ -132,7 +140,8 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
     case 'plan_answer': {
       const v = room.plans.find(p => p.name === e.name)?.versions.find(x => x.version === e.version);
       if (v?.from !== me.name) return keep(NONE);
-      return keep(item(e.answer === 'agree' ? `agreed to plan ${e.name} version ${e.version}` : `asked for changes on plan ${e.name} version ${e.version}${e.note ? `: ${e.note}` : ''}`, 2));
+      if (e.answer === 'agree') return keep(item(`agreed to plan ${e.name} version ${e.version}`, 2));
+      return keep(noted(`asked for changes on plan ${e.name} version ${e.version}`, e.note));
     }
     case 'decision': {
       if (!onPlan(room, e.name, me.name)) return keep(NONE);
@@ -144,14 +153,17 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
         ? notice(`${who} sent ${e.to ? 'you' : 'the room'} plan ${e.name} version ${e.version}.`) : NONE);
     case 'plan_accept': {
       const mine = room.sent.some(p => p.from === me.name && p.name === e.name && p.version === e.version);
-      return keep(mine ? item(`${e.answer === 'accept' ? 'accepted' : e.answer === 'dismiss' ? 'dismissed' : 'asked for changes on'} your plan ${e.name}${e.note ? `: ${e.note}` : ''}`, 2) : NONE);
+      return keep(mine ? noted(`${e.answer === 'accept' ? 'accepted' : e.answer === 'dismiss' ? 'dismissed' : 'asked for changes on'} your plan ${e.name}`, e.note) : NONE);
     }
     case 'task': {
       const t = e.task;
-      const waits = t.status === 'done' && room.tasks.some(x => x.owner === me.name && x.status !== 'done' && x.blockedBy.includes(t.n));
-      if (waits) return keep(item(`finished task #${t.n} ${t.title}, which your task waits on`, 2));
+      const waits = room.tasks.some(x => x.owner === me.name && x.status !== 'done' && x.blockedBy.includes(t.n));
+      if (waits && t.status === 'done') return keep(item(`finished task #${t.n} ${t.title}, which your task waits on`, 2));
+      if (waits && t.status === 'open') return keep(item(`task #${t.n} ${t.title}, which your task waits on, has no owner now`, 2));
       const mine = t.owner === me.name || t.addedBy === me.name;
-      return keep(mine ? item(`task #${t.n} ${t.title} is ${t.status}${t.owner ? ` (${t.owner})` : ''}`, 1) : NONE);
+      // a task handed to me (an agreed plan's part) goes on my Claude's native list with its tag
+      const tagged = t.owner === me.name && t.status === 'claimed' ? { tag: tag(me.code, t.n) } : {};
+      return keep(mine ? item(`task #${t.n} ${t.title} is ${t.status}${t.owner ? ` (${t.owner})` : ''}`, 1, true, tagged) : NONE);
     }
     case 'joined': case 'left': case 'invite': case 'admit': case 'kick': return keep(NONE);
   }
@@ -185,14 +197,28 @@ function wake(s: State, code: string, now: number, budget: number, key: string, 
   return { verdict: { kind: 'wake', text, line: clip(`${src.label} ${src.verb} your Claude.`) }, state: { ...s, wakes: [...s.wakes, now], bursts } };
 }
 
+/** Two people on one file, or one on a file a plan names (R15d): told to both sides, so my own edits are checked too. */
 function overlap(from: string, files: readonly string[], me: Me, room: RoomState, now: number): Verdict {
-  if (from === me.name) return NONE;
+  const told = (line: string): Verdict => {
+    const text = clip(line);
+    return { kind: 'context', item: { at: now, label: 'overlap', text, value: 3, overlap: true }, line: text };
+  };
+  if (from === me.name) {
+    // a colleague's activity document updated recently and holding the file: they edited it recently
+    const by = (f: string) => room.members.find(m => m.name !== me.name && !m.kicked && m.activity && now - m.activity.at < RECENT_MS && m.activity.files.includes(f));
+    for (const f of files) {
+      const other = by(f);
+      if (other) return told(`You are editing ${f}, which ${name(other.name)} edited recently.`);
+    }
+    const on = partners(room, me.name);
+    const hit = files.find(f => me.terms.includes(f));
+    return hit !== undefined && on.length ? told(`You are editing ${hit}, which a plan you are on with ${on.map(name).join(', ')} names.`) : NONE;
+  }
   const mine = recent(me, now);
   const named = interests(me, room);
   const hit = files.find(f => mine.includes(f)) ?? files.find(f => named.includes(f));
   if (hit === undefined) return NONE;
-  const text = clip(`${name(from)} is editing ${hit}, which ${mine.includes(hit) ? 'you edited recently' : 'a plan you are on names'}.`);
-  return { kind: 'context', item: { at: now, label: 'overlap', text, value: 3, overlap: true }, line: text };
+  return told(`${name(from)} is editing ${hit}, which ${mine.includes(hit) ? 'you edited recently' : 'a plan you are on names'}.`);
 }
 
 /** Whether an update bears on my work (R15c): naming me, from someone on a plan with me, or naming a file I touched or a term of mine. */
@@ -292,7 +318,9 @@ function label(from: string, by: By): string {
 
 /** One datamarked line: who it is from, and the text on one line with no way to forge another label. */
 function mark(it: Item, code: string): string {
-  return datamark(code, it.label, it.text, { max: LINE_MAX });
+  if (it.block) return datamark(code, it.label, it.text, { block: true, max: LIMITS.text });
+  // a tag can't come from the data, which has every `[room` defused
+  return `${datamark(code, it.label, it.text, { max: LINE_MAX })}${it.tag ? ` · for your task list: ${it.tag}` : ''}`;
 }
 
 function clip(text: string): string {
@@ -319,15 +347,18 @@ export function enqueue(queue: readonly Item[], item: Item, max: number = QUEUE_
   return q;
 }
 
-/** The queue as one prompt's context: datamarked lines, oldest first, within the cap; lowest-value and oldest dropped first. */
+/**
+ * The queue as one prompt's context: datamarked lines, oldest first, within the cap; lowest-value and oldest dropped
+ * first. A note's block is never cut by the cap and comes last, so no line follows it that it could pass for.
+ */
 export function context(queue: readonly Item[], code: string, cap: number = CONTEXT_TOKENS): string {
   const kept: Item[] = [];
   let used = 0;
   for (const it of rank(queue)) {
-    const n = tokens(mark(it, code)) + 1;
+    const n = it.block ? 0 : tokens(mark(it, code)) + 1;
     if (used + n <= cap) { kept.push(it); used += n; }
   }
-  return kept.sort((a, b) => a.at - b.at).map(it => mark(it, code)).join('\n');
+  return kept.sort((a, b) => Number(a.block ?? false) - Number(b.block ?? false) || a.at - b.at).map(it => mark(it, code)).join('\n');
 }
 
 function rank(q: readonly Item[]): Item[] {

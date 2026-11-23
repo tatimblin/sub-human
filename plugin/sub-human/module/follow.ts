@@ -137,6 +137,13 @@ export function registerFollow(on: On): void {
       take(absorb(st, [], [], me(room, st.room), await $.clock.now(), messages));
       shown(room);
     };
+    // the repo my work is in (R1, R12), and what it ignores, which is never shared (R14a)
+    const where = async (): Promise<Pick<InRoom, 'root' | 'repo' | 'branch' | 'ignore'>> => {
+      const copy = await $.vcs.detect({ path: e.cwd }).catch(() => null);
+      const root = copy?.root ?? e.cwd;
+      const ignore = await $.fs.read(`${root}/.gitignore`).catch(() => null);
+      return { root, ...(copy && { repo: copy.root.split('/').at(-1) ?? copy.root }), ...(copy?.branch && { branch: copy.branch }), ...(ignore && { ignore }) };
+    };
     // where this session's pointer says it is: the same room, another (joined elsewhere), or none (it left); then a
     // ping, which keeps a session in a room live even while idle at the prompt, and the room's link
     const locate = async (): Promise<void> => {
@@ -151,7 +158,7 @@ export function registerFollow(on: On): void {
           forget(session);
           $.ui.status(undefined);
         }
-        session.room = p && { home, code: p.code, name: p.name, title: p.title, dir: roomDir(home, await fileKey(p.code)), root: e.cwd };
+        session.room = p && { home, code: p.code, name: p.name, title: p.title, dir: roomDir(home, await fileKey(p.code)), ...await where() };
       }
       cc ??= (await $.session.version().catch(() => null))?.version ?? '';
       const now = await $.clock.now();

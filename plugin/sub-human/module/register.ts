@@ -1,6 +1,7 @@
 // The hooks module hooks.json names: it wires each part's hooks and does nothing else. Every `$` call sits in the file
 // that registers its hook (a `$` passed across a function or file doesn't load); the parts share plain data only.
 import type { On } from 'claude-code';
+import { registerAtRoom } from './at-room.js';
 import { registerCapture } from './capture.js';
 import { registerContext } from './context.js';
 import { registerFollow } from './follow.js';
@@ -13,6 +14,7 @@ import { registerWake } from './wake.js';
 import { registerPlans } from './plans.js';
 
 export function register(on: On): void {
+  registerAtRoom(on); // outermost: an @room line goes to the room before any other part sees the prompt
   registerFollow(on);
   registerCapture(on);
   registerContext(on);
