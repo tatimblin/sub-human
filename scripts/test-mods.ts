@@ -3,9 +3,9 @@
  * test-mods: the hooks module's kit tests (every *.test.ts under plugin/sub-human) under `claude plugin test`.
  * npm run test:module; npm test runs it last.
  *
- * It runs the pinned Claude Code (scripts/lib/claude-bin.ts: CLAUDE_VERSION, installed on first use, or
- * SUB_HUMAN_CLAUDE_BIN), never the global one, with a fresh CLAUDE_CONFIG_DIR under its prefix: a fresh config has
- * hooks modules on. `claude plugin test` collects every *.test.ts(x) under the plugin, so node tests are named
+ * It runs the pinned Claude Code (scripts/lib/claude-bin.ts: core/cc/contract.json `probed`, installed on first use,
+ * or SUB_HUMAN_CLAUDE_BIN), never the global one, with a fresh CLAUDE_CONFIG_DIR under its prefix (a fresh config has
+ * hooks modules on), or the caller's when it names its own binary (claude-bin.ts claudeEnv). `claude plugin test` collects every *.test.ts(x) under the plugin, so node tests are named
  * *.node-test.ts. No binary, or modules off, is a failure, never a skip (docs/TESTING.md §4).
  */
 import fs from 'node:fs';

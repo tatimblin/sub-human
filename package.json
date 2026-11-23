@@ -18,8 +18,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && tsc -p scripts/tsconfig.json",
     "lint": "node scripts/lint.ts",
     "validate": "node scripts/validate.ts",
-    "probe": "node scripts/probe-cc.ts",
-    "canary": "node scripts/canary.ts",
+    "probe": "node --import ./plugin/sub-human/resolve-ts.ts scripts/probe-cc.ts",
+    "canary": "node --import ./plugin/sub-human/resolve-ts.ts scripts/canary.ts",
     "typings": "node scripts/typings.ts",
     "vendor": "node scripts/vendor.ts",
     "budget": "node scripts/budget.ts"

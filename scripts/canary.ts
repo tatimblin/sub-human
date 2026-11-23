@@ -1,50 +1,37 @@
 #!/usr/bin/env node
 /**
- * canary: an early warning. Install a newer Claude Code from npm and run the checks that would break on it, before
- * anyone updates.
+ * canary: the early warning (docs/TESTING.md §7). Install a newer Claude Code from npm and run what would break on it,
+ * before anyone updates. No model calls.
  *
  *   npm run canary [-- latest|next|stable|X.Y.Z] [--config-dir DIR]
- *   node scripts/canary.ts [TAG] [--config-dir DIR]
  *
- * 1. Install. `npm i --prefix <tmp>/sub-human-canary/<TAG>` of @anthropic-ai/claude-code@TAG (never global, never
- *    ~/.claude). The npm package is a wrapper: bin/claude.exe is a stub that its postinstall replaces with a hard link
- *    to the native binary of the platform's optional dependency, @anthropic-ai/claude-code-<platform>/claude. The
- *    canary takes that native binary itself (binaryFor), else bin/claude.exe once it is no longer the stub, and links
- *    it as <prefix>/path/claude, the directory it puts first on PATH.
- * 2. The probe. `node scripts/probe-cc.ts --json --no-typings` with CLAUDE_BIN set (the typings snapshot is written by
- *    contract.json `probed`, never by the canary's version); failures grouped by each entry's `feature`, else by its
- *    `section` (summarizeProbe).
- * 3. The wiring tests. `npm run test:mods` (scripts/test-mods.ts) with the binary first on PATH. test-mods skips with
- *    exit 0 when modules are off or the binary is too old; the canary counts that skip as a failure (judgeMods).
- * 4. `claude plugin validate plugin/sub-human --strict` with the binary.
+ * 1. install   `npm i --prefix <tmp>/sub-human-canary/<TAG>` of @anthropic-ai/claude-code@TAG (never global). The
+ *              package's bin/claude.exe is a stub its postinstall replaces with the platform package's native binary;
+ *              scripts/lib/claude-bin.ts install takes that binary itself, as it does for the pinned one.
+ * 2. typings   the binary's declarations (scripts/typings.ts extractTypings) diffed against the snapshot typings/.
+ *              A diff is reported, not failed: the probe below is what judges it.
+ * 3. probe     core/cc/contract.json: api entries against the new typings, internal ones against the new binary
+ *              (scripts/probe-cc.ts, without its snapshot version check).
+ * 4. module    npm run test:module with this binary (SUB_HUMAN_CLAUDE_BIN); modules off fails it.
+ * 5. validate  `claude plugin validate plugin/sub-human --strict`.
  *
- * Steps 3 and 4 write Claude Code's global config (.claude.json, backups/) into the config dir: the canary gives them a
- * fresh one, <prefix>/config, as CLAUDE_CONFIG_DIR, so nothing lands in ~/.claude or ~/.claude.json. A fresh config has
- * no cached GrowthBook features and the hooks modules switch defaults on (cc CONTRACT hooks-modules), so the wiring
- * tests run there. --config-dir DIR uses DIR instead (a copy of a config whose cached switch you want to test with):
- * the runs may write into it.
- *
- * Writes scripts/canary/last.json (gitignored) and prints a short summary; exits 1 when any step fails, 2 on bad
+ * Steps 4 and 5 write Claude Code's global config, never ~/.claude: both get a fresh CLAUDE_CONFIG_DIR,
+ * <prefix>/config (a fresh config has hooks modules on), or --config-dir DIR (claude-bin.ts claudeEnv keeps it). Writes scripts/canary/last.json (gitignored), prints a step a
+ * line and a line per failed feature with the SUB_HUMAN_CC_OFF value that turns it off; exits 1 on a failure, 2 on bad
  * arguments.
- *
- *   parseArgs(argv) -> {tag, configDir?} | {error}
- *   platformKey(platform, arch, musl) -> 'darwin-arm64' | 'linux-x64-musl' | ...   as the package's install.cjs
- *   binaryFor(prefix, key, exists, size) -> path | null    the native binary in an install
- *   summarizeProbe(probeJson, entries) -> ProbeSummary      failures grouped by feature, else section
- *   judgeMods(status, output) -> ModsResult                 a skip is a failure
- *   verdict(steps) -> boolean
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { PLUGIN, REPO } from './lib/paths.ts';
-import { parseJson } from './lib/io.ts';
+import { ROOTS, TARGET, extractTypings } from './typings.ts';
+import { readContract, readTypings, report } from './probe-cc.ts';
+import type { Report } from './probe-cc.ts';
+import { PKG, install } from './lib/claude-bin.ts';
+import { binaryVersion } from '../plugin/sub-human/core/cc/contract.js';
 
-const PKG = '@anthropic-ai/claude-code';
-export const LAST = path.join(REPO, 'scripts', 'canary', 'last.json');
-/** The stub bin/claude.exe is before the postinstall replaces it (install.cjs reads one this small as the stub). */
-const STUB_MAX = 4096;
+export const LAST: string = path.join(REPO, 'scripts', 'canary', 'last.json');
 
 /** The canary's arguments. */
 export interface CanaryArgs { tag: string, configDir?: string }
@@ -66,145 +53,101 @@ export function parseArgs(argv: readonly string[]): CanaryArgs | { error: string
   return configDir === undefined ? { tag } : { tag, configDir };
 }
 
-/** The platform key of the native package, as the npm package's install.cjs picks it. */
-export function platformKey(platform: string, arch: string, musl: boolean): string {
-  if (platform === 'linux') return `linux-${arch}${musl ? '-musl' : ''}`;
-  return `${platform}-${arch}`;
-}
+/** One type root against the snapshot: lines only one side has (the "Written by" line aside). */
+export interface RootDiff { root: string, same: boolean, added: number, removed: number }
 
-const isMusl = (): boolean => {
-  if (process.platform !== 'linux') return false;
-  const report: unknown = process.report.getReport();
-  const header = report && typeof report === 'object' && 'header' in report ? report.header : null;
-  return !(header && typeof header === 'object' && 'glibcVersionRuntime' in header);
-};
-
-/**
- * The native Claude Code binary in an npm install at prefix: the platform package's own file, else the wrapper's
- * bin/claude.exe once the postinstall has put the binary there (bigger than the stub). null when neither is.
- */
-export function binaryFor(prefix: string, key: string, exists: (f: string) => boolean, size: (f: string) => number): string | null {
-  const exe = key.startsWith('win32') ? 'claude.exe' : 'claude';
-  const native = path.join(prefix, 'node_modules', `${PKG}-${key}`, exe);
-  if (exists(native)) return native;
-  const wrapped = path.join(prefix, 'node_modules', PKG, 'bin', 'claude.exe');
-  return exists(wrapped) && size(wrapped) > STUB_MAX ? wrapped : null;
-}
-
-/** The parts of a contract entry the summary reads (`feature` when contract.json has it). */
-export interface EntryGroup { id: string, section?: number, feature?: string }
-/** One probe result, as probe-cc --json prints it. */
-interface ProbeRow { id: string, ok: boolean, missing: string[] }
-/** probe-cc --json's output. */
-export interface ProbeJson { ok: boolean, error?: string, version?: string, results?: ProbeRow[], degraded?: { id: string, issue?: number, note: string }[] }
-/** The probe step, summarized. */
-export interface ProbeSummary {
-  ok: boolean, error?: string, version: string | null, total: number, failed: number,
-  /** Per group (feature, else `§section`, else `other`): its entries and the ids that failed. */
-  groups: Record<string, { total: number, failed: string[] }>,
-  degraded: string[],
-}
-
-const groupOf = (e: EntryGroup | undefined): string =>
-  e?.feature ?? (e?.section !== undefined ? `§${e.section}` : 'other');
-
-export function summarizeProbe(p: ProbeJson, entries: readonly EntryGroup[]): ProbeSummary {
-  const byId = new Map(entries.map(e => [e.id, e]));
-  const groups: ProbeSummary['groups'] = {};
-  const results = p.results ?? [];
-  for (const r of results) {
-    const g = (groups[groupOf(byId.get(r.id))] ??= { total: 0, failed: [] });
-    g.total++;
-    if (!r.ok) g.failed.push(r.id);
-  }
-  const failed = results.filter(r => !r.ok).length;
-  return {
-    ok: !p.error && results.length > 0 && p.ok && failed === 0,
-    ...(p.error !== undefined ? { error: p.error } : {}),
-    version: p.version ?? null, total: results.length, failed, groups,
-    degraded: (p.degraded ?? []).map(d => `${d.id}${d.issue !== undefined ? ` (#${d.issue})` : ''}`),
-  };
-}
-
-/** The wiring tests' step. */
-export interface ModsResult { ok: boolean, skipped: string | null, pass: number | null, fail: number | null, status: number | null }
-
-/** test-mods' exit and output: it passes only when it ran and exited 0; its skip line (modules off, too old) fails. */
-export function judgeMods(status: number | null, out: string): ModsResult {
-  const skipped = /^test:mods skipped: (.*)$/m.exec(out)?.[1] ?? null;
-  const n = (re: RegExp): number | null => { const m = re.exec(out); return m ? Number(m[1]) : null; };
-  const pass = n(/^\s*(\d+) pass\b/m), fail = n(/^\s*(\d+) fail\b/m);
-  return { ok: status === 0 && skipped === null, skipped, pass, fail, status };
+export function typingsDiff(before: Readonly<Record<string, string | null>>, after: Readonly<Record<string, string>>): RootDiff[] {
+  const body = (s: string): string[] => s.split('\n').filter(l => !l.startsWith('// Written by Claude Code '));
+  return Object.entries(after).map(([root, text]) => {
+    const a = body(before[root] ?? ''), b = body(text);
+    const had = new Set(a), has = new Set(b);
+    const added = b.filter(l => !had.has(l)).length, removed = a.filter(l => !has.has(l)).length;
+    return { root, same: added === 0 && removed === 0 && a.length === b.length, added, removed };
+  });
 }
 
 /** A step that ran a command: its exit and the tail of its output. */
-export interface CmdResult { ok: boolean, status: number | null, tail: string }
+export interface Step { ok: boolean, status: number | null, tail: string }
+/** Every step the canary ran; a step that could not run is null. */
+export interface Steps { install: Step, typings: { ok: boolean, error?: string, roots: RootDiff[] } | null, probe: Report | null, module: Step | null, validate: Step | null }
 
-/** Every step passed. */
-export const verdict = (s: { install: CmdResult, probe: ProbeSummary | null, mods: ModsResult | null, validate: CmdResult | null }): boolean =>
-  s.install.ok && !!s.probe?.ok && !!s.mods?.ok && !!s.validate?.ok;
+/** Every step ran and passed. */
+export const verdict = (s: Steps): boolean => s.install.ok && !!s.typings?.ok && !!s.probe?.ok && !!s.module?.ok && !!s.validate?.ok;
 
-const tail = (s: string, n = 12): string => s.trim().split('\n').slice(-n).join('\n');
+/** The summary: a line a step, then a line per failed feature naming its SUB_HUMAN_CC_OFF value. */
+export function summary(tag: string, s: Steps): string[] {
+  const mark = (ok: boolean | undefined): string => (ok ? 'PASS' : 'FAIL');
+  const indent = (t: string): string => t.split('\n').join('\n                ');
+  const out = [`canary ${tag}${s.probe?.version ? ` = claude ${s.probe.version}` : ''}: ${mark(verdict(s))}`];
+  out.push(`  ${mark(s.install.ok)}  install   ${indent(s.install.tail)}`);
+  if (s.typings) {
+    const changed = s.typings.roots.filter(r => !r.same).map(r => `${r.root} +${r.added} -${r.removed}`);
+    out.push(`  ${mark(s.typings.ok)}  typings   ${s.typings.error ?? (changed.length ? `changed: ${changed.join(', ')}` : 'same as typings/')}`);
+  }
+  if (s.probe) {
+    const count = (st: string): number => s.probe?.results.filter(r => r.status === st).length ?? 0;
+    out.push(`  ${mark(s.probe.ok)}  probe     ${count('pass')}/${s.probe.results.length} pass, ${count('skip')} skipped`);
+    for (const [f, g] of Object.entries(s.probe.features)) {
+      if (g.failed.length) out.push(`            ${f}: ${g.failed.join(', ')} failed; off with SUB_HUMAN_CC_OFF=${f}`);
+    }
+  }
+  if (s.module) out.push(`  ${mark(s.module.ok)}  module    ${indent(s.module.tail)}`);
+  if (s.validate) out.push(`  ${mark(s.validate.ok)}  validate  ${s.validate.ok ? 'plugin validate --strict passed' : indent(s.validate.tail)}`);
+  return out;
+}
 
-function run(cmd: string, args: string[], env: NodeJS.ProcessEnv, timeout: number): { status: number | null, out: string } {
+const tail = (s: string, n = 6): string => s.trim().split('\n').slice(-n).join('\n');
+
+function run(cmd: string, args: string[], env: NodeJS.ProcessEnv, timeout: number): Step {
   const r = spawnSync(cmd, args, { cwd: REPO, env, encoding: 'utf8', timeout, maxBuffer: 64 * 1024 * 1024 });
-  return { status: r.error ? null : r.status, out: `${r.stdout || ''}${r.stderr || ''}${r.error ? `\n${r.error.message}` : ''}` };
+  const out = `${r.stdout || ''}${r.stderr || ''}${r.error ? `\n${r.error.message}` : ''}`;
+  const status = r.error ? null : r.status;
+  return { ok: status === 0, status, tail: tail(out) };
+}
+
+/** Steps 2 and 3 over the installed binary. */
+function inspect(bin: string, prefix: string): Pick<Steps, 'typings' | 'probe'> {
+  const found = readContract();
+  if (!found.ok) return { typings: { ok: false, error: found.error, roots: [] }, probe: null };
+  const contract = found.value;
+  const buf = fs.readFileSync(bin);
+  const binary = buf.toString('latin1');
+  const dir = path.join(prefix, 'typings');
+  fs.rmSync(dir, { recursive: true, force: true });
+  const version = binaryVersion(binary);
+  const why = version === null ? 'no VERSION literal in the binary' : extractTypings(buf, version, dir);
+  const read = (d: string, r: string): string | null => { try { return fs.readFileSync(path.join(d, r, 'index.d.ts'), 'utf8'); } catch { return null; } };
+  const typings = why !== null ? { ok: false, error: why, roots: [] }
+    : { ok: true, roots: typingsDiff(Object.fromEntries(ROOTS.map(r => [r, read(TARGET, r)])), Object.fromEntries(ROOTS.map(r => [r, read(dir, r) ?? '']))) };
+  return { typings, probe: report(contract, bin, { typings: why === null ? readTypings(dir) : null, binary }, null) };
 }
 
 function main(): number {
   const args = parseArgs(process.argv.slice(2));
   if ('error' in args) { process.stderr.write(`canary: ${args.error}\n`); return 2; }
   const prefix = path.join(os.tmpdir(), 'sub-human-canary', args.tag);
-  fs.mkdirSync(prefix, { recursive: true });
   const configDir = args.configDir ?? path.join(prefix, 'config');
   if (!args.configDir) fs.rmSync(configDir, { recursive: true, force: true });
   fs.mkdirSync(configDir, { recursive: true });
 
   process.stdout.write(`canary: installing ${PKG}@${args.tag} into ${prefix}\n`);
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const inst = run(npm, ['i', '--prefix', prefix, '--no-audit', '--no-fund', '--no-save', `${PKG}@${args.tag}`], process.env, 600_000);
-  const bin = inst.status === 0 ? binaryFor(prefix, platformKey(process.platform, process.arch, isMusl()), fs.existsSync, f => fs.statSync(f).size) : null;
-  const install: CmdResult = { ok: !!bin, status: inst.status, tail: bin ? bin : tail(inst.out) || 'installed, but no native binary for this platform' };
-
-  let probe: ProbeSummary | null = null, mods: ModsResult | null = null, validate: CmdResult | null = null;
+  const inst = install(prefix, args.tag);
+  const bin = 'bin' in inst ? inst.bin : null;
+  const steps: Steps = {
+    install: { ok: bin !== null, status: bin === null ? 1 : 0, tail: 'bin' in inst ? inst.bin : inst.error },
+    typings: null, probe: null, module: null, validate: null,
+  };
   if (bin) {
-    const pathDir = path.join(prefix, 'path');
-    fs.rmSync(pathDir, { recursive: true, force: true });
-    fs.mkdirSync(pathDir);
-    fs.symlinkSync(bin, path.join(pathDir, 'claude'));
-    const env: NodeJS.ProcessEnv = { ...process.env, CLAUDE_BIN: bin, CLAUDE_CONFIG_DIR: configDir, PATH: `${pathDir}${path.delimiter}${process.env.PATH ?? ''}` };
-
-    const p = run(process.execPath, [path.join(REPO, 'scripts', 'probe-cc.ts'), '--json', '--no-typings'], env, 300_000);
-    let pj: ProbeJson;
-    try { pj = parseJson<ProbeJson>(p.out.slice(p.out.indexOf('{'))); } catch { pj = { ok: false, error: `unreadable probe output: ${tail(p.out, 3)}` }; }
-    // TODO(U1): the v2 contract.json replaces this 0.8 path
-    const contract = parseJson<{ entries: EntryGroup[] }>(fs.readFileSync(path.join(PLUGIN, 'lib', 'cc', 'contract.json'), 'utf8'));
-    probe = summarizeProbe(pj, contract.entries);
-
-    const m = run(process.execPath, [path.join(REPO, 'scripts', 'test-mods.ts')], env, 600_000);
-    mods = judgeMods(m.status, m.out);
-
-    const v = run(bin, ['plugin', 'validate', PLUGIN, '--strict'], env, 120_000);
-    validate = { ok: v.status === 0, status: v.status, tail: tail(v.out, 4) };
+    Object.assign(steps, inspect(bin, prefix));
+    const env: NodeJS.ProcessEnv = { ...process.env, SUB_HUMAN_CLAUDE_BIN: bin, CLAUDE_CONFIG_DIR: configDir };
+    steps.module = run(process.execPath, [path.join(REPO, 'scripts', 'test-mods.ts')], env, 600_000);
+    steps.validate = run(bin, ['plugin', 'validate', PLUGIN, '--strict'], env, 120_000);
   }
 
-  const ok = verdict({ install, probe, mods, validate });
-  const summary = { ok, tag: args.tag, version: probe?.version ?? null, bin, configDir, at: new Date().toISOString(), install, probe, mods, validate };
+  const ok = verdict(steps);
   fs.mkdirSync(path.dirname(LAST), { recursive: true });
-  fs.writeFileSync(LAST, JSON.stringify(summary, null, 1) + '\n');
-
-  const mark = (x: boolean | undefined): string => (x ? 'PASS' : 'FAIL');
-  const out: string[] = [`canary ${args.tag}${probe?.version ? ` = claude ${probe.version}` : ''}: ${ok ? 'PASS' : 'FAIL'}`];
-  out.push(`  ${mark(install.ok)}  install   ${install.tail.split('\n').join('\n            ')}`);
-  if (probe) {
-    out.push(`  ${mark(probe.ok)}  probe     ${probe.error ?? `${probe.total - probe.failed}/${probe.total} entries`}`);
-    for (const [g, r] of Object.entries(probe.groups)) if (r.failed.length) out.push(`            ${g}: ${r.failed.length}/${r.total} fail: ${r.failed.join(', ')}`);
-    if (probe.degraded.length) out.push(`            reported changed on this version: ${probe.degraded.join(', ')}`);
-  }
-  if (mods) out.push(`  ${mark(mods.ok)}  test:mods ${mods.skipped !== null ? `skipped: ${mods.skipped}` : `${mods.pass ?? '?'} pass, ${mods.fail ?? '?'} fail (exit ${mods.status ?? 'none'})`}`);
-  if (validate) out.push(`  ${mark(validate.ok)}  validate  ${validate.ok ? 'plugin validate --strict passed' : validate.tail.split('\n').join('\n            ')}`);
-  out.push(`  ${path.relative(REPO, LAST)}`);
-  process.stdout.write(out.join('\n') + '\n');
+  fs.writeFileSync(LAST, `${JSON.stringify({ ok, tag: args.tag, bin, configDir, at: new Date().toISOString(), ...steps }, null, 1)}\n`);
+  process.stdout.write(`${[...summary(args.tag, steps), `  ${path.relative(REPO, LAST)}`].join('\n')}\n`);
   return ok ? 0 : 1;
 }
 

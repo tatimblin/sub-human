@@ -45,12 +45,21 @@ jobs:
         run: |
           git config --global user.name "sub-human CI"
           git config --global user.email "ci@sub-human.invalid"
-      - name: 'npm ci (typescript, @types/node and oxlint: the typecheck and the linter only)'
+      - name: 'npm ci (typescript, @types/node, oxlint and the vendored packages: checks only)'
         run: npm ci
-      - name: npm test (the typecheck first)
-        run: npm test
-      # oxlint's type-aware rules and the type-escape ratchet; the same on every node, so once.
-      # (npm run validate runs in the validate job, which installs the claude CLI)
+      # npm test without test:module and validate: they need Claude Code, so they run in the claude job
+      - name: typecheck
+        run: npm run --silent typecheck
+      - name: vendored files match the lockfile
+        run: node scripts/vendor.ts --check
+      - name: node tests
+        run: npm run --silent test:node
+      - name: script tests
+        run: npm run --silent test:scripts
+      - name: size budget
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
+        run: node scripts/budget.ts
+      # oxlint's type-aware rules, the type-escape ratchet and directory-lint; the same on every node, so once
       - name: lint
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
         run: npm run lint
@@ -60,40 +69,44 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: node scripts/check-version.ts "origin/$BASE_REF"
 
-  # claude plugin validate --strict on every push and PR, with the Claude Code version the plugin was probed on,
-  # installed as the canary does: npm i --prefix a temp dir (never global), the
-  # platform package's native binary, a fresh CLAUDE_CONFIG_DIR. The directory's other rules: npm run lint
-  # (scripts/directory-lint.ts).
-  validate:
-    name: plugin validate --strict (claude-code@probed)
+  # Everything that needs Claude Code, on the version core/cc/contract.json `probed` names, installed as the canary
+  # does (scripts/lib/claude-bin.ts: npm i --prefix a temp dir, never global; the platform package's native binary):
+  # the probe with its typings check, the kit tests (hooks modules off is a failure, never a skip) and
+  # plugin validate --strict (scripts/validate.ts, a fresh config dir).
+  claude:
+    name: claude-code@probed (probe, kit tests, validate)
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: install Claude Code (the probed version)
+      - name: git identity (the kit tests may make throwaway repos)
+        run: |
+          git config --global user.name "sub-human CI"
+          git config --global user.email "ci@sub-human.invalid"
+      - run: npm ci
+      - name: install Claude Code (contract.json probed)
         id: cc
         run: |
-          # TODO(U2): read "probed" from plugin/sub-human/core/cc/contract.json once it exists
-          version=2.1.330
-          prefix="$RUNNER_TEMP/claude-code"
-          npm i --prefix "$prefix" --no-audit --no-fund --no-save "@anthropic-ai/claude-code@$version"
-          bin="$prefix/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
-          [ -x "$bin" ] || bin="$prefix/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+          bin="$(npm run --silent probe -- --print-bin)"
           "$bin" --version
           echo "bin=$bin" >> "$GITHUB_OUTPUT"
-      - name: claude plugin validate plugin/sub-human --strict
+      - name: npm run probe
+        run: npm run probe -- --bin "${{ steps.cc.outputs.bin }}"
+      - name: npm run test:module
         env:
-          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude-config
-        run: |
-          mkdir -p "$CLAUDE_CONFIG_DIR"
-          "${{ steps.cc.outputs.bin }}" plugin validate plugin/sub-human --strict
+          SUB_HUMAN_CLAUDE_BIN: ${{ steps.cc.outputs.bin }}
+        run: npm run test:module
+      - name: npm run validate (claude plugin validate --strict)
+        env:
+          SUB_HUMAN_CLAUDE_BIN: ${{ steps.cc.outputs.bin }}
+        run: npm run validate
 
-  # An early warning: install Claude Code's latest and next from npm and run the probe (without the typings check),
-  # the hooks module's wiring tests (a modules-off skip fails) and plugin validate --strict against each.
+  # The early warning (docs/TESTING.md §7): Claude Code's latest and next from npm, each with its typings diffed
+  # against typings/, the probe, the kit tests (modules off fails) and plugin validate --strict. No model calls.
   canary:
     name: canary (claude-code@${{ matrix.tag }})
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -108,7 +121,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: git identity (the wiring tests make throwaway repos)
+      - name: git identity (the kit tests may make throwaway repos)
         run: |
           git config --global user.name "sub-human CI"
           git config --global user.email "ci@sub-human.invalid"
