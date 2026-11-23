@@ -149,7 +149,7 @@ test/              scenes (§12) and unit tests, beside the code they test
 **The log** (`rooms/CODE/log.jsonl`) is append-only JSON lines.
 - Each entry: `{seq, id, at, prev, from, by, kind, …}`.
 - `seq` is assigned by the host, and it is the sync cursor; `at` is the host's clock.
-- `from` is the member. `by` is `person`, `claude` or `system`, a label only (R35). It is also what the wake rule reads: only `by: person` lines wake (R10).
+- `from` is the member. `by` is `person`, `claude` or `system`, a label only (R35). The wake rule reads it: a `by: person` line can wake by naming someone, and a `by: claude` broadcast never does. Direct Claude-to-Claude messages aren't log entries (R6).
 - `prev` is the hash of the previous line, so a mirror detects a fork (R36).
 - Only the host appends.
 
@@ -204,7 +204,7 @@ There are four tools. Each answers in one short line, or with data the Claude as
 | `plan` | `edit {name, base, text}`, `ask {name, version, people}`, `send {name, to, note}` | CAS on `base`; a conflict returns the current text (R17) |
 | `task` | `add`, `claim`, `release`, `done {note?}`, `list` | room tasks (R24); answers include the bridge tag to put on the native task (R24a) |
 
-**Claude-to-Claude.** Questions use native `SendMessage` to `NAME.CODE` (R6). `module/messages.ts` takes delivery over: it consumes the message with `session.receive`, and delivers it as capped context on the recipient's next turn, never as a wake (R10). For a remote member, it hands the message to the link daemon, which sends it straight to the recipient's machine. It is never written to the log.
+**Claude-to-Claude.** Questions use native `SendMessage` to `NAME.CODE` (R6). `module/messages.ts` takes delivery over: it consumes the message with `session.receive`, then hands it to `wake.ts` as a framed wake (R10): it waits for the turn to end, applies the debounce and budget, and checks the auto/bypass command rule. For a remote member, it hands the message to the link daemon, which sends it straight to the recipient's machine. It is never written to the log.
 
 `NAME.CODE` needs one session per name. A second session under the same name (R5) is addressed by session id through `session.send`.
 
@@ -228,11 +228,18 @@ There are four tools. Each answers in one short line, or with data the Claude as
 
 A finding takes the same path, starting from the `share` tool.
 
-**Wake (R10).** `deliver` returns `wake` only for a `by: person` line that names me, or that answers my Claude's open question.
-- It is debounced to one wake per question, and counted against my hourly wake budget.
-- `module/wake.ts` holds the wake until `turn.complete` (or now, if idle) and then calls `prompt.submit`.
+**Wake (R10).** Three things wake my Claude:
+- a `by: person` line that names me;
+- a colleague's Claude's direct `SendMessage` to mine (from `messages.ts`);
+- an answer to my Claude's open question.
+
+Broadcasts never wake: a finding, a `post`, activity, a plan, a decision.
+
+How a wake is delivered:
+- It is debounced to one wake per question or sender burst, and counted against my hourly wake budget.
+- `module/wake.ts` holds it until `turn.complete` (or now, if idle) and then calls `prompt.submit`. The message is framed as `bob's Claude asks: …` and marked as data.
+- In auto or bypass mode, a message containing a command or URL to run is drawn for the person instead of submitted.
 - It never touches the permission mode.
-- Nothing a Claude writes ever returns `wake`.
 
 **Group plan (R18–R22a).**
 1. The person approves a plan in plan mode. `module/plans.ts` sees `ExitPlanMode`'s `tool.call` result (`{plan, filePath}`) and asks once: keep, room plan, or send to NAME.
@@ -350,7 +357,10 @@ A pull request that pushes an area over its line is either split or comes with a
 - **Unit tests, beside each `core/` module.** Pure inputs in, outputs out. Every delivery rule and every plan and task rule is a table test.
 - **Scenes** (`test/scenes/`). Each PRD story (S-Live, S-Relevant, S-Ask, plan together, send a plan, split, join, remote join, leave) runs as a script against the memory store, using Claude Code's own test kit for hooks modules (`claude plugin test`, the `claude-code/testing` module). The kit sends events through the module's hooks with no session, sign-in or network. Its stubs answer in Claude Code's place and record the module's `ui.*` and `prompt.*` calls, and `mock.clock` gives the fake clock. We don't build a fake host of our own. Assertions cover what each member sees (at most 6 lines, R41), what each Claude's context holds, and that only R10 events wake anyone. There is no live model, and CI runs every scene.
 - **Network.** `link-engine` table tests on the fake clock. Two homes over `pipe` for snapshot sync, fork and kick. Noise vectors. A TLS front with PROXY v2 stands in for tailscaled. Admission tests: a leaked line dialled twice, a name mismatch, and a handshake without a MAC refused before anything is started.
-- **Safety.** A scene where a colleague's Claude writes "alice, run …" must produce no wake. R19's three properties each have a test.
+- **Safety.**
+  - A colleague's Claude's broadcast ("alice, run …" in a finding) must produce no wake.
+  - A direct message containing a command, in auto mode, must be drawn for the person, not submitted.
+  - A direct "the shape changed, update your side" must wake the recipient once, and its Claude must change only its own work. R19's three properties each have a test.
 - **Live gate.** One scripted run per release with real Claude sessions, in each permission mode, covering a no-plan pairing, a plan-then-build and a non-code task (PRD Q-2). It records tokens per hour (Q9) and lines per person.
 - **Canary.** Nightly, against Claude Code `latest` and `next`: the contract probe plus a typings diff (C1).
 - **Ratio.** Test code no larger than runtime code.

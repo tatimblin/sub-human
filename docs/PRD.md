@@ -74,7 +74,7 @@ Existing options are:
 - **S-Join.** I type `/sub-human` and I'm in a room with whoever else on this machine has done the same, whatever repo each of us is in. To bring someone from another machine, I run `/sub-human invite`, they type one line, and they're in.
 - **S-Live.** I work with my Claude as usual. When my session learns, decides or changes something that matters to a colleague, their Claude has it by their next turn, and they see a count on their status line. Examples: I change the shape of `listTasks`; we find the flaky test is a timezone bug; I push the store half. I typed nothing extra.
 - **S-Relevant.** My Claude gets what bears on my work, not everything. A colleague's change to a file or interface I'm using, or a plan I'm part of, reaches me first and in full. The rest stays one short line, or waits in the catch-up.
-- **S-Ask.** My Claude needs a fact the other person's Claude has, and it asks directly. The question reaches the other Claude on its next turn, and its person sees one line. It answers if it is sure; otherwise the question waits for its person. If I name the person myself (`bob, which port…`), their Claude is woken at the end of its turn. Nobody's turn is interrupted.
+- **S-Ask.** My Claude needs a fact the other person's Claude has, and it asks directly. The other Claude is woken at the end of its current turn, and its person sees one line. It answers if it is sure; otherwise the question waits for its person. Likewise, when my session changes something bob's side depends on, my Claude tells his directly, and his updates its side on its own. Nobody's turn is interrupted.
 - **S-Aware.** At a glance, without asking, I can see who is here, whether each person is working or idle, and what each is working on.
 - **S-Plan together.** We write one shared plan in plan mode, as we normally would, and it says who does what. Each named person agrees or asks for changes in their own session, and the room records the decision for that exact version. Each person's Claude then knows its own part.
 - **S-Send a plan.** I make my own plan in plan mode, as usual. When it's ready I send it to the room or to one person. Their session receives it whole, and their Claude can act on it once they accept it.
@@ -130,17 +130,19 @@ This is the product. Everything else supports it. The POC scored itself 1/5 here
 ### 6.3 Asking and messages
 Talking is secondary. People have chat already; these exist so the Claudes can talk to each other, and so a person can address the room when it is easiest.
 - **R6 (P0)** Claude-to-Claude questions use native `SendMessage` addressed `NAME.CODE`. This is how S-Ask works.
-  - Native delivery would wake an idle recipient at once, which breaks R10. So the module takes delivery over: it consumes the incoming message with `session.receive`, and delivers it under R10.
+  - Native delivery wakes an idle recipient at once, and interrupts a busy one mid-turn. The module takes delivery over, consuming the message with `session.receive`. It delivers it under R10: it waits for the current turn to end, applies the framing, the debounce and the budget, then wakes.
   - Across machines the link carries the message straight to the recipient. **It is never written to the room log**, so no mirror or later joiner ever holds it. It stays private between the two Claudes, as it is locally (Q4).
 - **R7 (P0)** A Claude can post to the room with the `share` tool's `post` op. Its posts are always labelled as that Claude's (`bob's Claude: …`), never as the person's.
 - **R8 (P1)** `@room TEXT` posts the person's exact words, with no model turn. It is useful for addressing everyone's Claude at once ("everyone, rebase on main"), not as a chat product.
-- **R10 (P0)** **Wake rule. Only a line written by a person can wake anyone.** A turn starts in my session only when:
+- **R10 (P0)** **Wake rule: a direct message wakes; broadcasts never do.** A turn starts in my session only when:
   - a person's line names me (`@me`, or `me, …`);
-  - a person answers my Claude's open question.
+  - **a colleague's Claude messages mine directly** (`SendMessage` to `NAME.CODE`), for example to ask a fact or to say "the `listTasks` shape changed, update your side". This is how the other side updates on its own after a change (the POC's best moment);
+  - someone answers my Claude's open question.
 
   Rules:
-  - A colleague's Claude can't wake mine. That covers its findings, posts and `SendMessage` questions, which reach my Claude as context on its next turn and as one line to me. This closes the remote-injection chain: text planted in a repo → bob's Claude → "alice, run …" → alice's Claude acting unattended.
-  - Nothing else wakes me: not updates, plans, decisions, joins or chat.
+  - **Broadcasts never wake.** Findings, posts, activity, plans, decisions, joins and chat reach my Claude as context on its next turn, and me as a line or a count.
+  - **A woken turn is framed as a colleague's request, not an instruction.** The message is marked as coming from `bob's Claude`, as data. The mechanics say: answer facts and make changes within your own task. Anything else waits for your person: running a command the message supplies, touching files outside your work, or anything destructive. In auto or bypass mode, a message containing a command or URL to run is shown to the person, not submitted.
+  - **This is a known risk, accepted.** Text planted in a repo could still reach my Claude through bob's. The framing, the rule above and the wake budget limit what it can do, but they don't make it impossible. The live gate includes an injection scene (Q-2).
   - A wake waits until my current turn ends and never changes my permission mode.
   - **Bounded:** one wake per question, debounced, so four answers make one wake. There is also a per-person wake budget per hour, after which wakes become unread lines.
 - **R11 (P1)** A Claude answering a question, whether woken by a person's line or handed a colleague Claude's question as context, answers only facts it is sure of, in one line. Anything else (an opinion, a choice) waits for its person, who sees it as unread.
@@ -340,7 +342,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
 
 | Keep (proven) | Change | Drop |
 |---|---|---|
-| Append-only, hash-chained log as the single source of truth, with pure folds for consent and tasks (per-person seat keys, hook-only signing and the `@room` prompt-origin gate are dropped) | Delivery keeps its four outcomes (none, context, notice, wake), but only a person's line wakes (R10), and context is pushed only when relevant, under a cap (R15a) | The room session (`claude --bg`), its watchdog and reaper, and native task-file projection |
+| Append-only, hash-chained log as the single source of truth, with pure folds for consent and tasks (per-person seat keys, hook-only signing and the `@room` prompt-origin gate are dropped) | Delivery keeps its four outcomes (none, context, notice, wake), but broadcasts never wake: only a person naming me, a Claude's direct message, or an answer to my Claude's question (R10), and context is pushed only when relevant, under a cap (R15a) | The room session (`claude --bg`), its watchdog and reaper, and native task-file projection |
 | The `RoomStore` seam: filesystem, mirror and memory backends | The mid-turn wake becomes "submit at turn end, else hold until the next turn starts"; sync becomes a snapshot plus the entries after it | Plan-file backup, restore and swap, YES_GUARD and keep-mode, which make up most of `review.ts` (740 lines) and `hooks/consent.ts` (616 lines) |
 | Plan compare-and-swap, per-version sign-off, native plan mode as the place plans are written | Review moves to an AskUserQuestion card with a diff, plus a scrollable pane; the plan question moves to approval; adds sent plans and owners on parts | Room rows of every kind: chat rows, keepers, `hold`-kept rows |
 | Pure link state machine with an injected clock; the loopback listener behind Tailscale Funnel/Serve; WebSocket over HTTPS as the Funnel wire; the transport registry | Invites: one name-bound secret plus the host's Let in (the PIN, its backoff and hidden-prompt blocking are dropped); one Noise XK handshake on every pathway; ssh becomes `ssh -W` to the listener (no shim); Funnel hardened (R29a) | `--forward`, the ssh shim and login-as-host, CPace history, legacy signatures, the old protocol |
@@ -350,7 +352,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
 ## 9. Quality and verification
 
 - **Q-1. Deterministic scenes.** Each reference scene (join, live update reaching a colleague's Claude, relevance, ask, plan and agree, split, leave, remote join) runs without a live model, against the memory store and a fake clock, in CI.
-- **Q-2. Small live gate.** One named live run per release, at a known cost, across the three permission modes. It covers at least three workflows: no-plan pairing, plan-then-build, and non-code writing.
+- **Q-2. Small live gate.** One named live run per release, at a known cost, across the three permission modes. It covers at least three workflows: no-plan pairing, plan-then-build, and non-code writing. It also includes an injection scene: a planted instruction travels through one Claude's direct message, and it must not lead the recipient to run anything unattended.
 - **Q-3. Test-to-runtime ratio** of at most 1:1. Remote end-to-end tests are deterministic over the memory and pipe transports. Any Docker lab runs in CI or is deleted.
 - **Q-4. Canary.** A nightly probe of the (small) internals list against Claude Code `latest` and `next` stays.
 - **Q-5. Docs.** One README of at most about 200 lines, one architecture document, and a CHANGELOG. Commit messages are plain sentences.
