@@ -1,6 +1,6 @@
 // Where sub-human's files live. Pure: the caller passes the environment and the user's home, so node code and the
 // hooks module (which has no node:path) share one layout. Paths join with '/', which every platform node runs on takes.
-import { sha256 } from './store/store.js';
+import { sha256 } from './core/hash.js';
 
 /** SUB_HUMAN_HOME, or ~/.sub-human. */
 export function homeDir(env: Readonly<Record<string, string | undefined>>, userHome: string): string {

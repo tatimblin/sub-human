@@ -162,7 +162,7 @@ test/              scenes (§12) and unit tests, beside the code they test
 
 **The log** (`rooms/CODE/log.jsonl`) is append-only JSON lines.
 - Each entry: `{seq, id, at, prev, from, by, machine, kind, …}`.
-- `seq` is assigned by the host, and it is the sync cursor; `at` is the host's clock.
+- `seq` is assigned by the host, and it is the sync cursor; `at` is the host's clock. The host stamps `seq`, `at`, `prev` and `machine`; `id` is the writer's, a UUID made once and sent again on every retry, so the host answers a repeated id with the first line's seq and hash and writes nothing (R36). Entries the host's rules write (plans, decisions, tasks) get ids from the host.
 - `from` is the member. `by` is `person`, `claude` or `system`, a label only (R35). The wake rule reads it: a `by: person` line can wake by naming someone, and a `by: claude` broadcast never does. Direct Claude-to-Claude messages aren't log entries (R6).
 - `prev` is the hash of the previous line, so a mirror detects a fork (R36). The module computes it with `crypto.subtle.digest`.
 - Only the host appends.
@@ -306,7 +306,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
   - On the stream, each Noise message is a frame: a 2-byte length, then at most 64 KB. After the handshake, each frame's plaintext starts with a continuation byte (1: the message goes on in the next frame), so a message can be up to 8 MB.
   - The host reads nothing past message 3 until it answers the admission, and holds at most about 128 KB before then. The handshake times out after 10 s.
 - **Protocol.** JSON messages inside the channel (`core/protocol.ts`). Both sides open with `hello {version, min, caps, name, machine}` (R33). The ops are:
-  - to the host: `append {entry}` (the host stamps seq, at and prev, and deduplicates on the entry's id), `put_doc`, `put_blob`;
+  - to the host: `append {entry}` (the host stamps seq, at, prev and machine, and deduplicates on the entry's id), `put_doc`, `put_blob`;
   - `subscribe {after_seq, hash}`, answered with `snapshot` (when the cursor is not on the host's chain, a fork) and then `lines` (entries with their hashes);
   - `ack` or `refused {reason}` for each write's id;
   - `message {to}`, for private Claude-to-Claude messages, which are forwarded to the recipient's link and never logged;

@@ -13,7 +13,8 @@ import { writeAtomic } from './atomic.js';
 import type { LockOptions } from './lock.js';
 import { withLock } from './lock.js';
 import type { Catchup, Draft, Head, RoomStore } from './store.js';
-import { BLOB_HASH, headOf, lineHash, nextSnapshot, placeLine, sha256, tailText, verifyLines } from './store.js';
+import { BLOB_HASH, headOf, lineHash, nextSnapshot, placeLine, tailText, verifyLines } from './store.js';
+import { sha256 } from '../core/hash.js';
 
 export interface FsStoreOptions {
   readonly home: string;

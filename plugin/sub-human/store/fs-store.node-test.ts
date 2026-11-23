@@ -124,6 +124,24 @@ test('writeAtomic never opens its target, and syncs the temp file before the ren
   assert.ok(!ops.some(o => o === `open ${file}` || o === `writeFile ${file}`));
 });
 
+test('writeAtomic syncs the folder after the rename, so the rename survives a power loss', async t => {
+  const dir = await home();
+  const file = path.join(dir, 'doc.json');
+  const ops: string[] = [];
+  const { open, rename } = { open: fs.open.bind(fs), rename: fs.rename.bind(fs) };
+  t.mock.method(fs, 'open', async (...a: Parameters<typeof fs.open>) => {
+    const fh = await open(...a);
+    if (a[0] === dir) {
+      const sync = fh.sync.bind(fh);
+      fh.sync = () => { ops.push('sync folder'); return sync(); };
+    }
+    return fh;
+  });
+  t.mock.method(fs, 'rename', (from: string, to: string) => { ops.push('rename'); return rename(from, to); });
+  await writeAtomic(file, 'new');
+  assert.deepEqual(ops, ['rename', 'sync folder']);
+});
+
 test('a write that fails before its rename leaves the old text and no temp file', async t => {
   const dir = await home();
   const file = path.join(dir, 'doc.json');

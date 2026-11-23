@@ -9,6 +9,7 @@ import type { DocKind, DocKinds, Docs, Entry, LogLine, Snapshot } from '../core/
 import { NO_DOCS } from '../core/entries.js';
 import { fold, takeSnapshot } from '../core/fold.js';
 import { decodeEntry } from '../core/schema.js';
+import { sha256 } from '../core/hash.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 
@@ -42,12 +43,6 @@ export interface RoomStore {
   getBlob(hash: string): Promise<string | null>;
 }
 
-/** Hex SHA-256 of a text: `crypto.subtle`, so the module and node hash alike. */
-export async function sha256(text: string): Promise<string> {
-  const data = new Uint8Array(new TextEncoder().encode(text)); // a plain ArrayBuffer, as digest's types ask
-  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-}
 /** A line's hash, which the next line's `prev` names. Over the raw stored text, so decoding never changes it. */
 export const lineHash: (line: string) => Promise<string> = sha256;
 export const BLOB_HASH: RegExp = /^[0-9a-f]{64}$/;

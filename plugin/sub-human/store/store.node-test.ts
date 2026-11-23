@@ -1,7 +1,8 @@
 // The helpers both backends share: the line format, the chain check over raw lines, the tail file; and home.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { headOf, lineHash, parseTail, placeLine, sha256, tailText, verifyLines } from './store.js';
+import { headOf, lineHash, parseTail, placeLine, tailText, verifyLines } from './store.js';
+import { sha256 } from '../core/hash.js';
 import { post } from '../test/support/store-contract.js';
 import { blobFile, docFile, fileKey, homeDir, roomDir } from '../home.js';
 

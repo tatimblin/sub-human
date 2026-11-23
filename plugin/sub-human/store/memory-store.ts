@@ -7,7 +7,8 @@ import { decodeDoc } from '../core/schema.js';
 import type { Result } from '../core/result.js';
 import { ok } from '../core/result.js';
 import type { Catchup, Draft, Head, RoomStore } from './store.js';
-import { BLOB_HASH, headOf, lineHash, nextSnapshot, placeLine, sha256, verifyLines } from './store.js';
+import { BLOB_HASH, headOf, lineHash, nextSnapshot, placeLine, verifyLines } from './store.js';
+import { sha256 } from '../core/hash.js';
 
 /** A room's contents; tests may edit `lines` to forge a fork. */
 export interface MemoryRoom {

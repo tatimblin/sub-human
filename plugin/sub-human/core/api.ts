@@ -1,0 +1,194 @@
+// The daemon's socket API (ARCHITECTURE §5): every write in the home goes through one node daemon on `<home>/daemon.sock`.
+// A caller POSTs one JSON request to http://daemon/ over that socket and gets one Result back, `{ok, value}` or
+// `{ok: false, error}` with a one-line error. The module builds the call with module/bridge.ts; node uses
+// net/daemon/client.ts. Pure, so both load it.
+//
+//   append   {code, draft}             → {seq, hash}  draft.id is the caller's UUID, made once per draft and reused
+//                                                     only to retry that same draft: a repeat answers the first
+//                                                     {seq, hash} and writes nothing, whatever else it carries
+//   plan     {code, from, act, …}      → {seq, hash, latest} | {refused, latest}  edit (CAS on base), ask, answer,
+//                                                     send, accept, by core/plans.ts; a refused edit names the latest
+//   task     {code, from, act, …}      → {seq, hash, n}  add, claim, release, done, by core/tasks.ts
+//   put_doc  {code, kind, name, doc}   → null         a member's presence, activity or focus document
+//   put_blob {code, text}              → {hash}       plan text, stored by its hash
+//   session  {id, code, name}          → null         writes the pointer <home>/sessions/ID.json {code, name} the module reads
+//   session_end {id}                   → null         removes it
+//   ping     {session, code?, name?}   → null         `session` is the session id (it keeps that pointer fresh); with
+//                                                     code and name, this session is NAME in CODE, for messages
+//   message  {code, to, from, text}    → null         private Claude-to-Claude: into the recipient's inbox, never the log
+//   inbox    {session}                 → {messages}   takes this session's messages in all its rooms, once
+//   status   {}                        → {version, pid, sessions}
+//
+// Every request keeps the daemon up; it exits after a minute with none.
+import * as v from '../vendor/valibot.mjs';
+import type { Acceptance, ActivityDoc, Answer, Entry, FocusDoc, PlanScope, PresenceDoc } from './entries.js';
+import { LIMITS } from './entries.js';
+import type { Result } from './result.js';
+import { err, ok } from './result.js';
+import { decodeDoc, decodeEntry } from './schema.js';
+
+/** Bumped when a request or an answer changes shape; status carries it. */
+export const API_VERSION = 2;
+/** A request body larger than this is refused unread. */
+export const MAX_BODY: number = 1024 * 1024;
+export const DAEMON_URL: string = 'http://daemon/';
+
+export function socketFile(home: string): string { return `${home}/daemon.sock`; }
+/** Where a session finds its room: `{code, name}`, written by the session op. `id` is a SESSION_ID. */
+export function sessionFile(home: string, id: string): string { return `${home}/sessions/${id}.json`; }
+/** A session id safe as a file name (Claude Code's are UUIDs). */
+export const SESSION_ID: RegExp = /^[A-Za-z0-9_-]{1,128}$/;
+export interface Pointer { readonly code: string; readonly name: string }
+/** A session pointer as the module reads it, or null when it is not one. */
+export function decodePointer(text: string): Pointer | null {
+  try {
+    const r = v.safeParse(v.object({ code: name, name }), JSON.parse(text));
+    return r.success ? r.output : null;
+  } catch { return null; }
+}
+/** How to start the daemon: node's absolute path, the plugin's root and the home. It detaches itself. */
+export function daemonArgv(node: string, plugin: string, home: string): string[] {
+  return [node, '--import', `${plugin}/resolve-ts.ts`, `${plugin}/net/daemon.ts`, home];
+}
+
+type Without<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+/** An entry as a caller sends it: the host stamps seq, at, prev and machine; `id` is the caller's. */
+export type AppendDraft = Without<Entry, 'seq' | 'at' | 'prev' | 'machine'>;
+/** The documents a member writes about itself; `members` is the host's. */
+export type MemberDocKind = 'presence' | 'activity' | 'focus';
+export interface Message { readonly code: string; readonly from: string; readonly text: string; readonly at: number }
+export interface Status { readonly version: number; readonly pid: number; readonly sessions: number }
+export interface Version { readonly version: number; readonly hash: string }
+
+export type PlanAct =
+  | { readonly act: 'edit'; readonly name: string; readonly base: number; readonly text: string; readonly scope?: PlanScope }
+  | { readonly act: 'ask'; readonly name: string; readonly version: number; readonly people: readonly string[] }
+  | { readonly act: 'answer'; readonly name: string; readonly version: number; readonly answer: Answer; readonly note?: string }
+  | { readonly act: 'send'; readonly name: string; readonly version?: number; readonly to?: string; readonly note?: string; readonly branch?: string; readonly files?: readonly string[] }
+  | { readonly act: 'accept'; readonly name: string; readonly version: number; readonly answer: Acceptance; readonly note?: string };
+export type TaskAct =
+  | { readonly act: 'add'; readonly title: string; readonly blockedBy?: readonly number[] }
+  | { readonly act: 'claim' | 'release'; readonly n: number }
+  | { readonly act: 'done'; readonly n: number; readonly note?: string };
+interface Writer { readonly code: string; readonly from: string }
+
+export type Request =
+  | { readonly op: 'append'; readonly code: string; readonly draft: AppendDraft }
+  | ({ readonly op: 'plan' } & Writer & PlanAct)
+  | ({ readonly op: 'task' } & Writer & TaskAct)
+  | { readonly op: 'put_doc'; readonly code: string; readonly kind: MemberDocKind; readonly name: string; readonly doc: PresenceDoc | ActivityDoc | FocusDoc }
+  | { readonly op: 'put_blob'; readonly code: string; readonly text: string }
+  | { readonly op: 'session'; readonly id: string; readonly code: string; readonly name: string }
+  | { readonly op: 'session_end'; readonly id: string }
+  | { readonly op: 'ping'; readonly session: string; readonly code?: string; readonly name?: string }
+  | { readonly op: 'message'; readonly code: string; readonly to: string; readonly from: string; readonly text: string }
+  | { readonly op: 'inbox'; readonly session: string }
+  | { readonly op: 'status' };
+export type Op = Request['op'];
+export interface Answers {
+  append: { readonly seq: number; readonly hash: string };
+  plan: { readonly seq: number; readonly hash: string; readonly latest: Version | null } | { readonly refused: string; readonly latest: Version | null };
+  task: { readonly seq: number; readonly hash: string; readonly n: number };
+  put_doc: null;
+  put_blob: { readonly hash: string };
+  session: null;
+  session_end: null;
+  ping: null;
+  message: null;
+  inbox: { readonly messages: readonly Message[] };
+  status: Status;
+}
+
+const name = v.pipe(v.string(), v.minLength(1), v.maxLength(LIMITS.name));
+const session = v.pipe(v.string(), v.minLength(1), v.maxLength(LIMITS.short));
+const sessionId = v.pipe(v.string(), v.regex(SESSION_ID));
+const count = v.pipe(v.number(), v.integer(), v.minValue(0));
+const version = v.pipe(count, v.minValue(1));
+const text = v.pipe(v.string(), v.maxLength(LIMITS.text));
+const blob = v.pipe(v.string(), v.maxLength(MAX_BODY / 2));
+const opt = v.exactOptional;
+const writer = { code: name, from: name };
+const note = opt(text);
+
+const request = v.variant('op', [
+  v.object({ op: v.literal('append'), code: name, draft: v.looseObject({ id: v.pipe(v.string(), v.uuid()) }) }),
+  v.variant('act', [
+    v.object({ op: v.literal('plan'), ...writer, act: v.literal('edit'), name, base: count, text: blob, scope: opt(v.picklist(['group', 'personal'])) }),
+    v.object({ op: v.literal('plan'), ...writer, act: v.literal('ask'), name, version, people: v.pipe(v.array(name), v.maxLength(LIMITS.names)) }),
+    v.object({ op: v.literal('plan'), ...writer, act: v.literal('answer'), name, version, answer: v.picklist(['agree', 'changes']), note }),
+    v.object({
+      op: v.literal('plan'), ...writer, act: v.literal('send'), name, version: opt(version), to: opt(name), note,
+      branch: opt(v.string()), files: opt(v.array(v.string())),
+    }),
+    v.object({ op: v.literal('plan'), ...writer, act: v.literal('accept'), name, version, answer: v.picklist(['accept', 'dismiss', 'changes']), note }),
+  ]),
+  v.variant('act', [
+    v.object({ op: v.literal('task'), ...writer, act: v.literal('add'), title: v.string(), blockedBy: opt(v.array(count)) }),
+    v.object({ op: v.literal('task'), ...writer, act: v.picklist(['claim', 'release']), n: version }),
+    v.object({ op: v.literal('task'), ...writer, act: v.literal('done'), n: version, note: opt(v.string()) }),
+  ]),
+  v.object({ op: v.literal('put_doc'), code: name, kind: v.picklist(['presence', 'activity', 'focus']), name, doc: v.unknown() }),
+  v.object({ op: v.literal('put_blob'), code: name, text: blob }),
+  v.object({ op: v.literal('session'), id: sessionId, code: name, name }),
+  v.object({ op: v.literal('session_end'), id: sessionId }),
+  v.object({ op: v.literal('ping'), session, code: opt(name), name: opt(name) }),
+  v.object({ op: v.literal('message'), code: name, to: name, from: name, text }),
+  v.object({ op: v.literal('inbox'), session }),
+  v.object({ op: v.literal('status') }),
+]);
+
+const placed = { seq: count, hash: v.string() };
+const latest = v.nullable(v.object({ version, hash: v.string() }));
+const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
+  append: v.object(placed),
+  plan: v.union([v.object({ ...placed, latest }), v.object({ refused: v.string(), latest })]),
+  task: v.object({ ...placed, n: version }),
+  put_doc: v.null(),
+  put_blob: v.object({ hash: v.string() }),
+  session: v.null(),
+  session_end: v.null(),
+  ping: v.null(),
+  message: v.null(),
+  inbox: v.object({ messages: v.array(v.object({ code: name, from: name, text, at: count })) }),
+  status: v.object({ version: count, pid: count, sessions: count }),
+};
+const envelope = v.variant('ok', [v.object({ ok: v.literal(true), value: v.unknown() }), v.object({ ok: v.literal(false), error: v.string() })]);
+
+function decode<T>(schema: v.GenericSchema<unknown, T>, input: unknown): Result<T> {
+  const r = v.safeParse(schema, input);
+  if (r.success) return ok(r.output);
+  const at = r.issues[0].path?.map(p => String(p.key)).join('.') ?? '';
+  return err(at ? `${at}: ${r.issues[0].message}` : r.issues[0].message);
+}
+
+/** A request as the daemon reads it: the draft and the document through their own schemas. */
+export function decodeRequest(input: unknown): Result<Request> {
+  const r = decode(request, input);
+  if (!r.ok) return err(`request not understood: ${r.error}`);
+  const req = r.value;
+  if (req.op === 'append') {
+    // the host's stamps go in last, so a caller's own are overwritten, then come off again
+    const e = decodeEntry({ ...req.draft, seq: 1, at: 0, prev: '', machine: '-' });
+    if (!e.ok) return err(`entry not understood: ${e.error}`);
+    const { seq: _s, at: _a, prev: _p, machine: _m, ...draft } = e.value;
+    return ok({ op: 'append', code: req.code, draft });
+  }
+  if (req.op === 'put_doc') {
+    const d = decodeDoc(req.kind, req.doc);
+    if (!d.ok) return err(`document not understood: ${d.error}`);
+    if (d.value.name !== req.name) return err(`a document of ${d.value.name} can't be stored as ${req.name}'s`);
+    return ok({ ...req, doc: d.value });
+  }
+  return ok(req);
+}
+
+/** The daemon's answer to an `op` request, from the response's status and body. */
+export function readAnswer<O extends Op>(op: O, status: number, body: string): Result<Answers[O]> {
+  let json: unknown;
+  try { json = JSON.parse(body); } catch { return err(`the sub-human daemon answered ${status} with no result; nothing was done`); }
+  const e = decode(envelope, json);
+  if (!e.ok) return err(`the sub-human daemon's answer was not understood; nothing was done`);
+  if (!e.value.ok) return err(e.value.error);
+  const a = decode(answers[op], e.value.value);
+  return a.ok ? a : err(`the sub-human daemon's answer to ${op} was not understood (${a.error})`);
+}

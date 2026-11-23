@@ -86,3 +86,24 @@ test('many waiters on a dead lock: one inside at a time', async () => {
   assert.ok(rs.every(r => r.ok));
   assert.equal(most, 1);
 });
+
+test('two breakers of one dead lock: the second waits on .break, so only one acts on its re-check', async t => {
+  const file = await lockPath();
+  await dead(file);
+  const before = await seen(file);
+  const unlink = fs.unlink.bind(fs);
+  let open = (): void => undefined;
+  const gate = new Promise<void>(r => { open = r; });
+  let passed = 0;
+  // the unlink right after a breaker's re-check is held, so both would be past it at once without `.break`
+  t.mock.method(fs, 'unlink', async (p: Parameters<typeof fs.unlink>[0]) => {
+    if (p === file) { passed++; await gate; }
+    return unlink(p);
+  });
+  const both = Promise.all([breakStale(file, 1000, before), breakStale(file, 1000, before)]);
+  await sleep(50);
+  assert.equal(passed, 1);
+  open();
+  await both;
+  await assert.rejects(fs.access(`${file}.break`));
+});
