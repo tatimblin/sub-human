@@ -5,8 +5,9 @@
 // every PING_MS, when the session pings the daemon: a pointer gone is a leave, and following stops quietly.
 import type { On } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
-import type { DocKinds, LogLine } from '../core/entries.js';
+import type { DocKinds, LogLine, RoomState } from '../core/entries.js';
 import { fold, takeSnapshot } from '../core/fold.js';
+import type { Me } from '../core/deliver.js';
 import { enqueue, terms } from '../core/deliver.js';
 import { decodeDoc } from '../core/schema.js';
 import { PING_MS, decodePointer, sessionFile } from '../core/api.js';
@@ -14,7 +15,7 @@ import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { blobFile, docDir, fileKey, homeDir, logFile, roomDir, tailFile } from '../home.js';
 import { parseTail } from '../store/store.js';
-import type { Kind } from './follow-lines.js';
+import type { Absorbed, Kind } from './follow-lines.js';
 import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, parseJson, planTerms, unreadPlans } from './follow-lines.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
@@ -42,6 +43,7 @@ export function registerFollow(on: On): void {
     let beat = 0;
     let registered = false;
     let stopped = false; // a fork: this session follows the room no more
+    let id = '';
     const say = (line: string, key = line): void => { if (once(session, key)) $.ui.log(line); };
 
     // the documents of a kind whose file changed since the last look, each with the one it replaced
@@ -94,26 +96,44 @@ export function registerFollow(on: On): void {
       c.state = folded;
       if (!first) {
         for (const h of unreadPlans(folded.room, room.name, c.terms)) c.terms.set(h, terms((await $.fs.read(blobFile(room.dir, h)).catch(() => null)) ?? ''));
-        const me = { name: room.name, code: room.code, touched: session.touched, terms: planTerms(folded.room, c.terms) };
-        const a = absorb(folded, lines.value, activity, me, await $.clock.now());
-        c.state = a.state;
-        for (const item of a.items) session.queue = enqueue(session.queue, item);
-        const shown = toDraw(a.drawn, session.drawn);
-        session.drawn = shown.shown;
-        for (const line of shown.draw) $.ui.log(line);
-        session.unseen = [...session.unseen, ...a.feed].slice(-UNSEEN_MAX);
-        session.since = [...session.since, ...a.feed].slice(-UNSEEN_MAX);
-        session.count += a.count;
+        take(absorb(folded, lines.value, activity, me(room, folded.room), await $.clock.now()));
       }
       session.state = c.state.room;
-      const line = statusLine(c.state.room, room, session.count);
+      shown(room);
+    };
+    const me = (room: InRoom, r: RoomState): Me => ({ name: room.name, code: room.code, touched: session.touched, terms: planTerms(r, c.terms) });
+    const take = (a: Absorbed): void => {
+      c.state = a.state;
+      for (const item of a.items) session.queue = enqueue(session.queue, item);
+      const drawn = toDraw(a.drawn, session.drawn);
+      session.drawn = drawn.shown;
+      for (const line of drawn.draw) $.ui.log(line);
+      session.wakes = [...session.wakes, ...a.wakes];
+      session.unseen = [...session.unseen, ...a.feed].slice(-UNSEEN_MAX);
+      session.since = [...session.since, ...a.feed].slice(-UNSEEN_MAX);
+      session.count += a.count;
+    };
+    const shown = (room: InRoom): void => {
+      const line = c.state ? statusLine(c.state.room, room, session.count) : session.shown;
       if (line !== session.shown) { session.shown = line; $.ui.status(line); }
+    };
+    // colleagues' Claudes' direct messages (R6), which the daemon keeps for this session until taken; a daemon that
+    // doesn't answer is the ping's to say
+    const inbox = async (room: InRoom): Promise<void> => {
+      if (!c.state) return; // the room isn't read yet: the messages wait in the daemon
+      const q = request({ op: 'inbox', session: id }, home);
+      const r = await $.http.fetch(q.url, q).then(x => answer('inbox', x), () => null);
+      const messages = r?.ok ? r.value.messages.filter(m => m.code === room.code) : [];
+      const st = c.state; // read again: the room may have changed during the fetch
+      if (!messages.length || !st) return;
+      take(absorb(st, [], [], me(room, st.room), await $.clock.now(), messages));
+      shown(room);
     };
     // where this session's pointer says it is: the same room, another (joined elsewhere), or none (it left); a session
     // in a room then pings the daemon, which keeps it live even while idle at the prompt
     const locate = async (): Promise<void> => {
       session.recheck = false;
-      const id = await $.session.id();
+      id = await $.session.id();
       const p = decodePointer((await $.fs.read(sessionFile(home, id)).catch(() => null)) ?? '');
       const was = session.room;
       if (p && was && p.code === was.code && p.name === was.name) session.room = { ...was, title: p.title };
@@ -141,7 +161,7 @@ export function registerFollow(on: On): void {
       busy = true;
       try {
         if (!session.room || session.recheck || ++beat % (PING_MS / POLL_MS) === 0) await locate();
-        if (session.room && !stopped) await step(session.room);
+        if (session.room && !stopped) { await step(session.room); await inbox(session.room); }
       } catch (x) {
         say(`sub-human can't follow the room: ${String(x).slice(0, 200)}`);
       } finally {

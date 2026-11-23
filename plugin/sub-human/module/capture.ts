@@ -44,6 +44,10 @@ export function registerCapture(on: On): void {
   });
 
   on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) { // wake.ts waits for the turn's end
+      session.turns.started++;
+      session.turns.at = await $.clock.now();
+    }
     const room = session.room;
     if (room && e.agentId === undefined) {
       const q = request({ op: 'put_doc', code: room.code, kind: 'presence', name: room.name, doc: { name: room.name, state: 'working', at: await $.clock.now() } }, room.home);
@@ -53,6 +57,7 @@ export function registerCapture(on: On): void {
   });
   on('turn.complete', async ($, e, next) => {
     const out = await next(e);
+    if (e.agentId === undefined) session.turns.ended++; // a subagent's end is not main's
     const room = session.room;
     if (room && e.agentId === undefined) {
       const q = request({ op: 'put_doc', code: room.code, kind: 'presence', name: room.name, doc: { name: room.name, state: 'idle', at: await $.clock.now() } }, room.home);

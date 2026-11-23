@@ -11,6 +11,8 @@ import { COMMAND, session } from './session.js';
 export function registerContext(on: On): void {
   on('prompt.submit', async ($, e, next) => {
     session.drawn = 0; // the line cap is per prompt (R41)
+    // a prompt typed at an idle session (no turnId) means no turn runs: a start whose end never came is over (wake.ts)
+    if (e.turnId === undefined && e.origin.kind !== 'plugin') session.turns.ended = Math.max(session.turns.ended, session.turns.started);
     if (e.command) {
       if (COMMAND.test(e.command.name)) {
         const out = await next(e);

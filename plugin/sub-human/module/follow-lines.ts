@@ -98,26 +98,39 @@ export interface Absorbed {
   readonly items: readonly Item[];
   /** The dim lines to draw, before the cap (toDraw). */
   readonly drawn: readonly Drawn[];
+  /** The prompts that wake my Claude, for wake.ts (R10). */
+  readonly wakes: readonly string[];
   /** What news and `read since` gain: colleagues' joins, leaves, new edits and the updates fold counts, in order. */
   readonly feed: readonly Input[];
   readonly count: number;
 }
 
-/** What one poll's new lines and colleagues' new edits are for me, from a state already folded with them. */
-export function absorb(state: State, lines: readonly LogLine[], activity: readonly { readonly before?: ActivityDoc; readonly doc: ActivityDoc }[], me: Me, now: number): Absorbed {
+/**
+ * What one poll's new lines, colleagues' new edits and the direct messages from colleagues' Claudes (never in the log,
+ * R6) are for me, from a state already folded with them.
+ */
+export function absorb(
+  state: State, lines: readonly LogLine[], activity: readonly { readonly before?: ActivityDoc; readonly doc: ActivityDoc }[], me: Me, now: number,
+  messages: readonly { readonly from: string; readonly text: string }[] = [],
+): Absorbed {
   const inputs: Input[] = [
     ...lines.map(l => ({ kind: 'entry', entry: l.entry }) satisfies Input),
     ...activity.flatMap(d => edits(d.before?.files ?? [], d.doc) ?? []),
+    ...messages.map(m => ({ kind: 'message', from: m.from, text: m.text }) satisfies Input),
   ];
   let s = state;
   const items: Item[] = [];
   const drawn: Drawn[] = [];
+  const wakes: string[] = [];
+  let unread = 0;
   for (const input of inputs) {
     const d = deliver(input, me, s, now);
     s = d.state;
-    if (d.verdict.kind === 'context') items.push(d.verdict.item);
     const v = d.verdict;
-    if (v.kind !== 'none' && v.line !== undefined) { // wakes: drawn until wake.ts
+    if (v.kind === 'context') items.push(v.item);
+    if (v.kind === 'wake') wakes.push(v.text);
+    if (v.kind === 'draw' && v.unread) unread++; // a held command past its burst's first: counted, not drawn
+    else if (v.kind !== 'none' && v.line !== undefined) {
       drawn.push(v.kind === 'context' ? { line: v.line, value: v.item.value, at: v.item.at } : { line: v.line, value: 2, at: now });
     }
   }
@@ -126,7 +139,7 @@ export function absorb(state: State, lines: readonly LogLine[], activity: readon
   const others = inputs.filter(i => (i.kind === 'edits' ? i.from !== me.name
     : i.kind === 'entry' && i.entry.from !== me.name && (i.entry.kind === 'joined' || i.entry.kind === 'left')));
   const feed = [...others, ...news.items.map(entry => ({ kind: 'entry', entry }) satisfies Input)].sort((a, b) => at(a) - at(b));
-  return { state: s, items, drawn, feed, count: news.count };
+  return { state: s, items, drawn, wakes, feed, count: news.count + unread };
 }
 
 export function parseJson<T>(schema: v.GenericSchema<unknown, T>, text: string): T | null {

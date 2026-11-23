@@ -17,7 +17,7 @@ Neither needs a redesign.
 `{ isDelivered: false, reason }`. The typings say that a `false` answer without `next` refuses the send, and that
 "a name nobody carries is refused after the hooks". They don't say what a `true` answer without `next` does.
 
-**Kit test** (`plugin/sub-human/module/risk/session-send.test.ts`, 4 tests). An inline plugin catches `*.TESTROOM`.
+**Kit test** (first `plugin/sub-human/module/risk/session-send.test.ts`, 4 tests; now folded into `module/messages.test.ts`). An inline plugin caught `*.TESTROOM`.
 - `$.session.send({ to: 'bob.TESTROOM' })` resolves `{ isDelivered: true }`, and the test's bottom hook is never reached.
 - Any other address goes on with `next`.
 - A hook that throws is skipped, and the send falls through to what is beneath it.

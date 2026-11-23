@@ -1,14 +1,14 @@
 // A room for a kit test: my session is the module under test, the other members are scripted here through core.
 // The kit's `$.fs` reaches no disk ("no implementation for fs.read"), so the room is a MemoryStore and the test's
 // fs.read / fs.list hooks serve its files at the paths home.ts gives; the module's writes reach it through http.fetch.
-import type { On } from 'claude-code';
+import type { On, RenderSurface } from 'claude-code';
 import type { MockClock } from 'claude-code/testing';
 import { mock } from 'claude-code/testing';
 import type { DocKind, DocKinds, Draft } from '../../core/entries.js';
 import { blobFile, docFile, fileKey, logFile, roomDir, tailFile } from '../../home.js';
 import { MemoryStore } from '../../store/memory-store.js';
 import { tailText } from '../../store/store.js';
-import type { Request } from '../../core/api.js';
+import type { Message, Request } from '../../core/api.js';
 import { decodeRequest, sessionFile, socketFile } from '../../core/api.js';
 import { toolFixture } from './fixtures.js';
 import { kitReader } from './kit-fixtures.js';
@@ -36,6 +36,8 @@ export interface Colleague {
   plan(name: string, text: string, people: readonly string[]): Promise<void>;
   left(): Promise<void>;
   joined(): Promise<void>;
+  /** Their Claude's SendMessage to mine: into my inbox at the daemon, never the log (R6); `code` for another room's. */
+  message(text: string, code?: string): void;
 }
 
 export interface Room {
@@ -51,12 +53,19 @@ export interface Room {
   readonly reads: Map<string, number>;
   /** Every request the module sent the daemon, decoded. */
   readonly requests: Request[];
+  /** Every prompt the module submitted itself (`$.prompt.submit`, a wake), with its context and its input's keys. */
+  readonly submitted: { text: string; context: readonly string[]; keys: string[] }[];
+  /** Where the session draws: emptied for a -p run. */
+  readonly surfaces: RenderSurface[];
   /** Moves my pointer to session `id`, which `$.session.id` then answers (a /clear's handoff), or removes it (a leave). */
   pointer(id: string | null): void;
   /** The tools the module registered, by name. */
   readonly registered: string[];
-  /** What the test breaks: the daemon refusing every write, the log's file refusing reads, tool registration refused. */
-  readonly broken: { daemon: boolean; log: boolean; tools: boolean };
+  /**
+   * What the test breaks: the daemon refusing every write, the socket refused (the fetch rejects), the log's file
+   * refusing reads, tool registration refused.
+   */
+  readonly broken: { daemon: boolean; socket: boolean; log: boolean; tools: boolean };
   /** Moves the clock one poll on and waits, at most 3 s, until that poll has finished. */
   poll(clock: MockClock): Promise<void>;
   /** Holds every file read until the returned release is called: a slow disk. */
@@ -86,9 +95,12 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   const logs: string[] = [];
   const spawned: (readonly string[])[] = [];
   const reads = new Map<string, number>();
-  const broken = { daemon: false, log: false, tools: false };
+  const broken = { daemon: false, socket: false, log: false, tools: false };
   const registered: string[] = [];
   const requests: Request[] = [];
+  const submitted: { text: string; context: readonly string[]; keys: string[] }[] = [];
+  const surfaces: RenderSurface[] = ['terminal'];
+  const inbox: Message[] = [];
   let polls = 0;
   const dir = roomDir(HOME, await fileKey(code));
   const put = (path: string, text: string): void => { files.set(path, { text, mtime: ++writes }); };
@@ -115,7 +127,11 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   on('session.id', () => ({ value: current }));
   on('session.start', (_, e) => ({ cwd: e.cwd }));
   on('session.end', (_, e) => ({ sessionId: e.sessionId }));
-  on('prompt.submit', (_, e) => ({ text: e.text, ...(e.context && { context: e.context }) }));
+  on('prompt.submit', (_, e) => {
+    if (e.origin.kind === 'plugin') submitted.push({ text: e.text, context: e.context ?? [], keys: Object.keys(e) });
+    return { text: e.text, ...(e.context && { context: e.context }) };
+  });
+  on('session.surfaces', () => ({ value: [...surfaces] }));
   on('tool.register', (_, e) => {
     if (broken.tools) return { deny: 'tools are off by policy' };
     registered.push(e.name);
@@ -156,10 +172,13 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     const reply = (status: number, body: unknown) => ({ value: { status, ok: status === 200, headers: {}, text: JSON.stringify(body) } });
     const r = e.init?.socketPath === socketFile(HOME) && typeof e.init.body === 'string' ? decodeRequest(JSON.parse(e.init.body)) : null;
     if (r?.ok) requests.push(r.value);
+    if (broken.socket) return { deny: 'socket refused by policy' };
     if (broken.daemon) return reply(503, { ok: false, error: 'the daemon is broken for this test' });
     if (!r?.ok) return reply(400, { ok: false, error: r ? r.error : 'not the daemon\'s socket' });
     const req = r.value;
     if (req.op === 'ping') return reply(200, { ok: true, value: null });
+    if (req.op === 'message') return reply(200, { ok: true, value: null }); // carried to a colleague: they're scripted
+    if (req.op === 'inbox') return reply(200, { ok: true, value: { messages: inbox.splice(0) } });
     if (req.op === 'append' && req.code === code) {
       const line = await store.append({ ...req.draft, at: now(), machine: 'my-laptop' });
       if (!line.ok) return reply(400, { ok: false, error: line.error });
@@ -209,6 +228,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
       await presence(name, 'away');
     },
     joined: () => append({ kind: 'joined', from: name, by: 'system' }),
+    message: (text, other) => { inbox.push({ code: other ?? code, from: name, text, at: now() }); },
   });
   // the poll's host round trips run on real time (hashing, the stubs); bounded well inside the test's own limit
   const until = async (clock: MockClock, want: number): Promise<void> => {
@@ -224,5 +244,15 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     await until(clock, want);
   };
   const settled = (clock: MockClock): Promise<void> => until(clock, 1);
-  return { code, home: HOME, store, as, status, logs, spawned, reads, requests, registered, pointer, broken, poll, settled, hold };
+  return { code, home: HOME, store, as, status, logs, spawned, reads, requests, submitted, surfaces, registered, pointer, broken, poll, settled, hold };
 }
+
+/** A main-loop turn's start and end, as the engine fires them around a model turn; `turns` stubs both. */
+export function turns(on: On): void {
+  on('turn.start', (_, e) => ({ turnId: e.turnId }));
+  on('turn.complete', (_, e) => ({ text: e.answer }));
+}
+/** A subagent's turn when `agentId` is given. */
+export const turnStart = (turnId: string, agentId?: string) => ({ text: '', turnId, ...(agentId !== undefined && { agentId }) });
+export const turnEnd = (turnId: string, aborted = false, agentId?: string) =>
+  ({ answer: '', durationMs: 1, isAborted: aborted, turnId, reason: aborted ? 'aborted' : 'answer', ...(agentId !== undefined && { agentId }) }) as const;

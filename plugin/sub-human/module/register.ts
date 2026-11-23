@@ -4,9 +4,11 @@ import type { On } from 'claude-code';
 import { registerCapture } from './capture.js';
 import { registerContext } from './context.js';
 import { registerFollow } from './follow.js';
+import { registerMessages } from './messages.js';
 import { registerStatus } from './status.js';
 import { registerTools } from './tools.js';
 import { admitCards } from './admit.js';
+import { registerWake } from './wake.js';
 // not wired yet: re-exported so validate type-checks it and the vendored diff it imports (U10 uses it)
 export { planDiff } from './plan-diff.js';
 
@@ -17,4 +19,6 @@ export function register(on: On): void {
   registerStatus(on);
   registerTools(on);
   admitCards(on);
+  registerMessages(on);
+  registerWake(on);
 }

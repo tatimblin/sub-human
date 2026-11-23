@@ -23,6 +23,13 @@ export interface Session {
   /** What `read since` answers: what reached the room since my Claude last read it. */
   since: readonly Input[];
   shown: string;
+  /** Wake prompts deliver decided on, waiting for wake.ts to submit once the session is idle (R10). */
+  wakes: readonly string[];
+  /**
+   * The main loop's turns started and ended (capture.ts), and when the last started: a turn is running while more
+   * started than ended.
+   */
+  turns: { started: number; ended: number; at: number };
   /** Lines drawn since the last prompt (follow-lines.ts toDraw). */
   drawn: number;
   /** Read the pointer again on the next poll. */
@@ -35,7 +42,7 @@ export interface Session {
   said: readonly string[];
 }
 export const fresh = (): Session => ({
-  room: null, state: null, queue: [], touched: [], mine: null, count: 0, unseen: [], since: [], shown: '', drawn: 0, recheck: false, told: false,
+  room: null, state: null, queue: [], touched: [], mine: null, count: 0, unseen: [], since: [], shown: '', wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
   titled: false, said: [],
 });
 export const session: Session = fresh();
@@ -49,5 +56,5 @@ export function once(s: Session, key: string): boolean {
 
 /** What the session knew of a room it is no longer in. */
 export function forget(s: Session): void {
-  Object.assign(s, { state: null, queue: [], mine: null, count: 0, unseen: [], since: [], shown: '' });
+  Object.assign(s, { state: null, queue: [], mine: null, count: 0, unseen: [], since: [], shown: '', wakes: [] });
 }
