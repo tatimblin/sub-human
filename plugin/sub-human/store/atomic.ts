@@ -1,0 +1,24 @@
+// A crash-safe write (ARCHITECTURE §2a, in place of write-file-atomic): a temp file beside the target, fsynced, then
+// renamed over it, so a reader sees the old text or the new, never part of one. The target is never opened.
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+export async function writeAtomic(file: string, text: string): Promise<void> {
+  const dir = path.dirname(file);
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    const fh = await fs.open(tmp, 'wx', 0o600);
+    try {
+      await fh.writeFile(text);
+      await fh.sync();
+    } finally { await fh.close(); }
+    await fs.rename(tmp, file);
+  } catch (e) {
+    await fs.unlink(tmp).catch(() => undefined);
+    throw e;
+  }
+  // the rename itself survives a power loss once the directory is synced; some platforms can't open one
+  const d = await fs.open(dir, 'r').catch(() => null);
+  if (d) { await d.sync().catch(() => undefined); await d.close(); }
+}
