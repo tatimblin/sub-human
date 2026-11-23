@@ -26,8 +26,6 @@ const PART_NAMES: readonly Part[] = ['module/tools', 'net/channel', 'net/pathway
 /** The part a runtime path is in, or null. */
 export const partOf = (rel: string): Part | null => PART_NAMES.find(p => rel === `${p}.ts` || rel.startsWith(`${p}/`)) ?? null;
 export const TOTAL = 9000;
-/** Below this many runtime lines the tests are not held to the runtime's size. */
-export const TESTS_FROM = 1000;
 
 const SKIP = new Set(['vendor', '.claude-plugin', 'node_modules']);
 const CODE = /\.(?:[cm]?[jt]sx?|sh)$/;
@@ -71,17 +69,22 @@ export function count(root: string): Counts {
 }
 
 /** The table's rows and what is over budget. */
-export function judge(c: Counts): { rows: [string, number, number | null][], over: string[] } {
+// The tests are held to the runtime's size only with --final (the cutover): while the runtime is being built, a unit
+// must never drop a test to fit, so the line is shown and warned about instead.
+export function judge(c: Counts, final = false): { rows: [string, number, number | null][], over: string[], warn: string[] } {
   const rows: [string, number, number | null][] = [...NAMES.map((a): [string, number, number] => [a, c.areas[a], AREAS[a]]),
     ...PART_NAMES.map((p): [string, number, number] => [p, c.parts[p], PARTS[p]])];
   const total = Object.values(c.areas).reduce((s, n) => s + n, 0);
-  rows.push(['total', total, TOTAL], ['tests', c.tests, total >= TESTS_FROM ? total : null]);
-  return { rows, over: rows.filter(([, n, max]) => max !== null && n > max).map(([a, n, max]) => `${a} ${n} > ${max}`) };
+  rows.push(['total', total, TOTAL], ['tests', c.tests, final ? total : null]);
+  const warn = !final && c.tests > total ? [`tests ${c.tests} > runtime ${total} (checked at the cutover)`] : [];
+  return { rows, over: rows.filter(([, n, max]) => max !== null && n > max).map(([a, n, max]) => `${a} ${n} > ${max}`), warn };
 }
 
 function main(argv: readonly string[]): number {
-  const { rows, over } = judge(count(path.resolve(argv[0] ?? PLUGIN)));
+  const final = argv.includes('--final');
+  const { rows, over, warn } = judge(count(path.resolve(argv.find(a => !a.startsWith('--')) ?? PLUGIN)), final);
   for (const [a, n, max] of rows) process.stdout.write(`${a.padEnd(13)}${String(n).padStart(6)} / ${max ?? '-'}${max !== null && n > max ? '  OVER' : ''}\n`);
+  for (const w of warn) process.stdout.write(`budget: warning: ${w}\n`);
   if (over.length) process.stderr.write(`budget: over: ${over.join(', ')}\n`);
   return over.length ? 1 : 0;
 }

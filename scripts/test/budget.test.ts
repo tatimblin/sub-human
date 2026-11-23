@@ -22,11 +22,12 @@ test('kindOf: areas, the top level, tests, and what is not counted', () => {
   for (const f of ['vendor/valibot.mjs', 'test/fixtures/a.ts', 'core/x.d.ts', 'README.md', '.claude-plugin/types/x.ts']) assert.equal(kindOf(f), null, f);
 });
 
-test('judge: an area, the total and (from 1,000 runtime lines) the tests over their line', () => {
+test('judge: an area, the total and (with --final) the tests over their line', () => {
   const zero = { core: 0, store: 0, module: 0, commands: 0, net: 0, top: 0 };
   const noParts = { 'module/tools': 0, 'net/channel': 0, 'net/pathways': 0 };
-  assert.deepEqual(judge({ parts: noParts, areas: { ...zero, core: 900 }, tests: 5000 }).over, [], 'tests unchecked below 1,000');
-  assert.deepEqual(judge({ parts: noParts, areas: { ...zero, core: 900, store: 100 }, tests: 1001 }).over, ['tests 1001 > 1000']);
+  assert.deepEqual(judge({ parts: noParts, areas: { ...zero, core: 900 }, tests: 5000 }).over, [], 'tests only warned before the cutover');
+  assert.deepEqual(judge({ parts: noParts, areas: { ...zero, core: 900 }, tests: 5000 }).warn, ['tests 5000 > runtime 900 (checked at the cutover)']);
+  assert.deepEqual(judge({ parts: noParts, areas: { ...zero, core: 900, store: 100 }, tests: 1001 }, true).over, ['tests 1001 > 1000']);
   assert.deepEqual(judge({ parts: noParts, areas: { ...zero, store: 801 }, tests: 0 }).over, ['store 801 > 800']);
   assert.deepEqual(judge({ parts: noParts, areas: { core: 2500, store: 800, module: 1900, commands: 700, net: 2100, top: 1000 }, tests: 0 }).over, [], 'at the line is within');
   assert.deepEqual(judge({ parts: noParts, areas: { core: 2500, store: 800, module: 1900, commands: 700, net: 2100, top: 1001 }, tests: 0 }).over, ['top 1001 > 1000', 'total 9001 > 9000']);
