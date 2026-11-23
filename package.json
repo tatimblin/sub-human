@@ -11,13 +11,13 @@
     "node": "^22.18 || >=24.3"
   },
   "scripts": {
-    "test": "npm run --silent typecheck && npm run --silent test:node && npm run --silent test:scripts && npm run --silent test:module",
-    "test:node": "node --test 'plugin/sub-human/**/*.node-test.ts'",
+    "test": "npm run --silent typecheck && node scripts/vendor.ts --check && npm run --silent test:node && npm run --silent test:scripts && npm run --silent test:module && npm run --silent validate",
+    "test:node": "node --test --import ./plugin/sub-human/test/helpers.ts 'plugin/sub-human/**/*.node-test.ts'",
     "test:scripts": "node --test 'scripts/test/**/*.test.ts'",
     "test:module": "node scripts/test-mods.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && tsc -p scripts/tsconfig.json",
     "lint": "node scripts/lint.ts",
-    "validate": "claude plugin validate plugin/sub-human --strict",
+    "validate": "node scripts/validate.ts",
     "probe": "node scripts/probe-cc.ts",
     "canary": "node scripts/canary.ts",
     "typings": "node scripts/typings.ts",
@@ -26,8 +26,13 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "@types/ws": "8.18.2",
+    "diff": "9.0.0",
+    "ignore": "7.0.14",
     "oxlint": "1.88.0",
     "oxlint-tsgolint": "7.0.2004",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "valibot": "1.5.0",
+    "ws": "8.22.2"
   }
 }

@@ -23,6 +23,8 @@
  *       backtick).
  *   INVISIBLE_CHARACTER  any text file under the plugin: U+00AD, U+200B–U+200F, U+202A–U+202E, U+2060–U+2069, U+FEFF
  *       as characters (the escape written out in source is fine).
+ *   VENDOR_HIDDEN_CHARACTER  vendor/**, in place of INVISIBLE_CHARACTER: any non-ASCII format, control, private-use,
+ *       unassigned or separator character.
  *   LIMIT_*  the checklist: ≤ 512 files; every file but images and fonts < 256 KiB; no .DS_Store, Thumbs.db,
  *       desktop.ini or __MACOSX; README.md ≥ 40 words outside code blocks; a LICENSE file or `license` in
  *       .claude-plugin/plugin.json; no package.json beside a lockfile at the plugin root.
@@ -406,6 +408,20 @@ export function checkInvisible(text: string, file: string): Finding[] {
   return out;
 }
 
+// A vendored file (vendor/**) is a package's build, where rule 4's fix, an escape, can't be written; it is exempt
+// from rule 4 once every non-ASCII character in it is a visible one: no format, control, private-use, unassigned or
+// separator character (which takes in rule 4's set).
+const R4V = 'VENDOR_HIDDEN_CHARACTER';
+const HIDDEN = /(?![\0-\x7f])[\p{C}\p{Z}]/gu;
+
+/** The vendored file's hidden non-ASCII characters. */
+export function checkVendorCharacters(text: string, file: string): Finding[] {
+  return [...text.matchAll(HIDDEN)].map(hit => {
+    const code = (hit[0].codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0');
+    return { file, line: lineAt(text, hit.index), rule: R4V, message: `U+${code}, a hidden character in a vendored file`, fix: 'vendor another version, or ask upstream to escape it' };
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // rule 5: the checklist limits
 
@@ -481,7 +497,7 @@ export function lint(root: string): Finding[] {
     let text: string;
     try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
     if (text.includes('\0')) continue;
-    out.push(...checkInvisible(text, rel));
+    out.push(...(rel.startsWith('vendor/') ? checkVendorCharacters(text, rel) : checkInvisible(text, rel)));
     if (/^module\/.*\.ts$/.test(rel) && !/\.test\.tsx?$/.test(rel)) out.push(...checkPermissionAnswers(text, rel), ...checkProcessRuns(text, rel));
   }
   out.push(...checkCommands(root), ...checkLimits(root, files));
