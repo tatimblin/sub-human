@@ -1,8 +1,8 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "sub-human",
-  "version": "0.8.1",
-  "description": "Work together from separate Claude Code sessions, on one machine or over a link: one command joins a shared room, @room posts your exact words, Claudes message each other natively, a room plan is edited in plan mode with versions, tasks are shared, and sign-off opens in each person's plan view.",
+  "version": "2.0.0-dev",
+  "description": "Live, zero-effort sharing of work between Claude Code sessions: what each session learns, decides and changes reaches your colleagues and their Claudes as it happens.",
   "author": {
     "name": "Tristan Timblin",
     "email": "tatimblin@gmail.com"
@@ -12,12 +12,10 @@
   "license": "MIT",
   "keywords": [
     "collaboration",
-    "pairing",
     "multiplayer",
-    "shared-room",
+    "shared-context",
+    "plans",
     "tasks",
-    "consent",
     "multi-session"
-  ],
-  "types": "./types/index.d.ts"
+  ]
 }

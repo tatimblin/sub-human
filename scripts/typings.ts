@@ -7,7 +7,7 @@
  * Claude Code writes that folder when an interactive session loads the plugin from its folder
  * (`claude --plugin-dir plugin/sub-human`: the plugin-dir watch lays the type root; `claude -p`, `claude plugin
  * validate` and `claude plugin test` do not), and again after an update. claude-code/index.d.ts's first line names
- * the version that wrote it; npm run probe fails while that is not lib/cc/contract.json `probed`. claude-code-tools
+ * the version that wrote it; npm run probe fails while that is not core/cc/contract.json `probed`. claude-code-tools
  * holds the built-in tools that session had, claude-code-mcp the MCP tools it had connected.
  *
  *   node scripts/typings.ts     copy, and say which version wrote them (exit 1 when the folder is missing)

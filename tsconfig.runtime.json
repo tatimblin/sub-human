@@ -1,31 +1,29 @@
 {
   // npm run typecheck, second pass: the runtime alone (no test file, no 'claude-code/testing'), so it never leans on a
-  // declaration only a test brings in. isolatedDeclarations: every export's type is written where it is declared (a
-  // function's return, a table's annotation or an inferable literal), so a module's boundary reads without the
-  // checker. It needs `declaration`; noEmit (from the root) still writes nothing. It refuses allowJs: the two plain JS
-  // files are the root pass's.
+  // declaration only a test brings in. isolatedDeclarations: every export's type is written where it is declared, so a
+  // module's boundary reads without the checker. It needs `declaration`; noEmit (from the root) still writes nothing.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "isolatedDeclarations": true,
     "declaration": true,
-    "allowJs": false,
-    "checkJs": false,
     "paths": {
       "claude-code": ["./typings/claude-code/index.d.ts"]
     }
   },
   "include": [
-    "plugin/sub-human/lib",
-    "plugin/sub-human/hooks",
-    "plugin/sub-human/mcp",
-    "plugin/sub-human/statusline",
-    "plugin/sub-human/mod",
-    "plugin/sub-human/types",
+    "plugin/sub-human/*.ts",
+    "plugin/sub-human/core",
+    "plugin/sub-human/store",
+    "plugin/sub-human/module",
+    "plugin/sub-human/commands",
+    "plugin/sub-human/net",
     "typings/claude-code-tools",
     "typings/claude-code-mcp"
   ],
   "exclude": [
-    "plugin/sub-human/mod/test",
-    "plugin/sub-human/test"
+    "plugin/sub-human/**/*.node-test.ts",
+    "plugin/sub-human/**/*.test.ts",
+    "plugin/sub-human/test",
+    "plugin/sub-human/vendor"
   ]
 }

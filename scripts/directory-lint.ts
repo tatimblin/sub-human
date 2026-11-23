@@ -7,7 +7,7 @@
  *
  * Each finding prints `file:line  RULE  what — fix: how`.
  *
- *   MOD_PERMISSION_ANSWER_UNREAD  mod/**.ts (not mod/test): a classic.PreToolUse hook, a tool.call hook that answers
+ *   MOD_PERMISSION_ANSWER_UNREAD  module/**.ts (not its *.test.ts): a classic.PreToolUse hook, a tool.call hook that answers
  *       `{ deny` itself, and each one's .catch handler, may only `return next(e)` (or, in tool.call, a const bound to
  *       `await next(e)`, passed through, also as `{ ...r, key: value }` that adds members but no deny, ask or allow)
  *       or an object literal of plain `key: value` members with a fixed `deny` or
@@ -18,7 +18,7 @@
  *       `command`) and inline hooks/mcpServers in .claude-plugin/plugin.json names files only as
  *       `${CLAUDE_PLUGIN_ROOT}/<literal path to a file that exists>`: no other variable or expansion, no `$(`, no
  *       backticks, no glob or brace, no shell operator, no `-c`/`-e`/`--eval`/`-p`/`--print`.
- *   MOD_RUNS_PROCESS  mod/**.ts: a `$.process.run(` / `$.process.spawn(` whose arguments hold `-c`, `-e`, `--eval`,
+ *   MOD_RUNS_PROCESS  module/**.ts: a `$.process.run(` / `$.process.spawn(` whose arguments hold `-c`, `-e`, `--eval`,
  *       `-p` or `--print` as a string, or a string with a shell program in it (`;`, `|`, `&`, `>`, `<`, `$(`, a
  *       backtick).
  *   INVISIBLE_CHARACTER  any text file under the plugin: U+00AD, U+200B–U+200F, U+202A–U+202E, U+2060–U+2069, U+FEFF
@@ -32,7 +32,7 @@
  * template literals and (by a heuristic on the previous token) regex literals blanked out. Every `return` in a body
  * counts, a nested function's too (stricter, never looser). A return's value ends at the first `;` or unmatched
  * closer at its depth; a ternary is split at its top-level `?`/`:`; any other expression (a call, `a || b`) is
- * refused. A process argv built elsewhere (mod/core/shim.ts shimArgv) is not followed. The file list is
+ * refused. A process argv built elsewhere is not followed. The file list is
  * `git ls-files` under the plugin inside a repository, else a walk of it.
  */
 import fs from 'node:fs';
@@ -482,7 +482,7 @@ export function lint(root: string): Finding[] {
     try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
     if (text.includes('\0')) continue;
     out.push(...checkInvisible(text, rel));
-    if (/^mod\/.*\.ts$/.test(rel) && !rel.startsWith('mod/test/')) out.push(...checkPermissionAnswers(text, rel), ...checkProcessRuns(text, rel));
+    if (/^module\/.*\.ts$/.test(rel) && !/\.test\.tsx?$/.test(rel)) out.push(...checkPermissionAnswers(text, rel), ...checkProcessRuns(text, rel));
   }
   out.push(...checkCommands(root), ...checkLimits(root, files));
   return out;

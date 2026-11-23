@@ -1,49 +1,44 @@
 {
   "note": "Type escapes per directory (scripts/ts-ratchet.ts). Counts only go down: npm run lint fails when one rises; node scripts/ts-ratchet.ts --update writes lower ones.",
   "counts": {
-    "hooks": {
-      "any": 0,
-      "as": 8,
-      "nonNull": 0
-    },
-    "lib": {
-      "any": 0,
-      "as": 124,
-      "nonNull": 0
-    },
-    "mcp": {
-      "any": 0,
-      "as": 4,
-      "nonNull": 0
-    },
-    "mod/core": {
-      "any": 0,
-      "as": 20,
-      "nonNull": 0
-    },
-    "mod/test": {
+    "core": {
       "any": 0,
       "as": 0,
       "nonNull": 0
     },
-    "mod": {
+    "store": {
       "any": 0,
-      "as": 7,
+      "as": 0,
       "nonNull": 0
     },
-    "statusline": {
+    "module": {
+      "any": 0,
+      "as": 0,
+      "nonNull": 0
+    },
+    "commands": {
+      "any": 0,
+      "as": 0,
+      "nonNull": 0
+    },
+    "net": {
       "any": 0,
       "as": 0,
       "nonNull": 0
     },
     "test": {
       "any": 0,
-      "as": 239,
+      "as": 0,
+      "nonNull": 0
+    },
+    "plugin": {
+      "any": 0,
+      "as": 0,
       "nonNull": 0
     },
     "scripts": {
       "any": 0,
-      "as": 3,
+      "as": 0,
       "nonNull": 0
     }
   }

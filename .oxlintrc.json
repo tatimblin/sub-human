@@ -9,10 +9,10 @@
     "correctness": "warn"
   },
   "ignorePatterns": [
-    "trailer/**",
     "node_modules/**",
     "typings/**",
     "docs/**",
+    "plugin/sub-human/vendor/**",
     "plugin/sub-human/test/fixtures/**"
   ],
   "overrides": [
@@ -30,7 +30,16 @@
           "error",
           {
             "allowForKnownSafeCalls": [
-              { "from": "package", "package": "node:test", "name": ["test", "it", "describe", "suite"] }
+              {
+                "from": "package",
+                "package": "node:test",
+                "name": [
+                  "test",
+                  "it",
+                  "describe",
+                  "suite"
+                ]
+              }
             ]
           }
         ],
@@ -47,18 +56,23 @@
         "typescript/no-unsafe-unary-minus": "error",
         "typescript/no-unsafe-declaration-merging": "error",
         "typescript/no-unsafe-function-type": "error",
-        "typescript/prefer-nullish-coalescing": ["warn", { "ignorePrimitives": true }],
+        "typescript/prefer-nullish-coalescing": [
+          "warn",
+          {
+            "ignorePrimitives": true
+          }
+        ],
         "typescript/only-throw-error": "error"
       }
     },
     {
       "files": [
-        "plugin/sub-human/lib/**",
-        "plugin/sub-human/hooks/**",
-        "plugin/sub-human/mcp/**",
-        "plugin/sub-human/statusline/**",
-        "plugin/sub-human/mod/*.ts",
-        "plugin/sub-human/mod/core/**"
+        "plugin/sub-human/*.ts",
+        "plugin/sub-human/core/**",
+        "plugin/sub-human/store/**",
+        "plugin/sub-human/module/**",
+        "plugin/sub-human/commands/**",
+        "plugin/sub-human/net/**"
       ],
       "rules": {
         "typescript/switch-exhaustiveness-check": "error"

@@ -177,6 +177,7 @@ function main(): number {
     const p = run(process.execPath, [path.join(REPO, 'scripts', 'probe-cc.ts'), '--json', '--no-typings'], env, 300_000);
     let pj: ProbeJson;
     try { pj = parseJson<ProbeJson>(p.out.slice(p.out.indexOf('{'))); } catch { pj = { ok: false, error: `unreadable probe output: ${tail(p.out, 3)}` }; }
+    // TODO(U1): the v2 contract.json replaces this 0.8 path
     const contract = parseJson<{ entries: EntryGroup[] }>(fs.readFileSync(path.join(PLUGIN, 'lib', 'cc', 'contract.json'), 'utf8'));
     probe = summarizeProbe(pj, contract.entries);
 

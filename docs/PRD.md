@@ -478,9 +478,9 @@ Still open: only Q12, a feature request to Anthropic. Everything else is decided
 ## Appendix A. Evidence
 
 These findings come from five parallel surveys of the 0.8.1 tree (2026-11-22). Sources in the repo:
-- **Architecture and design:** `docs/archive/ARCHITECTURE-0.8.md`, `plugin/sub-human/README.md`, `plugin/sub-human/lib/cc/contract.json` (101 entries).
+- **Architecture and design:** `docs/archive/ARCHITECTURE-0.8.md`, `plugin/sub-human/README.md`, `plugin/sub-human/lib/cc/contract.json` (101 entries) (in git history before v2).
 - **Adversarial review (2026-11-22):** five reviews (overengineering and prior art, design flaws, platform feasibility, network and security, product and UX) plus the Q11 and Q14 spikes. All applied, with the owner's Q15 decisions.
-- **Design reviews:** `docs/next/quiet/{PRINCIPLES,COPY,GOAL-REVIEW,EVALUATION,WORTH}.md`, `docs/next/ROOM-PLAN.md`.
+- **Design reviews:** `docs/next/quiet/{PRINCIPLES,COPY,GOAL-REVIEW,EVALUATION,WORTH}.md`, `docs/next/ROOM-PLAN.md` (in git history before v2).
 - **Claude Code internals notes:** `docs/internals/cc-2.1.302.md`.
 - **Open issues:** #8, #9, #12, #15, #20, #21, #34–#39.
 - **Live scenario findings:** the October 2026 orchestration runs. Gaps: no task dependencies, no done notices, invisible subagents, stale plan versions on tasks.

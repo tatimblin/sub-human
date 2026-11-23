@@ -41,6 +41,8 @@ test('check: plugin changes need a bump since the last bump; tests and files out
   const r = repo(t);
   assert.equal(check({ cwd: r.dir }).ok, true, 'nothing changed since the first version');
   r.write('plugin/sub-human/test/x.test.js', '1');
+  r.write('plugin/sub-human/core/fold.node-test.ts', '1');
+  r.write('plugin/sub-human/module/register.test.ts', '1');
   r.write('docs/x.md', '1');
   r.commit('tests and docs');
   assert.equal(check({ cwd: r.dir }).ok, true);

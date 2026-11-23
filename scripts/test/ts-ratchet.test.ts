@@ -6,8 +6,6 @@ import path from 'node:path';
 import { blank, countSource, bucketOf, countRepo, compare } from '../ts-ratchet.ts';
 import type { Counts } from '../ts-ratchet.ts';
 import { parseJson } from '../lib/io.ts';
-import { absolutize } from '../typecheck-shim.ts';
-import { PLUGIN } from '../lib/paths.ts';
 
 const c = (src: string) => countSource(src);
 
@@ -44,37 +42,39 @@ test('nonNull: postfix ! counts (and let x!: T); negation and != do not', () => 
   assert.equal(c("const s = 'a!.b'; // c!.d\nconst r = /e!./;").nonNull, 0);
 });
 
-test('bucketOf: the most specific directory, scripts, and nothing else', () => {
-  assert.equal(bucketOf('plugin/sub-human/lib/room/store.ts'), 'lib');
-  assert.equal(bucketOf('plugin/sub-human/mod/core/guard.ts'), 'mod/core');
-  assert.equal(bucketOf('plugin/sub-human/mod/test/support.ts'), 'mod/test');
-  assert.equal(bucketOf('plugin/sub-human/mod/register.ts'), 'mod');
-  assert.equal(bucketOf('plugin/sub-human/test/hooks/helpers.ts'), 'test');
-  assert.equal(bucketOf('plugin/sub-human/hooks/compile-cache.js'), 'hooks');
-  assert.equal(bucketOf('scripts/checks/s01.js'), 'scripts');
-  assert.equal(bucketOf('plugin/sub-human/types/index.d.ts'), null);
-  assert.equal(bucketOf('plugin/sub-human/scripts/sub-human'), null);
-  assert.equal(bucketOf('scripts/baselines.json'), null);
-  assert.equal(bucketOf('trailer/src/a.ts'), null);
+test('bucketOf: the plugin directory, its top-level files, scripts, and nothing else', () => {
+  assert.equal(bucketOf('plugin/sub-human/core/fold.ts'), 'core');
+  assert.equal(bucketOf('plugin/sub-human/net/pathways/ssh.ts'), 'net');
+  assert.equal(bucketOf('plugin/sub-human/module/register.test.ts'), 'module');
+  assert.equal(bucketOf('plugin/sub-human/config.ts'), 'plugin');
+  assert.equal(bucketOf('plugin/sub-human/test/helpers.ts'), 'test');
+  assert.equal(bucketOf('scripts/lib/io.ts'), 'scripts');
+  assert.equal(bucketOf('plugin/sub-human/core/types.d.ts'), null);
+  assert.equal(bucketOf('plugin/sub-human/other/x.ts'), 'plugin', 'an unlisted directory still counts');
+  assert.equal(bucketOf('scripts/ts-ratchet.json'), null);
+  assert.equal(bucketOf('docs/a.ts'), null);
 });
 
 test('countRepo and compare: per directory; a rise is named, a drop can be written', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ts-ratchet-'));
   try {
     const put = (rel: string, src: string) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), src); };
-    put('plugin/sub-human/lib/a.ts', 'const a = x as any; a!.b;');
-    put('plugin/sub-human/mod/test/b.test.ts', 'const b: any = 1;');
+    put('plugin/sub-human/core/a.ts', 'const a = x as any; a!.b;');
+    put('plugin/sub-human/module/b.test.ts', 'const b: any = 1;');
     put('plugin/sub-human/test/fixtures/skip.ts', 'const s: any = 1;');
+    put('plugin/sub-human/vendor/skip.mjs', 'const v = w as any;');
+    put('plugin/sub-human/other/c.ts', 'const o = p as string;');
     put('scripts/x.js', 'const y = 1;');
     const now = countRepo(root);
-    assert.deepEqual(now.lib, { any: 1, as: 1, nonNull: 1 });
-    assert.deepEqual(now['mod/test'], { any: 1, as: 0, nonNull: 0 });
+    assert.deepEqual(now.core, { any: 1, as: 1, nonNull: 1 });
+    assert.deepEqual(now.module, { any: 1, as: 0, nonNull: 0 });
     assert.deepEqual(now.test, { any: 0, as: 0, nonNull: 0 }, 'fixtures are skipped');
-    const base = { lib: { any: 1, as: 2, nonNull: 0 } };
+    assert.deepEqual(now.plugin, { any: 0, as: 1, nonNull: 0 }, 'an unlisted directory counts; vendor is skipped');
+    const base = { core: { any: 1, as: 2, nonNull: 0 } };
     const { rose, lower } = compare(base, now);
-    assert.ok(rose.includes('lib nonNull 0 -> 1'));
-    assert.ok(rose.includes('mod/test any 0 -> 1'), 'a directory missing from the file counts as 0');
-    assert.deepEqual(lower, ['lib as 2 -> 1']);
+    assert.ok(rose.includes('core nonNull 0 -> 1'));
+    assert.ok(rose.includes('module any 0 -> 1'), 'a directory missing from the file counts as 0');
+    assert.deepEqual(lower, ['core as 2 -> 1']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -83,10 +83,4 @@ test('countRepo and compare: per directory; a rise is named, a drop can be writt
 test('the committed ratchet holds for this tree', () => {
   const file = parseJson<{ counts: Record<string, Partial<Counts>> }>(fs.readFileSync(path.join(import.meta.dirname, '..', 'ts-ratchet.json'), 'utf8'));
   assert.deepEqual(compare(file.counts, countRepo()).rose, []);
-});
-
-test('typecheck-shim: the CLI shim\'s ../ imports resolve from the plugin', () => {
-  const out = absolutize("import { cacheDir } from '../lib/cache-dir.js';\nimport('../lib/cli/main.ts');");
-  assert.ok(out.includes(`'${path.join(PLUGIN, 'lib', 'cache-dir.js')}'`));
-  assert.ok(out.includes(`'${path.join(PLUGIN, 'lib', 'cli', 'main.ts')}'`));
 });

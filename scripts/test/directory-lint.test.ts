@@ -18,7 +18,7 @@ function plugin(files: Record<string, string | null> = {}): string {
     'hooks/run.sh': '#!/bin/sh\n',
     'hooks/hooks.json': JSON.stringify({ hooks: { SessionEnd: [{ hooks: [{ type: 'command', command: 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/run.sh" end' }] }] } }),
     '.mcp.json': JSON.stringify({ mcpServers: { room: { command: 'sh', args: ['${CLAUDE_PLUGIN_ROOT}/hooks/run.sh', '--flag'] } } }),
-    'mod/register.ts': [
+    'module/register.ts': [
       "on('classic.PreToolUse', { tool: 'Agent' }, async ($, e, next) => {",
       "  if (x) return { deny: 'no', additionalContext: ctx };",
       "  if (y) return { ask: q, updatedInput: input };",
@@ -61,7 +61,7 @@ test('MOD_PERMISSION_ANSWER_UNREAD: a spread, a computed key, a method, allow, a
     'return answer;',
     "return c ? next(e) : { ...r, deny: 'x' };",
   ]) {
-    const f = checkPermissionAnswers(hook(ret), 'mod/x.ts');
+    const f = checkPermissionAnswers(hook(ret), 'module/x.ts');
     assert.deepEqual(rules(f), ['MOD_PERMISSION_ANSWER_UNREAD'], ret);
     assert.equal(f[0]?.line, 2, ret);
   }
@@ -88,7 +88,7 @@ test('MOD_RUNS_PROCESS: -c, -e or a shell program in a $.process argv', () => {
     "$.process.run(['node', '-e', code])",
     "$.process.spawn({ argv: ['node', \"--eval\", code] })",
     "$.process.run(['sh', `cat ${f} | pbcopy`])",
-  ]) assert.deepEqual(rules(checkProcessRuns(`await ${call};`, 'mod/x.ts')), ['MOD_RUNS_PROCESS'], call);
+  ]) assert.deepEqual(rules(checkProcessRuns(`await ${call};`, 'module/x.ts')), ['MOD_RUNS_PROCESS'], call);
   assert.deepEqual(checkProcessRuns("await $.process.run(shimArgv(root, 'join'), { stdin: '-c' === x ? a : b });", 'm').length, 1);
   assert.deepEqual(checkProcessRuns("await $.process.run(['sh', `${root}/scripts/clip.sh`, name]);", 'm'), []);
 });
@@ -133,7 +133,7 @@ test('INVISIBLE_CHARACTER: each range as a character; the escape spelled out is 
 test('LIMIT_*: file count, file size, OS junk, README words, license, a lockfile beside package.json', () => {
   const root = plugin();
   const files = pluginFiles(root);
-  assert.ok(files.includes('README.md') && files.includes('mod/register.ts'));
+  assert.ok(files.includes('README.md') && files.includes('module/register.ts'));
   assert.deepEqual(rules(checkLimits(root, [...files, ...Array.from({ length: 512 }, (_, i) => `f${i}`)])), ['LIMIT_FILE_COUNT']);
 
   assert.deepEqual(rules(lint(plugin({ 'lib/big.ts': 'x'.repeat(256 * 1024) }))), ['LIMIT_FILE_SIZE']);

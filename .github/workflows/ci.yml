@@ -47,10 +47,10 @@ jobs:
           git config --global user.email "ci@sub-human.invalid"
       - name: 'npm ci (typescript, @types/node and oxlint: the typecheck and the linter only)'
         run: npm ci
-      - name: npm test (the typecheck first; the mods tests skip without Claude Code)
+      - name: npm test (the typecheck first)
         run: npm test
       # oxlint's type-aware rules and the type-escape ratchet; the same on every node, so once.
-      # (npm run validate runs in the validate job, which installs the claude CLI; test:mods still skips here)
+      # (npm run validate runs in the validate job, which installs the claude CLI)
       - name: lint
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
         run: npm run lint
@@ -60,8 +60,8 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: node scripts/check-version.ts "origin/$BASE_REF"
 
-  # claude plugin validate --strict on every push and PR, with the Claude Code version the plugin was probed on
-  # (lib/cc/contract.json "probed"), installed as the canary does: npm i --prefix a temp dir (never global), the
+  # claude plugin validate --strict on every push and PR, with the Claude Code version the plugin was probed on,
+  # installed as the canary does: npm i --prefix a temp dir (never global), the
   # platform package's native binary, a fresh CLAUDE_CONFIG_DIR. The directory's other rules: npm run lint
   # (scripts/directory-lint.ts).
   validate:
@@ -77,7 +77,8 @@ jobs:
       - name: install Claude Code (the probed version)
         id: cc
         run: |
-          version=$(node -p "require('./plugin/sub-human/lib/cc/contract.json').probed")
+          # TODO(U2): read "probed" from plugin/sub-human/core/cc/contract.json once it exists
+          version=2.1.330
           prefix="$RUNNER_TEMP/claude-code"
           npm i --prefix "$prefix" --no-audit --no-fund --no-save "@anthropic-ai/claude-code@$version"
           bin="$prefix/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
@@ -90,22 +91,6 @@ jobs:
         run: |
           mkdir -p "$CLAUDE_CONFIG_DIR"
           "${{ steps.cc.outputs.bin }}" plugin validate plugin/sub-human --strict
-
-  remote-docker:
-    name: remote rooms over real SSH (docker)
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # the skew scenario builds devbox-old from an older commit (git archive): it needs the history
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - name: npm run test:remote-docker
-        run: npm run test:remote-docker
 
   # An early warning: install Claude Code's latest and next from npm and run the probe (without the typings check),
   # the hooks module's wiring tests (a modules-off skip fails) and plugin validate --strict against each.
