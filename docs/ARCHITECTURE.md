@@ -160,7 +160,7 @@ test/              scenes (§12) and unit tests, beside the code they test
 ## 4. Data model
 
 **The log** (`rooms/CODE/log.jsonl`) is append-only JSON lines.
-- Each entry: `{seq, id, at, prev, from, by, kind, …}`.
+- Each entry: `{seq, id, at, prev, from, by, machine, kind, …}`.
 - `seq` is assigned by the host, and it is the sync cursor; `at` is the host's clock.
 - `from` is the member. `by` is `person`, `claude` or `system`, a label only (R35). The wake rule reads it: a `by: person` line can wake by naming someone, and a `by: claude` broadcast never does. Direct Claude-to-Claude messages aren't log entries (R6).
 - `prev` is the hash of the previous line, so a mirror detects a fork (R36). The module computes it with `crypto.subtle.digest`.
@@ -177,7 +177,7 @@ test/              scenes (§12) and unit tests, beside the code they test
 | `plan_answer` | person, from the review card | agree, or ask for changes plus a note |
 | `decision` | system | everyone named has answered |
 | `plan_sent` | person (send choice) | a personal plan sent to a member or the room, with branch, files and note |
-| `plan_accept` | person | recipient accepted or dismissed a sent plan |
+| `plan_accept` | person | recipient accepted, dismissed, or asked for changes (note) on a sent plan |
 | `task` | system | full task snapshot after any task op (add, claim, release, done) |
 | `invite`, `admit`, `kick` | host | admission records; never contain the secret |
 
