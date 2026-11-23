@@ -356,6 +356,8 @@ A pull request that pushes an area over its line is either split or comes with a
 
 ## 12. Testing
 
+The full plan is `docs/TESTING.md`: its layers, the test kit pattern, fixtures, the live gate and tests per milestone. This section is the summary.
+
 - **Unit tests, beside each `core/` module.** Pure inputs in, outputs out. Every delivery rule and every plan and task rule is a table test.
 - **Scenes** (`test/scenes/`). Each PRD story (S-Live, S-Relevant, S-Ask, plan together, send a plan, split, join, remote join, leave) runs as a script against the memory store, using Claude Code's own test kit for hooks modules (`claude plugin test`, the `claude-code/testing` module). The kit sends events through the module's hooks with no session, sign-in or network. Its stubs answer in Claude Code's place and record the module's `ui.*` and `prompt.*` calls, and `mock.clock` gives the fake clock. We don't build a fake host of our own. Assertions cover what each member sees (at most 6 lines, R41), what each Claude's context holds, and that only R10 events wake anyone. There is no live model, and CI runs every scene.
 - **Network.** `link-engine` table tests on the fake clock. Two homes over `pipe` for snapshot sync, fork and kick. Noise vectors. A TLS front with PROXY v2 stands in for tailscaled. Admission tests: a leaked line dialled twice, a name mismatch, and a handshake without a MAC refused before anything is started.
