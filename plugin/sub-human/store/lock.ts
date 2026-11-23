@@ -92,8 +92,9 @@ export async function breakStale(file: string, staleMs: number, seen: Seen, cloc
     return;
   }
   try {
+    // the token says it is the same lock (every take writes its own); still stale says its holder never touched it since
     const now = await look(file);
-    if (now?.token === seen.token && now.mtimeMs === seen.mtimeMs && clock.now() - now.mtimeMs > staleMs) {
+    if (now?.token === seen.token && clock.now() - now.mtimeMs > staleMs) {
       await fs.unlink(file).catch(() => undefined);
     }
   } finally { await release(brk, token); }

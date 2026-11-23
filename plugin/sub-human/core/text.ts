@@ -6,8 +6,8 @@ const ANSI = /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)
 // C0 and C1 controls (tab and line breaks among them, which become spaces) and the bidi embeddings, overrides and isolates
 // oxlint-disable-next-line no-control-regex -- matching control characters is the point
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
-/** Zero-width characters, which hide inside a word: removed, not spaced. */
-export const ZERO_WIDTH: RegExp = /[\u200b-\u200d\ufeff]/g;
+/** Zero-width characters (and the soft hyphen and word joiner), which hide inside a word: removed, not spaced. */
+export const ZERO_WIDTH: RegExp = /[\u00ad\u200b-\u200d\u2060\ufeff]/g;
 
 export function oneLine(text: string, max: number): string {
   const one = clean(text).replace(/\s+/g, ' ').trim();

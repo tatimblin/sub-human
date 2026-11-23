@@ -11,7 +11,8 @@
     "node": "^22.18 || >=24.3"
   },
   "scripts": {
-    "test": "npm run --silent typecheck && node scripts/vendor.ts --check && npm run --silent test:node && npm run --silent test:scripts && npm run --silent test:module && npm run --silent validate",
+    "test": "npm run --silent test:offline && npm run --silent test:module && npm run --silent validate",
+    "test:offline": "npm run --silent typecheck && node scripts/vendor.ts --check && npm run --silent test:node && npm run --silent test:scripts",
     "test:node": "node --test --test-timeout=20000 --import ./plugin/sub-human/resolve-ts.ts --import ./plugin/sub-human/test/helpers.ts 'plugin/sub-human/**/*.node-test.ts'",
     "test:scripts": "node --test --import ./plugin/sub-human/resolve-ts.ts 'scripts/test/**/*.test.ts'",
     "test:module": "node scripts/test-mods.ts",

@@ -8,6 +8,7 @@ import type { Post, Snapshot } from './entries.js';
 import { EMPTY } from './fold.js';
 
 const entry: Post = { seq: 41, id: 'c-1', at: 5, prev: 'h40', from: 'jess', by: 'person', machine: 'jess-laptop', kind: 'post', text: 'hi', to: 'tristan' };
+const { seq: _s, at: _a, prev: _p, machine: _m, ...draft } = entry;
 const snapshot: Snapshot = { v: 1, state: { ...EMPTY, seq: 40, hash: 'h40' } };
 const both: (Hello | Ping | Pong | PutDoc | Message)[] = [
   hello('jess', 'jess-laptop'),
@@ -19,7 +20,7 @@ const both: (Hello | Ping | Pong | PutDoc | Message)[] = [
 ];
 const toHost: ToHost[] = [
   ...both,
-  { t: 'append', entry },
+  { t: 'append', entry: draft },
   { t: 'put_blob', id: 'b1', hash: 'sha256-abc', text: '# plan' },
   { t: 'subscribe', after_seq: 0, hash: '' },
   { t: 'call', id: 'q1', req: { op: 'task', code: 'vole-8126', from: 'jess', act: 'claim', n: 2 } },
@@ -43,7 +44,7 @@ test('round trips: each message decodes to itself on the side that reads it', ()
 test('tolerance: unknown fields are dropped, in entries too; an unknown type is null; a new bye reason is closed', () => {
   assert.deepEqual(decodeToHost('{"t":"ping","n":1,"later":true}'), { ok: true, value: { t: 'ping', n: 1 } });
   const r = decodeToHost(JSON.stringify({ t: 'append', entry: { ...entry, later: 1 }, extra: 1 }));
-  assert.deepEqual(r, { ok: true, value: { t: 'append', entry } });
+  assert.deepEqual(r, { ok: true, value: { t: 'append', entry: draft } }, 'the host\'s stamps a writer sent come off');
   assert.deepEqual(decodeToLink('{"t":"presence_v9","x":1}'), { ok: true, value: null });
   assert.deepEqual(decodeToHost(JSON.stringify({ t: 'snapshot', snapshot })), { ok: true, value: null }, 'not the host\'s to read');
   assert.deepEqual(decodeToLink('{"t":"bye","reason":"moved"}'), { ok: true, value: { t: 'bye', reason: 'closed' } });

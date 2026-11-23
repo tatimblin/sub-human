@@ -76,7 +76,7 @@ const joined = (from: string, at: number): Entry => ({ kind: 'joined', seq: at, 
 const finding = (from: string, text: string, at: number): Entry => ({ kind: 'finding', seq: at, id: `f${at}`, at, prev: '', from, by: 'claude', machine: 'm', text });
 const lineOf = (entry: Entry): LogLine => ({ entry, hash: `h${entry.seq}` });
 const ALICE: Me = { name: 'alice', code: 'otter-4821', touched: [{ path: 'src/a.js', at: 0 }], terms: [] };
-const settled = (lines: readonly LogLine[]): State => ({ room: fold(null, lines, NO_DOCS), wakes: [], bursts: {} });
+const settled = (lines: readonly LogLine[]): State => ({ room: fold(null, lines, NO_DOCS), wakes: [], draws: [], bursts: {} });
 
 test('absorb: context and a drawn line for what bears on me, a count for the rest, and the feed in order', () => {
   const lines = [lineOf(joined('alice', 1)), lineOf(joined('bob', 2)), lineOf(finding('bob', 'src/a.js changed', 3)), lineOf(finding('bob', 'lunch', 4))];

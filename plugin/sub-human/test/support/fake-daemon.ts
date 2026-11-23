@@ -28,6 +28,8 @@ export interface FakeHome {
   readonly linked: Map<string, { phase: 'waiting' | 'online' | 'stopped'; why: string | null }>;
   /** What status says of the modules. */
   sessions: number;
+  /** The Claude Code versions its live sessions report. */
+  cc: string[];
   /** The daemon's clock. */
   now: number;
   /** The one room here (the first, by code). */
@@ -57,7 +59,7 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
   };
   const log = async (code: string): Promise<string> => logFile(roomDir(dir, await fileKey(code)));
   const home: FakeHome = {
-    calls: [], dir, down: null, failing: new Map(), linked: new Map(), sessions: 1, now: Date.now(),
+    calls: [], dir, down: null, failing: new Map(), linked: new Map(), sessions: 1, cc: ['2.1.330'], now: Date.now(),
     daemon: {
       append: async (code, draft, id) => guard(`append ${code} ${draft.kind} ${draft.from}`) ?? real.handle({ op: 'append', code, draft: { ...draft, id } }),
       putDoc: async (code, d) => guard(`put ${code} ${d.kind} ${d.doc.name}`) ?? real.handle({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
@@ -90,7 +92,7 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
       invite: async (code, from, name, via) => guard(`invite ${code} ${name} ${via} ${from}`) ?? ok({ line: `ssh://devbox/${code}?port=7420#${'0'.repeat(77)}` }),
       dial: async (line, name) => guard(`dial ${name}`) ?? ok({ code: /\/([a-z]+-\d{4})/.exec(line)?.[1] ?? 'none', check: '1f2e-3d4c' }),
       link: async code => guard(`link ${code}`) ?? ok(home.linked.get(code) ?? null),
-      status: () => Promise.resolve(home.down === null ? ok({ sessions: home.sessions }) : err(home.down)),
+      status: () => Promise.resolve(home.down === null ? ok({ sessions: home.sessions, cc: home.cc }) : err(home.down)),
     },
     rooms: fsRooms(dir),
     code: async () => must((await fsRooms(dir).codes())[0], 'a room'),

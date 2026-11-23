@@ -3,7 +3,9 @@
 import type { On } from 'claude-code'
 import { test, expect, mock } from 'claude-code/testing'
 import * as v from '../vendor/valibot.mjs'
+import { END, START as IN_ROOM, seedRoom } from '../test/support/seed-room.js'
 
+const START = { cwd: '/work/api', surface: 'terminal', isInteractive: true } as const
 const INVITE = { text: '/sub-human invite bob', wait: false, origin: { kind: 'composer' }, command: { name: 'sub-human', args: 'invite bob' } } as const
 const ASK = { id: 'a1', code: 'otter-4821', kind: 'admit', name: 'bob', expected: 'bob', machine: 'bob-laptop', check: '1f2e-3d4c', member: false }
 
@@ -29,14 +31,16 @@ function world(on: On, asks: readonly object[], pick: string | null, text?: stri
     if (pick === null) throw new Error('dismissed')
     return { result: { answers: { [q]: pick } }, text: `answered ${pick}` }
   })
-  on('ui.log', (_, e) => { logged.push(e.text); return { value: undefined } })
+  on('ui.log', (_, e) => { if (e.to !== 'debug') logged.push(e.text); return { value: undefined } })
   on('session.id', () => ({ value: 'sess-1' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('prompt.submit', (_, e) => ({ text: e.text }))
   return { clock, sent, asked, logged }
 }
 
 test('a joiner waiting: the card names them, their machine and the check; Let in is posted for this session', async ($, on) => {
   const w = world(on, [ASK], 'Let in')
+  await $.session.start(START)
   await $.prompt.submit(INVITE)
   await w.clock.advance(3000)
   await w.clock.advance(3000)
@@ -46,6 +50,7 @@ test('a joiner waiting: the card names them, their machine and the check; Let in
 
 test('a name that is not the invite\'s is on the card; a dismissed card is a Refuse', async ($, on) => {
   const w = world(on, [{ ...ASK, name: 'mallory' }], null)
+  await $.session.start(START)
   await $.prompt.submit(INVITE)
   await w.clock.advance(3000)
   expect(w.asked[0]).toContain('mallory (the invite was for bob)')
@@ -54,6 +59,7 @@ test('a name that is not the invite\'s is on the card; a dismissed card is a Ref
 
 test('a line dialled twice is one line; one that let someone in offers their removal', async ($, on) => {
   const w = world(on, [{ ...ASK, kind: 'again' }, { ...ASK, id: 'a2', kind: 'leaked' }], 'Remove bob')
+  await $.session.start(START)
   await $.prompt.submit(INVITE)
   await w.clock.advance(3000)
   expect(w.logged).toEqual(['sub-human: someone else also used the invite for bob; nobody got in with it'])
@@ -62,6 +68,7 @@ test('a line dialled twice is one line; one that let someone in offers their rem
 
 test('a joiner whose name is already a member: the card says so', async ($, on) => {
   const w = world(on, [{ ...ASK, member: true }], 'Refuse')
+  await $.session.start(START)
   await $.prompt.submit(INVITE)
   await w.clock.advance(3000)
   expect(w.asked[0]).toContain('bob is already a member there.')
@@ -69,9 +76,27 @@ test('a joiner whose name is already a member: the card says so', async ($, on) 
 
 test('an answer the module can\'t read is one line, not repeated on the next polls', async ($, on) => {
   const w = world(on, [], null, '{"ok":true,"value":{"asks":"nope"}}')
+  await $.session.start(START)
   await $.prompt.submit(INVITE)
   await w.clock.advance(3000)
   await w.clock.advance(3000)
   expect(w.logged.length).toBe(1)
   expect(w.logged[0]).toMatch(/^sub-human: no joiner can be let in: /)
+})
+
+test('a session in no room that has not invited asks nothing', async ($, on) => {
+  const w = world(on, [], null)
+  await $.session.start(START)
+  await w.clock.advance(9000)
+  expect(w.sent.filter(s => s.op === 'asks')).toEqual([])
+})
+
+test('a host session in its room asks who waits without typing /sub-human invite', async ($, on) => {
+  const clock = mock.clock(on)
+  const room = await seedRoom(on, { me: 'alice', others: [], now: clock.now })
+  await $.session.start(IN_ROOM)
+  await room.settled(clock)
+  await clock.advance(3000)
+  expect(room.requests.filter(r => r.op === 'asks').length).toBeGreaterThan(0)
+  await $.session.end(END)
 })

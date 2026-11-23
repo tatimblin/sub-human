@@ -188,8 +188,30 @@ test('a later agreed version moves its tasks, never moves a claim, and releases 
   r.agree('api', ['bob', 'cy']);
   assert.deepEqual(tasksOf(r.state()), [
     [1, 'Store', 'claimed', 'ann', 2], [2, 'Handler', 'claimed', 'bob', 2], [3, 'Docs', 'done', 'bob', 1],
-    [4, 'Paging', 'open', '-', 1], [5, 'Notes', 'claimed', 'cy', 2], [6, 'Cursor paging', 'claimed', 'bob', 2], [7, 'Tests', 'claimed', 'ann', 2],
+    [4, 'Paging', 'open', '-', 0], [5, 'Notes', 'claimed', 'cy', 2], [6, 'Cursor paging', 'claimed', 'bob', 2], [7, 'Tests', 'claimed', 'ann', 2],
   ]);
+});
+
+test('a dropped part leaves the plan; a claim of someone never asked about the new version stays theirs', () => {
+  const r = room(['ann', 'bob', 'cy']);
+  r.append(r.put('ann', 'api', 0, '## Store @bob\n## Docs @cy\n## Notes @cy'));
+  r.agree('api', ['bob']);
+  r.append([{ kind: 'task', from: 'cy', by: 'system', task: { n: 3, title: 'Notes @cy', status: 'claimed', owner: 'cy', addedBy: 'ann', blockedBy: [], plan: v1 } }]);
+  // v2 drops Docs (open) and Notes (cy's claim); cy is not asked about it
+  r.append(r.put('ann', 'api', 1, '## Store @bob'));
+  r.agree('api', ['bob']);
+  assert.deepEqual(tasksOf(r.state()), [
+    [1, 'Store', 'claimed', 'bob', 2], [2, 'Docs @cy', 'open', '-', 0], [3, 'Notes @cy', 'claimed', 'cy', 1],
+  ]);
+});
+
+test('a version whose every asked member was kicked unanswered stays open; its writer can ask someone else', () => {
+  const r = room(['ann', 'bob', 'cy']);
+  r.append(r.put('ann', 'api', 0, '## Store @ann'));
+  r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob'], from: 'ann' }));
+  r.append([{ kind: 'kick', from: 'ann', by: 'system', name: 'bob' }]);
+  assert.deepEqual(decide(r.state(), 'api', 'ann', r.texts), [], 'nobody agreed, so no tasks');
+  assert.deepEqual(kinds(r.agree('api', ['cy'])), ['plan_answer', 'decision', 'task']);
 });
 
 test('send packs a version for one member or the room; the recipient accepts, dismisses or asks for changes', () => {

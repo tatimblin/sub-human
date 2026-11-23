@@ -13,8 +13,6 @@ import { CODE, hostRoom, joinBob, nextAsk, rawLink, twoHomes } from '../support/
 import type { Homes } from '../support/two-homes.js';
 import { joined, post, until } from '../support/daemon.js';
 
-const entry = (text: string, from = 'bob') => ({ ...post(from, text), seq: 1, at: 0, prev: '', machine: '-' });
-
 async function posts(h: Homes): Promise<string[]> {
   const s = await openFsStore({ home: h.host.home, code: CODE });
   assert.ok(s.ok);
@@ -78,7 +76,7 @@ test('after bye nothing more is taken, even from a link that ignores it', async 
   r.send({ t: 'subscribe', after_seq: 0, hash: '' });
   r.send({ t: 'subscribe', after_seq: 0, hash: '' });
   await r.next('bye');
-  r.send({ t: 'append', entry: entry('after the bye') });
+  r.send({ t: 'append', entry: post('bob', 'after the bye') });
   await sleep(300);
   assert.deepEqual(await posts(h), []);
   assert.ok(!r.got.some(m => m.t === 'ack'));

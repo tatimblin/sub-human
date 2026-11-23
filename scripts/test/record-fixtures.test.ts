@@ -61,13 +61,13 @@ test('answer: a plan approved, a question given its first option, anything else 
 
 test('leftovers: the session ids\' tasks and env, the list id\'s tasks, the encoded project, the plugin\'s data; all under the config', () => {
   const config = '/h/cfg';
-  const got = leftovers(config, '/private/var/T/sh-rec-Ab1/project', ['11111111-2222-4333-8444-555555555555'], 'sh-rec-Ab1');
+  const got = leftovers(config, '/private/var/T/sh-rec-Ab1/project', ['11111111-2222-4333-8444-555555555555'], 'sh-rec-Ab1', 'rec-0a1b2c3d');
   assert.deepEqual(got, [
     '/h/cfg/tasks/11111111-2222-4333-8444-555555555555',
     '/h/cfg/session-env/11111111-2222-4333-8444-555555555555',
     '/h/cfg/tasks/sh-rec-Ab1',
     '/h/cfg/projects/-private-var-T-sh-rec-Ab1-project',
-    '/h/cfg/plugins/data/rec-inline',
+    '/h/cfg/plugins/data/rec-0a1b2c3d-inline',
   ]);
   assert.ok(got.every(p => p.startsWith(`${config}/`) && p.length > config.length + 6), 'never the config dir itself');
   assert.equal(encodePath('/a/b.c_d'), '-a-b-c-d');

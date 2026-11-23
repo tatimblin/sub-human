@@ -57,7 +57,7 @@ const OPEN = '#open';
 interface Placed { readonly seq: number; readonly hash: string }
 interface Room { readonly store: FsStore; snap: Snapshot; readonly ids: Map<string, Placed>; readonly followers: Set<Follower> }
 /** A session's rooms (code → its name there) and when it was last heard from. */
-interface Session { at: number; readonly rooms: Map<string, string> }
+interface Session { at: number; cc?: string; readonly rooms: Map<string, string> }
 interface Writer { readonly code: string; readonly from: string }
 
 export interface RoomsOptions {
@@ -152,6 +152,7 @@ export class Rooms {
         for (const [id, at] of this.pinged) if (now - at > DAY_MS) this.pinged.delete(id);
         const s = this.sessions.get(req.session) ?? { at: now, rooms: new Map<string, string>() };
         s.at = now;
+        if (req.cc !== undefined) s.cc = req.cc;
         if (req.code !== undefined && req.name !== undefined) s.rooms.set(req.code, req.name);
         this.sessions.set(req.session, s);
         for (const [id, x] of this.sessions) if (now - x.at > this.o.idleMs) this.sessions.delete(id);
@@ -171,7 +172,11 @@ export class Rooms {
         return Promise.resolve(ok({ messages }));
       }
       case 'status':
-        return Promise.resolve(ok({ version: API_VERSION, pid: process.pid, sessions: [...this.live()].length }));
+      {
+        const live = [...this.live()];
+        const cc = [...new Set(live.flatMap(([, s]) => (s.cc === undefined ? [] : [s.cc])))].sort();
+        return Promise.resolve(ok({ version: API_VERSION, pid: process.pid, sessions: live.length, cc }));
+      }
     }
   }
 

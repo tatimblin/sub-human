@@ -47,15 +47,10 @@ jobs:
           git config --global user.email "ci@sub-human.invalid"
       - name: 'npm ci (typescript, @types/node, oxlint and the vendored packages: checks only)'
         run: npm ci
-      # npm test without test:module and validate: they need Claude Code, so they run in the claude job
-      - name: typecheck
-        run: npm run --silent typecheck
-      - name: vendored files match the lockfile
-        run: node scripts/vendor.ts --check
-      - name: node tests
-        run: npm run --silent test:node
-      - name: script tests
-        run: npm run --silent test:scripts
+      # npm test without test:module and validate (they need Claude Code, so they run in the claude job): one script,
+      # so the list never drifts from npm test's
+      - name: 'npm run test:offline (typecheck, vendored files, node and script tests)'
+        run: npm run --silent test:offline
       - name: size budget
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
         run: node scripts/budget.ts

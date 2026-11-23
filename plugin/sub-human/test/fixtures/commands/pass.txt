@@ -33,3 +33,10 @@ bash completion is broken
 Sure, git worktrees work
 pip resolver changed
 sudo is not needed
+ssh to the devbox works now
+the eval results look fine
+terraform plan is clean
+the source of the bug is in store.js
+find the delete handler in src/server.js
+kubectl is not installed here
+deno is not used here

@@ -160,30 +160,40 @@ test('join: the line is dialled as the git name; let in, the session takes its p
   assert.match((await runCommand(`join ${line}`, bob)).text, /so it joined no other/);
 });
 
-test('doctor: node, the socket path, the module, the version checked on, every room log, and the stubs', async () => {
+test('doctor: node, the socket path, the module, the version checked on, every room log, sshd and Tailscale', async () => {
   const { fake, code } = await room();
   const ran: string[] = [];
-  const well = { ...testCtx(fake, { env: { SUB_HUMAN_HOME: '/h' } }), run: (p: string) => { ran.push(p); return Promise.resolve(null); } };
+  const answers: Record<string, string> = { 'sshd -G': 'port 22\nallowtcpforwarding yes', 'tailscale status --json': '{"Version":"1.80","BackendState":"Running"}' };
+  const well = { ...testCtx(fake, { env: { SUB_HUMAN_HOME: '/h' } }), run: (p: string, args: readonly string[]) => { ran.push(p); return Promise.resolve(answers[[p, ...args].join(' ')] ?? null); } };
   assert.equal((await runCommand('doctor', well)).text, [
     'ok    node 24.11.1',
     'ok    home /h',
     'ok    hooks module on in 1 session here',
     'ok    sub-human is checked on Claude Code 2.1.330',
     'ok    1 room here, every log intact',
-    'later ssh forwarding: checked once joining from another machine lands',
-    'later Tailscale: checked once joining from another machine lands',
+    'ok    sshd allows TCP forwarding, so an ssh invite works',
+    'ok    Tailscale is running, so a URL invite works',
   ].join('\n'));
-  assert.deepEqual(ran, [], 'doctor runs no program: never the claude on PATH');
+  assert.deepEqual(ran, ['sshd', 'tailscale'], 'never the claude on PATH');
   await fake.forge(code, ls => ls.map((l, i) => (i === 0 ? l.replace('"alice"', '"mallory"') : l)));
   fake.down = 'sub-human\'s daemon did not answer; nothing was done';
   const long = `/${'d'.repeat(100)}`;
-  const sick = testCtx(fake, { nodeVersion: '23.4.0', env: { SUB_HUMAN_INVITE: 'carrier-pigeon', SUB_HUMAN_HOME: long } });
+  const sick = testCtx(fake, { nodeVersion: '23.4.0', env: { SUB_HUMAN_INVITE: 'carrier-pigeon', SUB_HUMAN_HOME: long }, run: { 'sshd -G': 'AllowTcpForwarding no', 'tailscale status --json': '{"BackendState":"NeedsLogin"}' } });
   const lines = (await runCommand('doctor', sick)).text.split('\n');
   assert.match(must(lines[0], 'node'), /^fix   node 23\.4\.0 can't run sub-human/);
   assert.equal(lines[1], 'fix   the home\'s path is too long for the daemon\'s socket (113 bytes, at most 103); set SUB_HUMAN_HOME to a shorter path');
   assert.match(must(lines[2], 'module'), /^fix   the sub-human daemon did not answer/);
   assert.match(must(lines[4], 'rooms'), new RegExp(`^fix   room logs that don't read: ${code} \\(the log of ${code} does not read \\(fork`));
+  assert.equal(lines[5], 'fix   sshd has AllowTcpForwarding no, so an ssh invite can\'t connect; set it to yes in sshd_config, or invite by URL');
+  assert.equal(lines[6], 'fix   Tailscale is NeedsLogin, not running: sign in to it to invite by URL, or use /sub-human invite NAME --ssh');
   assert.equal(lines[7], 'fix   SUB_HUMAN_INVITE=carrier-pigeon is not public, tailnet or ssh; public is used');
+  fake.down = null;
+  fake.cc = ['2.1.330', '2.1.331'];
+  const none = testCtx(fake, { run: {} });
+  const text = (await runCommand('doctor', none)).text.split('\n');
+  assert.equal(text[3], 'ok    sub-human is checked on Claude Code 2.1.330; sessions here run 2.1.331, which it was not checked on');
+  assert.equal(text[5], 'ok    no sshd here to read; only an ssh invite needs one, on the machine that invites');
+  assert.equal(text[6], 'fix   Tailscale isn\'t installed or doesn\'t answer: install it to invite by URL, or use /sub-human invite NAME --ssh');
 });
 
 test('nodeRuns: 22.18+, 24.3+, 25 on; never 23', () => {

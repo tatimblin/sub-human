@@ -15,9 +15,9 @@
  * the mirror lacks, message from another link, and bye before the host closes it. Both ways: hello, ping, pong.
  */
 import * as v from '../vendor/valibot.mjs';
-import type { Request } from './api.js';
-import { decodeRequest } from './api.js';
-import type { Entry, LogLine, Snapshot } from './entries.js';
+import type { AppendDraft, Request } from './api.js';
+import { decodeAppendDraft, decodeRequest } from './api.js';
+import type { LogLine, Snapshot } from './entries.js';
 import type { Result } from './result.js';
 import { err, ok } from './result.js';
 import { decodeEntry, decodeSnapshot } from './schema.js';
@@ -39,8 +39,7 @@ export interface Message { t: 'message'; to: string; from: string; text: string 
 
 export type ToHost =
   | Hello | Ping | Pong | PutDoc | PutBlob | Message
-  // TODO(U7b): an entry before the host stamps it is core/entries.ts `Draft` once that merges.
-  | { t: 'append'; entry: Entry }
+  | { t: 'append'; entry: AppendDraft }
   | { t: 'subscribe'; after_seq: number; hash: string }
   | { t: 'call'; id: string; req: Extract<Request, { op: 'plan' | 'task' }> };
 
@@ -131,7 +130,7 @@ export function decodeToHost(text: string): Result<ToHost | null> {
     return ok({ t: 'call', id: m.id, req: q.value });
   }
   if (m?.t !== 'append') return ok(m);
-  const e = decodeEntry(m.entry);
+  const e = decodeAppendDraft(m.entry);
   return e.ok ? ok({ t: 'append', entry: e.value }) : err(`a bad append: ${e.error}`);
 }
 

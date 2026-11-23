@@ -25,6 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import * as v from 'valibot';
 import { PLUGIN } from './lib/paths.ts';
 import { claudeBin, probedVersion } from './lib/claude-bin.ts';
@@ -184,19 +185,17 @@ export function answer(tool: string, input: Record<string, unknown>): Record<str
 
 // ---- cleaning up ----
 
-/** The plugin's data folder name for a --plugin-dir load of the logging plugin (`rec`). */
-const PLUGIN_DATA = 'rec-inline';
-
 /**
  * What a recorded session leaves in the config dir it ran on: its task list (by session id and by the list id the
- * recorder set), its session env, the temp project's folder, and the logging plugin's data folder.
+ * recorder set), its session env, the temp project's folder, and the logging plugin's data folder (`NAME-inline` for a
+ * --plugin-dir load). The plugin's name is this run's own, so no other plugin's data is ever taken with it.
  */
-export function leftovers(config: string, project: string, sessionIds: readonly string[], listId: string): string[] {
+export function leftovers(config: string, project: string, sessionIds: readonly string[], listId: string, plugin: string): string[] {
   return [
     ...sessionIds.flatMap(id => [path.join(config, 'tasks', id), path.join(config, 'session-env', id)]),
     path.join(config, 'tasks', listId),
     path.join(config, 'projects', encodePath(project)),
-    path.join(config, 'plugins', 'data', PLUGIN_DATA),
+    path.join(config, 'plugins', 'data', `${plugin}-inline`),
   ];
 }
 
@@ -296,6 +295,7 @@ async function main(argv: string[]): Promise<number> {
   if ('error' in found) { process.stderr.write(`record-fixtures: ${found.error}\n`); return 1; }
   const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sh-rec-')));
   const listId = path.basename(work);
+  const plugin = `rec-${randomBytes(4).toString('hex')}`; // the logging plugin's name, this run's own
   const cwd = path.join(work, 'project');
   project(cwd);
   const config = path.join(os.homedir(), '.claude');
@@ -308,11 +308,13 @@ async function main(argv: string[]): Promise<number> {
   for (const s of sessions) {
     const dir = path.join(work, s.name);
     fs.cpSync(TEMPLATE, path.join(dir, 'plugin'), { recursive: true });
+    const manifest = path.join(dir, 'plugin', '.claude-plugin', 'plugin.json');
+    fs.writeFileSync(manifest, fs.readFileSync(manifest, 'utf8').replace('"name": "rec"', `"name": "${plugin}"`));
     fs.mkdirSync(path.join(dir, 'log'), { recursive: true });
     const { done, ids } = await session(found.bin, ['--plugin-dir', path.join(dir, 'plugin'), '--setting-sources', 'project',
       '--strict-mcp-config', '--no-session-persistence', '--max-budget-usd', (budget - cost).toFixed(2),
-      '--settings', JSON.stringify({ plansDirectory: PLANS }), ...s.args], s.prompt, cwd, listId);
-    for (const p of leftovers(config, cwd, ids, listId)) fs.rmSync(p, { recursive: true, force: true });
+      '--settings', JSON.stringify({ plansDirectory: PLANS }), ...s.args], s.prompt.replace(/^\/rec:/, `/${plugin}:`), cwd, listId);
+    for (const p of leftovers(config, cwd, ids, listId, plugin)) fs.rmSync(p, { recursive: true, force: true });
     const spent = done.total_cost_usd ?? 0;
     cost += spent;
     process.stdout.write(`${s.name}: $${spent.toFixed(4)} ${done.is_error ? '(error) ' : ''}${(done.result ?? '').slice(0, 100)}\n`);

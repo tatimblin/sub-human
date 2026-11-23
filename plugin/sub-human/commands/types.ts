@@ -37,8 +37,8 @@ export interface Daemon {
   dial(line: string, name: string): Promise<Result<Answers['dial']>>;
   /** `link`: how this machine's link to a room hosted elsewhere is doing, or null. */
   link(code: string): Promise<Result<Answers['link']>>;
-  /** How many sessions' modules have pinged it. */
-  status(): Promise<Result<{ readonly sessions: number }>>;
+  /** How many sessions' modules have pinged it, and the Claude Code versions they run. */
+  status(): Promise<Result<{ readonly sessions: number; readonly cc: readonly string[] }>>;
 }
 
 /** The rooms this home holds, read straight from the store. */

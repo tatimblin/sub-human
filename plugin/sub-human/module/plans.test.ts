@@ -185,7 +185,7 @@ test('a plan I am asked about is a card at my turn\'s end; Agree is recorded, an
   await start()
   await room.as('bob').plan('paging', PAGING, ['alice'])
   await room.poll(clock)
-  expect(room.logs).toEqual(["bob's Claude asked you to agree on plan paging version 1.", "bob's Claude: stored plan paging version 1"])
+  expect(room.logs).toEqual(["bob's Claude asked you to agree on plan paging version 1."]) // one line for one ask
   w.answer('Agree')
   await $.turn.complete(TURN)
   expect(w.asked).toEqual([{

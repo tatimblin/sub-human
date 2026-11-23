@@ -204,6 +204,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     if (req.op === 'ping') return reply(200, { ok: true, value: null });
     if (req.op === 'message') return reply(200, { ok: true, value: null }); // carried to a colleague: they're scripted
     if (req.op === 'inbox') return reply(200, { ok: true, value: { messages: inbox.splice(0) } });
+    if (req.op === 'asks') return reply(200, { ok: true, value: { asks: [] } }); // nobody knocks
     if (req.op === 'append' && req.code === code) {
       const line = await store.append({ ...req.draft, at: now(), machine: 'my-laptop' });
       if (!line.ok) return reply(400, { ok: false, error: line.error });

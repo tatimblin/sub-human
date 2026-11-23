@@ -69,6 +69,8 @@ export function answer(s: RoomState, a: AnswerIn, texts: Texts): Result<Draft[]>
 /**
  * The decision on a plan's latest version once everyone named who is still a member has answered, else nothing. The
  * last answer calls it; the host calls it after a kick, since a kicked member who was asked never blocks a decision.
+ * A version nobody answered is never decided, even when everyone asked was kicked: no work is handed out on nobody's
+ * agreement (R27), and its writer can ask someone else about it or write the next version.
  */
 export function decide(s: RoomState, name: string, from: string, texts: Texts): Draft[] {
   const plan = s.plans.find(p => p.name === name);
@@ -190,7 +192,9 @@ function decision(s: RoomState, plan: Plan, v: PlanVersion, answers: readonly Pi
  * Owned parts as tasks linked to the agreed version (R20). An owner who wrote or was asked about it gets the task
  * claimed; anyone else gets it open with their name left in the title, since work isn't handed to someone who never
  * agreed (R27). A part already on the list (same plan, same title) moves to this version, and a claim is never moved
- * to someone else. The plan's claimed tasks whose part is gone are released.
+ * to someone else. A task whose part is gone leaves the plan, an ordinary room task now: released when its owner
+ * wrote or was asked about this version, and left with an owner who never was, since their claim isn't undone on an
+ * agreement they had no say in.
  */
 function partTasks(s: RoomState, plan: Plan, v: PlanVersion, text: string, from: string): Draft[] {
   const members = s.members.filter(m => !m.kicked).map(m => m.name);
@@ -211,7 +215,8 @@ function partTasks(s: RoomState, plan: Plan, v: PlanVersion, text: string, from:
       : { n: n++, title, addedBy: v.from, blockedBy: [], plan: link, ...(ours ? claimed : { status: 'open' }) };
     return [entry(from, task)];
   });
-  const gone = mine.filter(t => !kept.has(t.n) && t.status === 'claimed').map(t => entry(from, unclaimed(t)));
+  const gone = mine.filter(t => !kept.has(t.n) && t.status !== 'done' && !(t.owner && !agreed.has(t.owner)))
+    .map(({ plan: _p, ...t }) => entry(from, unclaimed(t)));
   return [...out, ...gone];
 }
 

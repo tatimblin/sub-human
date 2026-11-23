@@ -93,9 +93,11 @@ test('two first opens at once make one room', async () => {
   const answers = await Promise.all([runCommand('', a), runCommand('', b)]);
   assert.equal((await fake.rooms.codes()).length, 1);
   const code = await fake.code();
-  assert.deepEqual(answers.map(x => x.text).sort(), [
-    `You opened room ${code} as alice. /sub-human invite brings someone from another machine.`, `You're in ${code} as bob, with alice.`,
-  ].sort());
+  // whichever open lands first makes the room; the other joins it
+  const opened = (who: string) => `You opened room ${code} as ${who}. /sub-human invite brings someone from another machine.`;
+  const texts = answers.map(x => x.text).sort();
+  const either = [[opened('alice'), `You're in ${code} as bob, with alice.`], [opened('bob'), `You're in ${code} as alice, with bob.`]];
+  assert.ok(either.some(pair => JSON.stringify([...pair].sort()) === JSON.stringify(texts)), texts.join(' | '));
 });
 
 test('the room this cwd last used comes first while the person is a member, even with another room open', async () => {

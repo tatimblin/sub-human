@@ -42,6 +42,7 @@ export function registerFollow(on: On): void {
     let busy = false;
     let beat = 0;
     let registered = false;
+    let cc: string | undefined; // the Claude Code version, told to the daemon with each ping for doctor
     let stopped = false; // a fork: this session follows the room no more
     let id = '';
     const say = (line: string, key = line): void => { if (once(session, key)) $.ui.log(line); };
@@ -92,7 +93,7 @@ export function registerFollow(on: On): void {
       if (docs) { await readDocs(room, 'presence'); await readDocs(room, 'focus'); }
       session.mine = activity.find(d => d.doc.name === room.name)?.doc ?? session.mine;
       const first = c.state === null;
-      const folded = { ...(c.state ?? { wakes: [], bursts: {} }), room: fold(c.state && takeSnapshot(c.state.room), lines.value, docsOf(c.held)) };
+      const folded = { ...(c.state ?? { wakes: [], draws: [], bursts: {} }), room: fold(c.state && takeSnapshot(c.state.room), lines.value, docsOf(c.held)) };
       c.state = folded;
       if (!first) {
         for (const h of unreadPlans(folded.room, room.name, c.terms)) c.terms.set(h, terms((await $.fs.read(blobFile(room.dir, h)).catch(() => null)) ?? ''));
@@ -152,7 +153,8 @@ export function registerFollow(on: On): void {
         const why = failed.find(f => f !== null);
         if (why) say(`sub-human's tools aren't available in this session: ${why}`); // C3: one line, no fallback
       }
-      const q = request({ op: 'ping', session: id, code: p.code, name: p.name }, home);
+      cc ??= (await $.session.version().catch(() => null))?.version ?? '';
+      const q = request({ op: 'ping', session: id, code: p.code, name: p.name, ...(cc && { cc }) }, home);
       const r = await $.http.fetch(q.url, q).then(x => answer('ping', x), (x: unknown) => err(String(x).slice(0, 200)));
       if (!r.ok) say(`sub-human's daemon didn't answer, so ${p.code} may show you away: ${r.error}. /sub-human doctor says why.`, 'ping');
     };

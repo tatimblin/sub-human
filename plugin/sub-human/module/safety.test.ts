@@ -6,6 +6,7 @@
 import type { On } from 'claude-code'
 import type { MockClock } from 'claude-code/testing'
 import { expect, mock, test } from 'claude-code/testing'
+import { DRAWS_PER_HOUR } from '../core/deliver.js'
 import type { Room } from '../test/support/seed-room.js'
 import { END, START, seedRoom, turnEnd, turns } from '../test/support/seed-room.js'
 
@@ -63,7 +64,11 @@ test('a direct message carrying a command or URL is drawn for the person, never 
   }
   expect(room.submitted).toEqual([])
   expect(tools).toEqual([])
-  expect(room.logs.filter(l => l.startsWith("carol's Claude messaged your Claude with a command or link, held for you: "))).toHaveLength(held.length)
+  // each is drawn up to the hour's cap on drawn lines; the one past it is counted for the person, not drawn
+  const drawn = room.logs.filter(l => l.startsWith("carol's Claude messaged your Claude with a command or link, held for you: "))
+  expect(drawn).toHaveLength(DRAWS_PER_HOUR)
+  expect(held.length).toBeGreaterThan(DRAWS_PER_HOUR)
+  expect(room.status.at(-1)).toMatch(/ · 1 update$/)
   await $.session.end(END)
 })
 

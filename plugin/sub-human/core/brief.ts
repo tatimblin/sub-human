@@ -85,10 +85,14 @@ function clip(line: string): string {
 
 /** Whole lines up to the bound, then `… N more lines` if that fits too; never longer than `max`. */
 function fit(lines: readonly string[], max: number): string {
-  if (lines.join('\n').length <= max) return lines.join('\n');
+  const all = lines.join('\n');
+  if (all.length <= max) return all;
+  // keep[n]: the length of the first n lines with a newline after each, so each try costs one sum, not a join
+  const keep = [0];
+  for (const l of lines) keep.push((keep.at(-1) ?? 0) + l.length + 1);
   for (let n = lines.length - 1; n >= 0; n--) {
-    const text = [...lines.slice(0, n), `… ${lines.length - n} more lines`].join('\n');
-    if (text.length <= max) return text;
+    const more = `… ${lines.length - n} more lines`;
+    if ((keep[n] ?? 0) + more.length <= max) return [...lines.slice(0, n), more].join('\n');
   }
   return '';
 }

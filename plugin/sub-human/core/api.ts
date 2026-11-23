@@ -26,11 +26,12 @@
 //   handoff  {id, cwd}                 → null         /clear or /resume: moves the pointer aside for the next session in cwd
 //   claim    {id, cwd}                 → {pointer}    the next session takes the oldest handoff under HANDOFF_MS old, else
 //                                                     null; the member of one gone stale is away
-//   ping     {session, code?, name?}   → null         `session` is the session id (it keeps that pointer fresh); with
-//                                                     code and name, this session is NAME in CODE, for messages
+//   ping     {session, code?, name?,   → null         `session` is the session id (it keeps that pointer fresh); with
+//             cc?}                                    code and name, this session is NAME in CODE, for messages; `cc` is
+//                                                     the Claude Code version it runs, for doctor
 //   message  {code, to, from, text}    → null         private Claude-to-Claude: into the recipient's inbox, never the log
 //   inbox    {session}                 → {messages}   takes this session's messages in all its rooms, once
-//   status   {}                        → {version, pid, sessions}
+//   status   {}                        → {version, pid, sessions, cc}  cc: the Claude Code versions live sessions run
 //
 // Across machines (net/, U15):
 //   invite   {code, from, name, via}   → {line}       a line for NAME (via public, tailnet or ssh); starts the listener
@@ -55,7 +56,7 @@ import { err, ok } from './result.js';
 import { decodeDoc, decodeEntry } from './schema.js';
 
 /** Bumped when a request or an answer changes shape; status carries it. */
-export const API_VERSION = 3;
+export const API_VERSION = 4;
 /** A request body larger than this is refused unread. */
 export const MAX_BODY: number = 1024 * 1024;
 export const DAEMON_URL: string = 'http://daemon/';
@@ -111,7 +112,7 @@ export type AppendDraft = Without<Entry, 'seq' | 'at' | 'prev' | 'machine'>;
 /** The documents a member writes about itself; `members` is the host's. */
 export type MemberDocKind = 'presence' | 'activity' | 'focus';
 export interface Message { readonly code: string; readonly from: string; readonly text: string; readonly at: number }
-export interface Status { readonly version: number; readonly pid: number; readonly sessions: number }
+export interface Status { readonly version: number; readonly pid: number; readonly sessions: number; readonly cc: readonly string[] }
 export interface Version { readonly version: number; readonly hash: string }
 
 export type PlanAct =
@@ -160,7 +161,7 @@ export type Request =
   | { readonly op: 'retire'; readonly id: string }
   | { readonly op: 'handoff'; readonly id: string; readonly cwd: string }
   | { readonly op: 'claim'; readonly id: string; readonly cwd: string }
-  | { readonly op: 'ping'; readonly session: string; readonly code?: string; readonly name?: string }
+  | { readonly op: 'ping'; readonly session: string; readonly code?: string; readonly name?: string; readonly cc?: string }
   | { readonly op: 'message'; readonly code: string; readonly to: string; readonly from: string; readonly text: string }
   | { readonly op: 'inbox'; readonly session: string }
   | { readonly op: 'status' }
@@ -240,7 +241,7 @@ const request = v.variant('op', [
   v.object({ op: v.literal('retire'), id: sessionId }),
   v.object({ op: v.literal('handoff'), id: sessionId, cwd: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)) }),
   v.object({ op: v.literal('claim'), id: sessionId, cwd: v.pipe(v.string(), v.minLength(1), v.maxLength(4096)) }),
-  v.object({ op: v.literal('ping'), session, code: opt(name), name: opt(name) }),
+  v.object({ op: v.literal('ping'), session, code: opt(name), name: opt(name), cc: opt(name) }),
   v.object({ op: v.literal('message'), code: name, to: name, from: name, text }),
   v.object({ op: v.literal('inbox'), session }),
   v.object({ op: v.literal('status') }),
@@ -271,7 +272,7 @@ const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
   ping: v.null(),
   message: v.null(),
   inbox: v.object({ messages: v.array(v.object({ code: name, from: name, text, at: count })) }),
-  status: v.object({ version: count, pid: count, sessions: count }),
+  status: v.object({ version: count, pid: count, sessions: count, cc: v.array(v.string()) }),
   invite: v.object({ line: v.string() }),
   asks: v.object({ asks: v.array(v.object({
     id: name, code: name, kind: v.picklist(['admit', 'again', 'leaked']), name, expected: name, machine: v.string(), check: v.string(), member: v.boolean(),
@@ -292,17 +293,23 @@ function decode<T>(schema: v.GenericSchema<unknown, T>, input: unknown): Result<
   return err(at ? `${at}: ${r.issues[0].message}` : r.issues[0].message);
 }
 
+/** An entry as its writer sent it, through the entry schema; any stamps of the host's it carries come off. */
+export function decodeAppendDraft(input: unknown): Result<AppendDraft> {
+  // the host's stamps go in last, so a caller's own are overwritten, then come off again
+  const e = decodeEntry({ ...(typeof input === 'object' ? input : {}), seq: 1, at: 0, prev: '', machine: '-' });
+  if (!e.ok) return e;
+  const { seq: _s, at: _a, prev: _p, machine: _m, ...draft } = e.value;
+  return ok(draft);
+}
+
 /** A request as the daemon reads it: the draft and the document through their own schemas. */
 export function decodeRequest(input: unknown): Result<Request> {
   const r = decode(request, input);
   if (!r.ok) return err(`request not understood: ${r.error}`);
   const req = r.value;
   if (req.op === 'append') {
-    // the host's stamps go in last, so a caller's own are overwritten, then come off again
-    const e = decodeEntry({ ...req.draft, seq: 1, at: 0, prev: '', machine: '-' });
-    if (!e.ok) return err(`entry not understood: ${e.error}`);
-    const { seq: _s, at: _a, prev: _p, machine: _m, ...draft } = e.value;
-    return ok({ op: 'append', code: req.code, draft });
+    const d = decodeAppendDraft(req.draft);
+    return d.ok ? ok({ op: 'append', code: req.code, draft: d.value }) : err(`entry not understood: ${d.error}`);
   }
   if (req.op === 'put_doc') {
     const d = decodeDoc(req.kind, req.doc);

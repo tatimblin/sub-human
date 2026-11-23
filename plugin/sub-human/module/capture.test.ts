@@ -89,13 +89,14 @@ test('a main turn marks me working and its end idle; a subagent\'s turn writes n
   await $.session.end(END)
 })
 
-test('the session pings the daemon at the start and every 20 s, idle at the prompt too', async ($, on) => {
+test('the session pings the daemon at the start and every 20 s, idle at the prompt too, with its Claude Code version', async ($, on) => {
   const clock = mock.clock(on)
+  on('session.version', () => ({ value: { version: '2.1.330', base: '2.1.330' } }))
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   await $.session.start(START)
   await room.settled(clock)
   const pings = () => room.requests.filter(r => r.op === 'ping')
-  expect(pings()).toEqual([{ op: 'ping', session: 'session-1', code: room.code, name: 'alice' }])
+  expect(pings()).toEqual([{ op: 'ping', session: 'session-1', code: room.code, name: 'alice', cc: '2.1.330' }])
   for (let i = 0; i < 20; i++) await room.poll(clock)
   expect(pings()).toHaveLength(2)
   await $.session.end(END)

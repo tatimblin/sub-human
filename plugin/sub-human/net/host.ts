@@ -370,7 +370,7 @@ export class Host {
       case 'pong': return;
       case 'subscribe': if (this.allow(l, 'subscribe')) return this.subscribe(l, m.after_seq, m.hash); this.bye(l, 'closed'); return;
       case 'append': {
-        const { seq: _s, at: _a, prev: _p, machine: _m, ...draft } = m.entry;
+        const draft = m.entry;
         return draft.from === name ? write(draft.id, ok({ op: 'append', code, draft }), 'append') : refuse(draft.id);
       }
       case 'put_doc': {

@@ -8,6 +8,8 @@ import type { By, Entry, RoomState } from './entries.js';
 import { datamark, markLabel, oneLine, ZERO_WIDTH } from './text.js';
 
 export const WAKES_PER_HOUR = 6;
+/** Drawn lines have their own hourly cap: they spend no wakes, so the wake budget alone wouldn't bound them. */
+export const DRAWS_PER_HOUR = 6;
 /** One wake per sender or question burst: what follows within this rides along as context. */
 export const BURST_MS = 60_000;
 /** A file I touched counts toward relevance and overlap for this long. */
@@ -39,6 +41,8 @@ export interface State {
   readonly room: RoomState;
   /** When each wake of the last hour was submitted. */
   readonly wakes: readonly number[];
+  /** When each line of the last hour was drawn (a draw not counted as unread). */
+  readonly draws: readonly number[];
   /** A burst's key (`from:NAME`, `q:AT`) → when it last woke or rode along. */
   readonly bursts: Readonly<Record<string, number>>;
   /** My Claude's open question: when, to whom, and until when its answers ride along once one woke. */
@@ -117,8 +121,12 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
       const text = e.kind === 'activity' && e.ok !== undefined ? `${e.text} (${e.ok ? 'passed' : 'failed'})` : e.text;
       return keep(bears(e.text, e.from, me, room, now) ? item(text, 1) : NONE);
     }
-    case 'plan':
-      return keep(onPlan(room, e.name, me.name) ? item(`stored plan ${e.name} version ${e.version}`, 1) : NONE);
+    case 'plan': {
+      if (!onPlan(room, e.name, me.name)) return keep(NONE);
+      // a version I'm asked about draws one line, the ask's: the room is folded with the whole poll, ask and all
+      const asked = room.plans.find(p => p.name === e.name)?.versions.find(x => x.version === e.version)?.asked.includes(me.name);
+      return keep(item(`stored plan ${e.name} version ${e.version}`, 1, !asked));
+    }
     case 'plan_ask':
       return keep(e.people.includes(me.name) ? notice(`${who} asked you to agree on plan ${e.name} version ${e.version}.`) : NONE);
     case 'plan_answer': {
@@ -160,9 +168,11 @@ function wake(s: State, code: string, now: number, budget: number, key: string, 
     const drawKey = `${key}:draw`;
     const prev = s.bursts[drawKey];
     const line = clip(`${src.label} ${src.verb} your Claude with a command or link, held for you: ${src.text}`);
-    // never counted against the budget, but drawn only as its burst's first and while the budget lasts
-    const unread = (prev !== undefined && now - prev < BURST_MS) || s.wakes.length >= budget;
-    return { verdict: { kind: 'draw', line, unread }, state: { ...s, bursts: { ...s.bursts, [drawKey]: now } } };
+    // never counted against the wake budget, but drawn only as its burst's first, while that budget lasts, and within
+    // the hour's own cap on drawn lines
+    const unread = (prev !== undefined && now - prev < BURST_MS) || s.wakes.length >= budget || s.draws.length >= DRAWS_PER_HOUR;
+    const draws = unread ? s.draws : [...s.draws, now];
+    return { verdict: { kind: 'draw', line, unread }, state: { ...s, draws, bursts: { ...s.bursts, [drawKey]: now } } };
   }
   const bursts = { ...s.bursts, [key]: now };
   const last = s.bursts[key];
@@ -247,11 +257,15 @@ function names(text: string, to: string | undefined, me: string): boolean {
 // The command/URL rule (R10) is one layer: it keys on a URL, a code block or a command word with the subcommand or
 // flag that makes it a command, so prose that only names a tool ("git history shows", "curl returned 404") passes.
 // The other layer is the woken turn's framing (FRAME): a colleague's request, with running commands left to the person.
-const URL = /\b(?:https?|ftp|ssh|file):\/\/|\bwww\.[a-z0-9-]+\.|\b[\w.-]+\/\S*\.(?:sh|ps1|exe)\b/i;
+const URL = /\b(?:https?|hxxps?|ftp|ssh|file):\/\/|\bwww\.[a-z0-9-]+\.|\b[\w.-]+\/\S*\.(?:sh|ps1|exe)\b|\w\[\.\]\w/i;
 const CODE = /```|^\s*\$ |`\s*(?:\.\/|(?:sudo|curl|wget|bash|sh|zsh|rm|chmod|chown|mv|cp|dd|npm|npx|pnpm|yarn|node|python3?|pip3?|git|make|docker|kubectl|ssh|scp|eval|exec|source|brew|cargo|go|deno|bun)\b)/im;
 const COMMAND = new RegExp([
-  String.raw`\b(?:npm|pnpm|yarn|bun)\s+(?:i|install|add|run|exec|x)\b`,
-  String.raw`\bgit\s+(?:push|reset|clean|rebase|checkout|commit|am|apply|config)\b`,
+  String.raw`\b(?:npm|pnpm|yarn|bun)\s+(?:i|install|add|run|exec|x|dlx|publish)\b`,
+  String.raw`\bgit\s+(?:push|reset|clean|rebase|checkout|commit|am|apply|config|branch\s+-D)\b`,
+  String.raw`\buvx\s+\w`, String.raw`\bpipx\s+(?:run|install)\b`, String.raw`\bdeno\s+run\b`, String.raw`\b(?:perl|ruby|osascript)\s+-e\b`,
+  String.raw`\bssh\s+(?:-\w|\S+@)`, String.raw`\bscp\s+(?:-\w|\S+:)`, String.raw`\bcrontab\s+-[re]\b`, String.raw`\bsed\s+-i\b`,
+  String.raw`>>\s*~\/\.`, String.raw`\bsource\s+\S+\.(?:sh|bash|zsh)\b`, String.raw`\beval\s+["'$(]`, String.raw`\bfind\b.*\s-delete\b`,
+  String.raw`\bdocker[\s-]compose\s+up\b`, String.raw`\bkubectl\s+(?:delete|apply|exec)\b`, String.raw`\bterraform\s+(?:destroy|apply)\b`,
   String.raw`\bpip3?\s+install\b`, String.raw`\brm\s+-`, String.raw`\bcurl\b.*\|\s*(?:ba|z)?sh\b`, String.raw`\bwget\s+\S`,
   String.raw`\b(?:ba|z)?sh\s+-c\b`, String.raw`\bpython3?\s+-c\b`, String.raw`\bchmod\s+[+\-\d]`, String.raw`\bsudo\s+(?!(?:is|was|not|for|access|rights)\b)\w`,
   String.raw`\bnpx\s+\w`, String.raw`\bnode\s+-e\b`, String.raw`\bdocker\s+(?:run|exec)\b`,
@@ -288,7 +302,8 @@ function prune(s: State, now: number): State {
   const bursts = Object.fromEntries(Object.entries(s.bursts).filter(([, at]) => now - at < BURST_MS));
   const asked = s.asked && now - s.asked.at < HOUR && (s.asked.until === undefined || now < s.asked.until) ? s.asked : undefined;
   const { asked: _a, ...rest } = s;
-  return { ...rest, wakes: s.wakes.filter(at => now - at < HOUR), bursts, ...(asked && { asked }) };
+  const hour = (ats: readonly number[]) => ats.filter(at => now - at < HOUR);
+  return { ...rest, wakes: hour(s.wakes), draws: hour(s.draws), bursts, ...(asked && { asked }) };
 }
 
 /** A cheap token estimate: about four characters a token. */

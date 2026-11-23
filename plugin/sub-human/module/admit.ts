@@ -1,13 +1,14 @@
-// The host's Let in / Refuse card (R30): from the session's first `/sub-human invite` (the session the host invites
-// from is the one the joiner's card belongs in), the module asks the daemon every few seconds who waits to
-// be let into this session's rooms (`asks`), shows each joiner once as a native question card naming them, their
-// machine, a name that is not the invite's and the check string both people compare, and posts the answer (`admit`).
-// A card dismissed is a Refuse. A line dialled twice is one dim line; one that had let someone in offers their kick.
+// The host's Let in / Refuse card (R30): from an interactive session's start, while the session is in a room (follow.ts
+// fills that in) or has typed `/sub-human invite`, the module asks the daemon every few seconds who waits to be let
+// into this session's rooms (`asks`: only rooms hosted here have any), shows each joiner once as a native question card
+// naming them, their machine, a name that is not the invite's and the check string both people compare, and posts the
+// answer (`admit`). So a host session started after the invite shows the knock too. A card dismissed is a Refuse. A
+// line dialled twice is one dim line; one that had let someone in offers their kick.
 import type { On } from 'claude-code'
 import type { Ask } from '../core/api.js'
 import { homeDir } from '../home.js'
 import { answer, request } from './bridge.js'
-import { COMMAND } from './session.js'
+import { COMMAND, session } from './session.js'
 
 export const POLL_MS = 3000
 
@@ -21,21 +22,27 @@ export function card(a: Ask): { readonly question: string; readonly options: rea
 }
 
 export function admitCards(on: On): void {
-  let polling = false
-  on('prompt.submit', { command: { name: COMMAND, args: /^\s*invite\b/ } }, async ($, e, next) => {
-    if (polling) return next(e)
-    polling = true
+  let timer: { cancel(): void } | null = null
+  let invited = false
+  on('prompt.submit', { command: { name: COMMAND, args: /^\s*invite\b/ } }, (_, e, next) => {
+    invited = true
+    return next(e)
+  })
+  on('session.start', { isInteractive: true }, async ($, e, next) => {
+    const out = await next(e)
+    timer?.cancel() // a /clear or /resume starts the session again, under its new id
     const home = homeDir({ SUB_HUMAN_HOME: await $.env.get('SUB_HUMAN_HOME') }, (await $.env.get('HOME')) ?? '')
-    const session = await $.session.id()
+    const id = await $.session.id()
     let busy = false, said = ''
-    // a failure is one line, said again only when it changes, so a poll every few seconds never repeats it
-    const fail = (why: string): void => { if (why !== said) $.ui.log(`sub-human: no joiner can be let in: ${why}`); said = why }
-    $.clock.every(POLL_MS, () => {
-      if (busy) return
+    // a failure is one line, said again only when it changes, so a poll every few seconds never repeats it; and only
+    // once the person has invited: before that, follow.ts's ping already says a daemon that is down
+    const fail = (why: string): void => { if (why !== said && invited) $.ui.log(`sub-human: no joiner can be let in: ${why}`); said = why }
+    timer = $.clock.every(POLL_MS, () => {
+      if (busy || (!session.room && !invited)) return
       busy = true
       void (async () => {
         try {
-          const ask = request({ op: 'asks', session }, home)
+          const ask = request({ op: 'asks', session: id }, home)
           const got = answer('asks', await $.http.fetch(ask.url, ask))
           if (!got.ok) { fail(got.error); return }
           said = ''
@@ -45,7 +52,7 @@ export function admitCards(on: On): void {
             const chosen = await $.ui.ask(c.question, { options: c.options, header: 'Join' }).catch(() => c.options[1])
             const yes = chosen === c.options[0]
             if (a.kind === 'leaked' && !yes) continue
-            const reply = request({ op: 'admit', session, code: a.code, id: a.id, answer: yes ? (a.kind === 'leaked' ? 'kick' : 'let_in') : 'refuse' }, home)
+            const reply = request({ op: 'admit', session: id, code: a.code, id: a.id, answer: yes ? (a.kind === 'leaked' ? 'kick' : 'let_in') : 'refuse' }, home)
             const r = answer('admit', await $.http.fetch(reply.url, reply))
             if (!r.ok) $.ui.log(`sub-human: ${r.error}`)
           }
@@ -54,6 +61,6 @@ export function admitCards(on: On): void {
         } finally { busy = false }
       })()
     })
-    return next(e)
+    return out
   })
 }

@@ -8,9 +8,9 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { Duplex } from 'node:stream';
 import * as v from '../vendor/valibot.mjs';
-import type { Answers, LinkStatus, Op, RoomRequest } from '../core/api.js';
-import { readAnswer } from '../core/api.js';
-import type { Entry, RoomState } from '../core/entries.js';
+import type { AppendDraft, Answers, LinkStatus, Op, RoomRequest } from '../core/api.js';
+import { decodeAppendDraft, readAnswer } from '../core/api.js';
+import type { RoomState } from '../core/entries.js';
 import { fold } from '../core/fold.js';
 import type { LinkEffect, LinkEvent, LinkState, Timer, Timings } from '../core/link-engine.js';
 import { initial, step } from '../core/link-engine.js';
@@ -18,7 +18,7 @@ import type { ToHost } from '../core/protocol.js';
 import { decodeToLink, encode, hello, negotiate, skewLine } from '../core/protocol.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
-import { decodeDoc, decodeEntry } from '../core/schema.js';
+import { decodeDoc } from '../core/schema.js';
 import { fileKey, roomDir } from '../home.js';
 import { writeAtomic } from '../store/atomic.js';
 import { MirrorStore } from '../store/mirror-store.js';
@@ -151,7 +151,7 @@ class Link {
   private readonly timers = new Map<Timer, () => void>();
   private readonly waits = new Map<string, (r: Result<unknown>) => void>();
   /** Posts not yet acked, by id: the engine says when to send them. */
-  private readonly posts = new Map<string, Entry>();
+  private readonly posts = new Map<string, AppendDraft>();
   private subscribing: number | null = null;
   private chain: Promise<void> = Promise.resolve();
   private pings = 0;
@@ -211,13 +211,13 @@ class Link {
   /** The host's ack for a draft, its line by then extended here. A person's post goes through the engine's queue. */
   private async write(d: Draft): Promise<Result<null>> {
     if (d.kind === 'post' && d.by === 'person') return this.queue(d);
-    const e = decodeEntry({ ...d, seq: 1, prev: '' });
+    const e = decodeAppendDraft(d);
     if (!e.ok) return e;
     const r = await this.wait(d.id, () => { this.send({ t: 'append', entry: e.value }); });
     return r.ok ? ok(null) : r;
   }
   private async queue(d: Draft): Promise<Result<null>> {
-    const e = decodeEntry({ ...d, seq: 1, prev: '' });
+    const e = decodeAppendDraft(d);
     if (!e.ok) return e;
     this.posts.set(d.id, e.value);
     const r = await this.wait(d.id, () => { this.run({ type: 'post', id: d.id }); }, this.status.phase === 'online' ? WRITE_MS : 0);

@@ -27,9 +27,9 @@ async function room(r: Rooms, code: string, ...names: string[]): Promise<void> {
   for (const n of names) assert.ok((await r.handle({ op: 'append', code, draft: joined(n) })).ok);
 }
 /** Session `id` joins `p`'s room (made first) as `p`'s name: what the join answers. */
-async function seat(r: Rooms, id: string, p: { code: string; name: string; leave: string }): Promise<unknown> {
+async function joinAs(r: Rooms, id: string, p: { code: string; name: string; leave: string }): Promise<unknown> {
   await room(r, p.code, p.name);
-  return okv(r, { op: 'join', id, cwd: `/seat/${id}`, name: p.name, code: p.code, leave: p.leave });
+  return okv(r, { op: 'join', id, cwd: `/work/${id}`, name: p.name, code: p.code, leave: p.leave });
 }
 async function okv(r: Rooms, req: Request): Promise<unknown> {
   const a = await r.handle(req);
@@ -162,7 +162,7 @@ test('session writes the pointer the module reads (0600) with its title, retire 
   const live = new Rooms({ home: h, now: Date.now, machine: 'm', idleMs: 60_000, links: NO_LINKS });
   await okv(live, { op: 'ping', session: 'quiet' }); // still pinging: its pointer is kept fresh
   await sleep(50);
-  assert.deepEqual(await seat(live, 's1', BOB), { code: BOB.code, title: BOB.title, opened: false, others: [] });
+  assert.deepEqual(await joinAs(live, 's1', BOB), { code: BOB.code, title: BOB.title, opened: false, others: [] });
   const file = sessionFile(h, 's1');
   assert.deepEqual(decodePointer(await fs.readFile(file, 'utf8')), BOB);
   assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
@@ -177,7 +177,7 @@ test('handoff moves a pointer aside for the next session in the cwd; claim takes
   const h = await home();
   let now = 1_000;
   const r = new Rooms({ home: h, now: () => now, machine: 'm', idleMs: 60_000, links: NO_LINKS });
-  await seat(r, 'old', BOB);
+  await joinAs(r, 'old', BOB);
   assert.equal(await okv(r, { op: 'handoff', id: 'old', cwd: '/work/api' }), null);
   await assert.rejects(fs.access(sessionFile(h, 'old')));
   assert.deepEqual(await okv(r, { op: 'claim', id: 'new', cwd: '/work/web' }), { pointer: null }, 'another cwd claims nothing');
@@ -195,8 +195,8 @@ test('handoffs in one cwd are a list: two pending are both kept, and claims take
   const h = await home();
   const r = new Rooms({ home: h, now: () => 1_000, machine: 'm', idleMs: 60_000, links: NO_LINKS });
   const ALICE = { ...BOB, name: 'alice', title: 'alice.vole-0001', leave: '8e9c2a1e-4b3f-4c5d-8e6f-0a1b2c3d4e5f' };
-  await seat(r, 'one', BOB);
-  await seat(r, 'two', ALICE);
+  await joinAs(r, 'one', BOB);
+  await joinAs(r, 'two', ALICE);
   await okv(r, { op: 'handoff', id: 'one', cwd: '/w' });
   await okv(r, { op: 'handoff', id: 'two', cwd: '/w' });
   assert.deepEqual(await okv(r, { op: 'claim', id: 'a', cwd: '/w' }), { pointer: BOB });
@@ -207,7 +207,7 @@ test('handoffs in one cwd are a list: two pending are both kept, and claims take
 test('a handoff and a claim sent together run in order on the cwd\'s chain: the claim gets it', async () => {
   const h = await home();
   const r = new Rooms({ home: h, now: () => 1_000, machine: 'm', idleMs: 60_000, links: NO_LINKS });
-  await seat(r, 'one', BOB);
+  await joinAs(r, 'one', BOB);
   const [, claimed] = await Promise.all([r.handle({ op: 'handoff', id: 'one', cwd: '/w' }), r.handle({ op: 'claim', id: 'two', cwd: '/w' })]);
   assert.ok(claimed.ok);
   assert.deepEqual(claimed.value, { pointer: BOB });
@@ -244,6 +244,15 @@ test('messages go to inboxes by session and room, never the log, and are taken o
   });
   assert.deepEqual(await okv(r, { op: 'inbox', session: 's-bob' }), { messages: [] });
   await assert.rejects(fs.access(`${h}/rooms`), 'nothing was written');
+});
+
+test('status counts live sessions and names the Claude Code versions their pings told it, once each', async () => {
+  const r = rooms(await home());
+  await okv(r, { op: 'ping', session: 's-a', cc: '2.1.330' });
+  await okv(r, { op: 'ping', session: 's-b', cc: '2.1.331' });
+  await okv(r, { op: 'ping', session: 's-c', cc: '2.1.330' });
+  await okv(r, { op: 'ping', session: 's-d' });
+  assert.partialDeepStrictEqual(await okv(r, { op: 'status' }), { sessions: 4, cc: ['2.1.330', '2.1.331'] });
 });
 
 test('a put_doc renews the tail file\'s documents stamp and keeps its head, so a follower lists documents only then', async () => {

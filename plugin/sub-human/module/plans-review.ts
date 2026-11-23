@@ -11,7 +11,8 @@ import { err } from '../core/result.js';
 import { blobFile } from '../home.js';
 import { answer, request } from './bridge.js';
 import type { Card } from './plans-cards.js';
-import { BACK, nextPending, noteCard, paneLines, readPick, reviewCard } from './plans-cards.js';
+import { BACK, noteCard, readPick, reviewCard } from './plans-cards.js';
+import { nextPending, paneLines } from './plans-pending.js';
 import { acceptedNote, myAgreed, partsNote } from './plans-notes.js';
 import { session } from './session.js';
 

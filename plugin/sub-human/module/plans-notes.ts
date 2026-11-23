@@ -3,7 +3,7 @@
 import type { RoomState } from '../core/entries.js';
 import { parts } from '../core/plans.js';
 import { datamark, markLabel } from '../core/text.js';
-import type { Pending } from './plans-cards.js';
+import type { Pending } from './plans-pending.js';
 
 /** What the context gets of a plan's text; `read op plan` has all of it. */
 export const TEXT_MAX = 6000;
