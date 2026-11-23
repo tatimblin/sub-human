@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ROOT, touches } from './helpers.ts';
+import { ROOT, touches } from './helpers.js';
 
 const HELPERS = path.join(import.meta.dirname, 'helpers.ts');
 

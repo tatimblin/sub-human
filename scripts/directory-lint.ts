@@ -485,6 +485,18 @@ export function checkLimits(root: string, files: readonly string[]): Finding[] {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// rule 6: plugin code imports its own files as `./x.js`; `claude plugin validate` refuses a `.ts` import path
+// (TS5097), and plugin/sub-human/resolve-ts.mjs maps `.js` to `.ts` for node.
+
+const R6 = 'TS_IMPORT_PATH';
+const TS_IMPORT = /\b(?:from|import)\s*\(?\s*['"](\.\.?\/[^'"]*\.ts)['"]/g;
+
+/** Rule 6 over one plugin .ts file's text. */
+export function checkImportPaths(text: string, file: string): Finding[] {
+  return [...text.matchAll(TS_IMPORT)].map(hit => ({ file, line: lineAt(text, hit.index), rule: R6, message: `imports ${hit[1] ?? ''}`, fix: 'import it as .js (resolve-ts.mjs finds the .ts for node)' }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 
 const BINARY = /\.(?:png|jpe?g|gif|webp|ico|bmp|avif|woff2?|ttf|otf|eot|pdf|zip|gz|lockb)$/i;
 
@@ -498,6 +510,7 @@ export function lint(root: string): Finding[] {
     try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
     if (text.includes('\0')) continue;
     out.push(...(rel.startsWith('vendor/') ? checkVendorCharacters(text, rel) : checkInvisible(text, rel)));
+    if (/\.ts$/.test(rel) && !rel.startsWith('vendor/')) out.push(...checkImportPaths(text, rel));
     if (/^module\/.*\.ts$/.test(rel) && !/\.test\.tsx?$/.test(rel)) out.push(...checkPermissionAnswers(text, rel), ...checkProcessRuns(text, rel));
   }
   out.push(...checkCommands(root), ...checkLimits(root, files));

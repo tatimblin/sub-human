@@ -17,14 +17,16 @@ log; other machines mirror it over Tailscale or ssh. v2 is a rebuild from the 0.
 
 This is ARCHITECTURE §3's plan: the directories exist, empty, and the build units fill them.
 
-- `plugin/sub-human/`: the plugin, ESM `.ts` run by node 22.18+ type stripping (no build).
+- `plugin/sub-human/`: the plugin, ESM `.ts` run by node 22.18+ type stripping (no build). Plugin files import each
+  other as `./x.js` (validate refuses `.ts` paths); every node process loading plugin code starts with
+  `node --import plugin/sub-human/resolve-ts.mjs`, which finds the `.ts` (directory-lint rule 6).
   - `core/` (coming) pure rules (folds, delivery, plans, tasks, the link state machine); no I/O, relative imports
     only. The Claude Code contract will be `core/cc/contract.json`.
   - `store/` (coming) the room store interface and its fs, mirror and memory backends.
   - `module/` (coming) the hooks module (Claude Code edge): capture, delivery, status, plans, Claude's tools.
   - `commands/` (coming) one small file per `/sub-human` verb.
   - `net/` (coming) node children only: the Noise channel, `pathways/` (tailscale, ssh, pipe), host, link, invite.
-  - `vendor/` (coming) committed ESM builds of the dependencies, with `VENDOR.json`; not linted or typechecked.
+  - `vendor/` committed ESM builds of the dependencies, with `VENDOR.json`; not linted or typechecked.
   - top-level `keys.ts`, `home.ts`, `config.ts` (coming).
 - `scripts/`: repo tooling (lint, ratchet, directory-lint, probe, canary, typings, version check, kit test runner),
   tests in `scripts/test/*.test.ts`.
@@ -42,7 +44,7 @@ This is ARCHITECTURE §3's plan: the directories exist, empty, and the build uni
   down, `node scripts/ts-ratchet.ts --update` lowers them), then `scripts/directory-lint.ts`.
 - `npm run validate`: `claude plugin validate plugin/sub-human --strict`.
 - `npm run canary`, `npm run typings`. `npm run probe` exits 2 until the contract exists; `npm run vendor` and
-  `npm run budget` point at scripts still coming (`scripts/vendor.ts`, `scripts/budget.ts`).
+  `npm run budget` check `vendor/VENDOR.json` and the ARCHITECTURE §11 line caps.
 - `node scripts/check-version.ts [BASE]`: plugin files changed without a newer `version` in plugin.json fails.
 
 ## Design rules

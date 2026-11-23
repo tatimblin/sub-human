@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkPermissionAnswers, checkProcessRuns, checkCommands, checkInvisible, checkLimits, pluginFiles, readmeWords, lint, words } from '../directory-lint.ts';
+import { checkPermissionAnswers, checkProcessRuns, checkCommands, checkImportPaths, checkInvisible, checkLimits, pluginFiles, readmeWords, lint, words } from '../directory-lint.ts';
 import type { Finding } from '../directory-lint.ts';
 
 const README = `# demo\n\n${'This plugin does a small useful thing for the people who install it and use it. '.repeat(3)}\n\n\`\`\`sh\nnpm test\n\`\`\`\n`;
@@ -150,4 +150,10 @@ test('LIMIT_*: file count, file size, OS junk, README words, license, a lockfile
 
   assert.deepEqual(lint(plugin({ 'package.json': '{}' })), []);
   assert.deepEqual(rules(lint(plugin({ 'package.json': '{}', 'package-lock.json': '{}' }))), ['LIMIT_LOCKFILE']);
+});
+
+test('rule 6: a plugin file imports its own files as .js, never .ts', () => {
+  const f = checkImportPaths(`import { a } from './a.ts'\nimport type { B } from '../core/b.ts'\nconst c = await import('./c.ts')`, 'module/x.ts');
+  assert.deepEqual(f.map(x => [x.line, x.rule]), [[1, 'TS_IMPORT_PATH'], [2, 'TS_IMPORT_PATH'], [3, 'TS_IMPORT_PATH']]);
+  assert.deepEqual(checkImportPaths(`import { a } from './a.js'\nimport v from 'node:fs'`, 'core/x.ts'), []);
 });
