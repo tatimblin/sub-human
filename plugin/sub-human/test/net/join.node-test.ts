@@ -25,7 +25,7 @@ async function hostLog(h: Homes): Promise<string[]> {
   return r.value.map(l => l.entry.kind);
 }
 
-test('join: the line, the same check string on both sides, Let in, the link key bound, the room synced', async t => {
+test('join: the line, the same check string on both sides, Let in, the link key bound, the room synced (R30)', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);
   await h.host.ok({ op: 'append', code: CODE, draft: post('alice', 'before bob') });
@@ -50,7 +50,7 @@ test('join: the line, the same check string on both sides, Let in, the link key 
   assert.deepEqual(await hostLog(h), ['joined', 'post', 'invite', 'admit']);
 });
 
-test('the secret never reaches the log or the host\'s records', async t => {
+test('the secret never reaches the log or the host\'s records (R30)', async t => {
   const h = await twoHomes(t);
   const { line } = await joinBob(h);
   const inv = parse(line);
@@ -63,7 +63,7 @@ test('the secret never reaches the log or the host\'s records', async t => {
   }
 });
 
-test('writes go to the host and come back: posts, documents, plans, tasks; a message reaches only its member', async t => {
+test('writes go to the host and come back: posts, documents, plans, tasks; a message reaches only its member (R6, R28)', async t => {
   const h = await twoHomes(t);
   await joinBob(h);
   await h.joiner.ok({ op: 'append', code: CODE, draft: { kind: 'joined', id: crypto.randomUUID(), from: 'bob', by: 'system' } });
@@ -96,7 +96,7 @@ test('writes go to the host and come back: posts, documents, plans, tasks; a mes
   assert.ok(!sys.ok && /host's to write/.test(sys.error), 'a host kind is refused');
 });
 
-test('a late joiner syncs from the snapshot and the lines after it, not the whole log', async t => {
+test('a late joiner syncs from the snapshot and the lines after it, not the whole log (R28)', async t => {
   const h = await twoHomes(t);
   // a long room, written before the daemon opens it, with a snapshot every 50 lines
   const fsStore = await openFsStore({ home: h.host.home, code: CODE, every: 50 });
@@ -130,7 +130,7 @@ test('a wrong host key fails at the handshake, before anything is sent', async t
   assert.deepEqual((await h.host.ok({ op: 'asks', session: 'sa' })).asks, []);
 });
 
-test('a dial with neither a known key nor the MAC touches nothing: no ask, no record', async t => {
+test('a dial with neither a known key nor the MAC touches nothing: no ask, no record (R37)', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
@@ -146,7 +146,7 @@ test('a dial with neither a known key nor the MAC touches nothing: no ask, no re
   assert.equal(await fs.readFile(`${h.host.home}/host.json`, 'utf8'), before);
 });
 
-test('a name mismatch is on the card; Refuse kills the line', async t => {
+test('a name mismatch is on the card; Refuse kills the line (R30)', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
@@ -162,7 +162,7 @@ test('a name mismatch is on the card; Refuse kills the line', async t => {
   assert.deepEqual((await h.host.ok({ op: 'asks', session: 'sa' })).asks, [], 'a dead line asks nothing');
 });
 
-test('a leaked line dialled twice refuses both dials and alerts the host', async t => {
+test('a leaked line dialled twice refuses both dials and alerts the host (R30)', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
@@ -203,7 +203,7 @@ test('a used line dialled again alerts with the member to kick', async t => {
   await linkIs(h, 'stopped');
 });
 
-test('kick: the link is refused at once and the mirror stops, for good', async t => {
+test('kick: the link is refused at once and the mirror stops, for good (R31)', async t => {
   const h = await twoHomes(t);
   await joinBob(h);
   await h.joiner.ok({ op: 'append', code: CODE, draft: { kind: 'joined', id: crypto.randomUUID(), from: 'bob', by: 'system' } });

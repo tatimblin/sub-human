@@ -46,7 +46,7 @@ test('every prompt carries the session title its join gave it (R6)', async ($, o
   await $.session.end(END)
 })
 
-test('an overlap heads-up rides the next tool result of a running loop, once, and not a subagent\'s', async ($, on) => {
+test('an overlap heads-up rides the next tool result of a running loop, once, and not a subagent\'s (R15d)', async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'Edit' }, () => EDIT.result)
   on('tool.call', { tool: 'Read' }, () => ({ result: { type: 'text' }, text: 'ok' }))

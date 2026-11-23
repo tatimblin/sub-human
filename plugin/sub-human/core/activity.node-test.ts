@@ -18,7 +18,7 @@ const failed = toolFixture('tool-bash-error', 'Bash');
 const created = toolFixture('tool-task-create', 'TaskCreate');
 const updates = ['tool-task-update-completed', 'tool-task-update-in-progress', 'tool-task-update-deleted'].map(n => toolFixture(n, 'TaskUpdate'));
 
-test('an edit or write adds its repo-relative file to the activity document, once', () => {
+test('an edit or write adds its repo-relative file to the activity document, once (R12)', () => {
   assert.deepEqual(capture(edit.input, edit.result, ctx()), { kind: 'doc', doc: { name: 'ann', files: ['notes.txt'], at: 50 } });
   assert.deepEqual(capture(write.input, write.result, ctx({ root: '/work/project/' })), { kind: 'doc', doc: { name: 'ann', files: ['notes.txt'], at: 50 } });
   const doc = { name: 'ann', files: ['src/a.ts'], at: 1 };
@@ -28,7 +28,7 @@ test('an edit or write adds its repo-relative file to the activity document, onc
   assert.deepEqual(capture(edit.input, edit.result, ctx({ doc: { name: 'ann', files: ['notes.txt'], at: 1 } })), { kind: 'none' });
 });
 
-test('an edit outside the repo, of a secret file or of an ignored one is never shared', () => {
+test('an edit outside the repo, of a secret file or of an ignored one is never shared (R14a)', () => {
   assert.deepEqual(capture(edit.input, edit.result, ctx({ root: '/work/other' })), { kind: 'none' });
   assert.deepEqual(capture(edit.input, edit.result, ctx({ root: '/work/proj' })), { kind: 'none' });
   for (const file of ['.env', 'config/.env.local', 'certs/server.pem', 'id_rsa']) {
@@ -48,7 +48,7 @@ test('a plan file is no edit: in the session\'s plans directory or Claude Code\'
   assert.equal(plansDir(edit.result), null);
 });
 
-test('a commit and a push are events from the Bash result\'s gitOperation', () => {
+test('a commit and a push are events from the Bash result\'s gitOperation (R12)', () => {
   assert.deepEqual(capture(commit.input, commit.result, ctx({ repo: 'project', branch: 'main' })), {
     kind: 'events', events: [{ kind: 'activity', from: 'ann', by: 'claude', event: 'commit', text: 'committed 9b6afa1: add notes', repo: 'project', branch: 'master' }],
   });
@@ -57,7 +57,7 @@ test('a commit and a push are events from the Bash result\'s gitOperation', () =
   });
 });
 
-test('a test or build run is an event with whether it passed; other commands are nothing', () => {
+test('a test or build run is an event with whether it passed; other commands are nothing (R12)', () => {
   assert.deepEqual(capture(npmTest.input, npmTest.result, ctx({ branch: 'paging' })), {
     kind: 'events', events: [{ kind: 'activity', from: 'ann', by: 'claude', event: 'test', text: 'npm test', ok: true, branch: 'paging' }],
   });
@@ -82,7 +82,7 @@ test('an event whose text holds a secret is dropped; its text is one clean line'
   assert.ok(r.kind === 'events' && r.events[0]?.text === 'npm test --watch=false');
 });
 
-test('a personal task change is an event; a room task (tagged) is the bridge\'s, never activity', () => {
+test('a personal task change is an event; a room task (tagged) is the bridge\'s, never activity (R23)', () => {
   assert.deepEqual(capture(created.input, created.result, ctx()), {
     kind: 'events', events: [{ kind: 'activity', from: 'ann', by: 'claude', event: 'task', text: 'added task: demo task' }],
   });

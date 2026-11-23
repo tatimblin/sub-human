@@ -30,7 +30,7 @@ function run(inputs: readonly Input[], m: Me = me(), s: State = start(), step = 
   });
 }
 
-test('broadcasts never wake: findings, posts, activity, plans, decisions, joins and tasks', () => {
+test('broadcasts never wake: findings, posts, activity, plans, decisions, joins and tasks (R10)', () => {
   const r = room({ plans: [{ name: 'paging', scope: 'group', versions: [version('bob', ['ann'])] }], tasks: [{ n: 1, title: 't', status: 'claimed', addedBy: 'ann', owner: 'ann', blockedBy: [] }] });
   const s = start(r);
   const drafts: Draft[] = [
@@ -49,7 +49,7 @@ test('broadcasts never wake: findings, posts, activity, plans, decisions, joins 
   for (const d of drafts) assert.notEqual(kind(one(entry(d), me(), s)), 'wake', d.kind);
 });
 
-test('the three wakes: a person\'s line naming me, a direct message, an answer to my Claude\'s open question', () => {
+test('the three wakes: a person\'s line naming me, a direct message, an answer to my Claude\'s open question (R10)', () => {
   for (const text of ['ann, which port?', 'ann: which port?', 'which port, @ann?', 'ANN, which port?']) {
     assert.equal(kind(one(entry(post('bob', 'person', text)))), 'wake', text);
   }
@@ -74,7 +74,7 @@ test('the three wakes: a person\'s line naming me, a direct message, an answer t
   assert.deepEqual(run([ask, answer], me(), start(), 3_600_000), ['none', 'context']);
 });
 
-test('a wake is framed as a colleague\'s request, datamarked, and draws one line', () => {
+test('a wake is framed as a colleague\'s request, datamarked, and draws one line (R10, R11)', () => {
   const r = one({ kind: 'message', from: 'bob', text: 'does listTasks still\nreturn an array?' });
   assert.deepEqual(r.verdict, {
     kind: 'wake',
@@ -85,7 +85,7 @@ test('a wake is framed as a colleague\'s request, datamarked, and draws one line
   assert.equal(p.verdict.kind === 'wake' && p.verdict.text.startsWith(`[room ${CODE} · bob, to you] ann, which port?`), true);
 });
 
-test('one wake per sender burst or question: what follows within the burst rides along as context', () => {
+test('one wake per sender burst or question: what follows within the burst rides along as context (R10)', () => {
   const msg = (from: string): Input => ({ kind: 'message', from, text: 'x' });
   assert.deepEqual(run([msg('bob'), msg('bob'), msg('bob'), msg('bob')]), ['wake', 'context', 'context', 'context']);
   assert.deepEqual(run([msg('bob'), msg('cat'), msg('bob')]), ['wake', 'wake', 'context']);
@@ -97,7 +97,7 @@ test('one wake per sender burst or question: what follows within the burst rides
   assert.deepEqual(run(answers.slice(0, 3), me(), start(), BURST_MS), ['none', 'wake', 'context']);
 });
 
-test('the hourly wake budget: past it, wakes become unread lines', () => {
+test('the hourly wake budget: past it, wakes become unread lines (R10)', () => {
   const msgs = ['bob', 'cat', 'dan', 'eve'].map((from): Input => ({ kind: 'message', from, text: 'x' }));
   assert.deepEqual(run(msgs, me(), start(), BURST_MS, 3), ['wake', 'wake', 'wake', 'notice']);
   const full = { ...start(), wakes: Array.from({ length: WAKES_PER_HOUR }, (_, i) => NOW - 1000 * i) };
@@ -113,7 +113,7 @@ test('the hourly wake budget: past it, wakes become unread lines', () => {
   assert.equal(kind(one({ kind: 'message', from: 'bob', text: 'x' }, me(), old)), 'wake', 'an hour later the budget is back');
 });
 
-test('a Claude\'s message carrying a command or URL is drawn for the person, never submitted', () => {
+test('a Claude\'s message carrying a command or URL is drawn for the person, never submitted (R10, R38)', () => {
   // the corpora: \n is a line break and \uXXXX a character, so no invisible character sits in a fixture
   const corpus = (name: string): string[] => fs.readFileSync(new URL(`../test/fixtures/commands/${name}.txt`, import.meta.url), 'utf8')
     .split('\n').filter(l => l.trim() && !l.startsWith('#'))
@@ -221,7 +221,7 @@ test('relevance (R15c): context only for what bears on my work; the rest is coun
   assert.equal(kind(one(finding('src/store.js now pages', 'ann'), me({ touched }))), 'none');
 });
 
-test('plans, sent plans and tasks reach those they are about', () => {
+test('plans, sent plans and tasks reach those they are about (R25)', () => {
   const plans: Plan[] = [{ name: 'paging', scope: 'group', versions: [version('ann', ['bob'])] }, { name: 'other', scope: 'group', versions: [version('cat', ['bob'])] }];
   const sent: SentPlan[] = [{ name: 'mine', version: 1, from: 'ann', at: 0, files: [], answers: [] }];
   const tasks: Task[] = [{ n: 1, title: 'store', status: 'claimed', addedBy: 'bob', owner: 'bob', blockedBy: [] }, { n: 2, title: 'handler', status: 'claimed', addedBy: 'bob', owner: 'ann', blockedBy: [1] }];
@@ -265,7 +265,7 @@ test('overlap (R15d): a colleague editing a file I edited recently, or one a pla
   assert.equal(edits(['a.ts'], { name: 'bob', files: ['a.ts'] }), null);
 });
 
-test('the context cap: about 400 tokens, datamarked lines, lowest-value and oldest dropped first', () => {
+test('the context cap: about 400 tokens, datamarked lines, lowest-value and oldest dropped first (R15a)', () => {
   const item = (i: number, value: number, text = `update ${i} `.padEnd(200, 'x')): Item => ({ at: i, label: i % 2 ? "bob's Claude" : 'bob', text, value });
   let q: readonly Item[] = [];
   for (let i = 0; i < 12; i++) q = enqueue(q, item(i, i === 3 ? 3 : 1));

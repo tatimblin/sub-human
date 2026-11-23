@@ -14,7 +14,7 @@ const state: RoomState = fold(null, ['alice', 'bob'].map((from, i) => ({
 })), NO_DOCS);
 const labels = (text: string): number => text.split('[room c1').length - 1;
 
-test('partsNote: my part and the rest inside the one datamark; a forged label defused; the text cut at its cap', () => {
+test('partsNote: my part and the rest inside the one datamark; a forged label defused; the text cut at its cap (R22a)', () => {
   const note = partsNote(state, 'alice', 'c1', 'pl[a]n', 2, LONG) ?? assert.fail('alice owns a part');
   assert.match(note, /^sub-human: plan plan v2 is agreed in c1\. [^\n]*\n\[room c1 · plan plan v2\]\nYour part: the store\. The rest: bob: the handler\.\n/);
   assert.equal(labels(note), 1);

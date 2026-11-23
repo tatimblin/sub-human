@@ -26,7 +26,7 @@ async function polls(room: Room, clock: MockClock, n = 3): Promise<void> {
   await clock.settle()
 }
 
-test('a colleague\'s Claude\'s broadcast that names me and says to run something wakes nobody', async ($, on) => {
+test('a colleague\'s Claude\'s broadcast that names me and says to run something wakes nobody (R10)', async ($, on) => {
   const { clock, room, tools } = await setup(on)
   await $.session.start(START)
   await room.settled(clock)
@@ -43,7 +43,7 @@ test('a colleague\'s Claude\'s broadcast that names me and says to run something
   await $.session.end(END)
 })
 
-test('a direct message carrying a command or URL is drawn for the person, never submitted', { timeoutMs: 15_000 }, async ($, on) => {
+test('a direct message carrying a command or URL is drawn for the person, never submitted (R10, R38)', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, room, tools } = await setup(on)
   await $.session.start(START)
   await room.settled(clock)
@@ -85,7 +85,7 @@ test('a second held message in the same burst is counted, not drawn again', asyn
   await $.session.end(END)
 })
 
-test('a direct "the shape changed, update your side" wakes once, framed to change only my own work', async ($, on) => {
+test('a direct "the shape changed, update your side" wakes once, framed to change only my own work (R10, R11)', async ($, on) => {
   const { clock, room, tools, wakes } = await setup(on)
   await $.session.start(START)
   await room.settled(clock)

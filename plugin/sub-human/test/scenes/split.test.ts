@@ -9,7 +9,7 @@ import { END, START, seedRoom } from '../support/seed-room.js'
 const PLAN = '# Paging\n\n- @bob the store: `listTasks(cursor)`\n- @alice the handler: `GET /tasks?cursor=`\n- @carol the docs page\n'
 const Task = v.looseObject({ kind: v.literal('task'), task: v.looseObject({ n: v.number(), title: v.string(), status: v.string(), owner: v.optional(v.string()) }) })
 
-test('an agreed plan splits into tasks by owner, and my Claude knows its part and who owns the rest', async ($, on) => {
+test('an agreed plan splits into tasks by owner, and my Claude knows its part and who owns the rest (R20, R22a)', async ($, on) => {
   const clock = mock.clock(on)
   const w = planWorld(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol'], now: clock.now })

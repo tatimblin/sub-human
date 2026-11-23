@@ -8,7 +8,7 @@ const corpus = (name: string): string[] => fs.readFileSync(new URL(`../test/fixt
   .replaceAll('<+>', '').split('\n').filter(l => l.trim() && !l.startsWith('#'));
 const IGNORE = 'dist/\nnode_modules/\n*.log\nsecrets/\n';
 
-test('every sample of the must-refuse corpus is refused, and every rule refuses one', () => {
+test('every sample of the must-refuse corpus is refused, and every rule refuses one (R14a)', () => {
   const hit = new Set<string>();
   for (const line of corpus('refuse')) {
     const id = secretIn(line);
@@ -22,7 +22,7 @@ test('every sample of the must-pass corpus passes', () => {
   for (const line of corpus('pass')) assert.equal(secretIn(line), null, line);
 });
 
-test('secret files, ignored files and paths outside the repo are refused; the rest pass', () => {
+test('secret files, ignored files and paths outside the repo are refused; the rest pass (R14a)', () => {
   for (const p of corpus('refuse-paths')) assert.equal(refusedPath(p, IGNORE), true, p);
   for (const p of corpus('pass-paths')) assert.equal(refusedPath(p, IGNORE), false, p);
   assert.equal(refusedPath('dist/bundle.js'), false, 'with no ignore text only secret files are refused');

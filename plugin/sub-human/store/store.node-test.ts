@@ -41,7 +41,7 @@ test('a newer writer\'s extra field and unknown kind keep the chain: the hash is
   assert.equal(r.value[2]?.entry.prev, await lineHash(raws[2] ?? ''));
 });
 
-test('verifyLines refuses a gap, a repeat, a bad prev and a line that is not JSON', async () => {
+test('verifyLines refuses a gap, a repeat, a bad prev and a line that is not JSON (R36)', async () => {
   const raws = await chain([body('a'), body('b'), body('c')]);
   assert.equal((await verifyLines([raws[0] ?? '', raws[2] ?? ''], 0)).ok, false);
   assert.equal((await verifyLines([raws[0] ?? '', raws[0] ?? ''], 0)).ok, false);

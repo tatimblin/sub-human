@@ -107,7 +107,7 @@ test('plan versions go up by one and keep the first version\'s scope', () => {
   assert.deepEqual(s.plans.map(p => [p.scope, p.versions.map(v => v.hash)]), [['group', ['p1', 'p2']]]);
 });
 
-test('posts and findings are kept as recent updates, labelled as written', () => {
+test('posts and findings are kept as recent updates, labelled as written (R35)', () => {
   const s = state([
     { kind: 'post', from: 'ann', text: 'rebase on main', to: 'bob' },
     { kind: 'post', from: 'bob', by: 'claude', text: 'store landed' },
@@ -241,7 +241,7 @@ function randomLog(r: () => number, n: number): Body[] {
   return out;
 }
 
-test('a snapshot plus the rest of the log folds to the same state as the whole log', () => {
+test('a snapshot plus the rest of the log folds to the same state as the whole log (R28)', () => {
   const docs: Docs = { presence: [{ name: 'ann', state: 'working', at: 1 }], activity: [], focus: [{ name: 'bob', text: 'ui', at: 1 }] };
   for (let seed = 1; seed <= 40; seed++) {
     const r = rng(seed);

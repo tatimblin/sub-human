@@ -23,7 +23,7 @@ test('share, read and plan are registered for the model once the session is in a
   await $.session.end(END)
 })
 
-test('share: a finding, a post to a member and my focus, each labelled my Claude\'s, each one line back', async ($, on) => {
+test('share: a finding, a post to a member and my focus, each labelled my Claude\'s, each one line back (R7, R13, R14, R35)', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   await $.session.start(START)
@@ -37,7 +37,7 @@ test('share: a finding, a post to a member and my focus, each labelled my Claude
   await $.session.end(END)
 })
 
-test('share refuses a secret, a member nobody is, and a session in no room; nothing is written', async ($, on) => {
+test('share refuses a secret, a member nobody is, and a session in no room; nothing is written (R14a)', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   await $.session.start(START)
@@ -55,7 +55,7 @@ test('share refuses a secret, a member nobody is, and a session in no room; noth
   await $.session.end(END)
 })
 
-test('read: the brief and plan text framed as data, and since gives what came in once', async ($, on) => {
+test('read: the brief and plan text framed as data, and since gives what came in once (R16)', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   await room.as('bob').plan('paging', '# Paging\nlistTasks takes a cursor.', ['alice'])

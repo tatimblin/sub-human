@@ -25,7 +25,7 @@ async function polls(room: Room, clock: MockClock, n = 2): Promise<void> {
   await clock.settle()
 }
 
-test('a direct message wakes my Claude once, after my turn ends, framed as data from the colleague\'s Claude', async ($, on) => {
+test('a direct message wakes my Claude once, after my turn ends, framed as data from the colleague\'s Claude (R10)', async ($, on) => {
   const { clock, room, wakes } = await setup(on)
   await $.session.start(START)
   await room.settled(clock)
@@ -119,7 +119,7 @@ test('while a wake\'s turn is still to come, another waits for it to end', async
   await $.session.end(END)
 })
 
-test('a person\'s line naming me wakes my Claude; one naming nobody does not', async ($, on) => {
+test('a person\'s line naming me wakes my Claude; one naming nobody does not (R10)', async ($, on) => {
   const { clock, room, wakes } = await setup(on)
   await $.session.start(START)
   await room.settled(clock)

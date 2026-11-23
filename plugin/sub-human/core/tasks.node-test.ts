@@ -36,7 +36,7 @@ test('add numbers after the highest task, trims the title, and checks blockedBy'
   assert.equal(after(add(many, { title: 'x', from: 'bob', blockedBy: many.tasks.map(t => t.n) })), 'No task was added: it can wait on at most 256 tasks.');
 });
 
-test('claim is for oneself, refused while someone else owns the task', () => {
+test('claim is for oneself, refused while someone else owns the task (R24)', () => {
   const s = room([task(1), task(2, { status: 'claimed', owner: 'ann' }), task(3, { status: 'done', owner: 'ann' })]);
   const rows: [number, string, Task | string | null][] = [
     [1, 'bob', task(1, { status: 'claimed', owner: 'bob' })],
@@ -48,7 +48,7 @@ test('claim is for oneself, refused while someone else owns the task', () => {
   for (const [n, from, want] of rows) assert.deepEqual(after(claim(s, { n, from })), want, `#${n} by ${from}`);
 });
 
-test('release and done are the owner\'s only; done keeps an optional note', () => {
+test('release and done are the owner\'s only; done keeps an optional note (R24, R26)', () => {
   const s = room([task(1), task(2, { status: 'claimed', owner: 'ann' }), task(3, { status: 'done', owner: 'ann' })]);
   assert.deepEqual(after(release(s, { n: 2, from: 'ann' })), task(2));
   assert.equal(after(release(s, { n: 2, from: 'bob' })), 'Task #2 was not released: ann has it.');
@@ -71,12 +71,12 @@ test('anyone may release a kicked member\'s task, but not mark it done', () => {
   assert.equal(after(release(room(s.tasks), { n: 2, from: 'bob' })), 'Task #2 was not released: ann has it.');
 });
 
-test('waitingOn lists the blockers not yet done', () => {
+test('waitingOn lists the blockers not yet done (R25)', () => {
   const s = room([task(1, { status: 'done' }), task(2, { status: 'claimed', owner: 'ann' }), task(3, { blockedBy: [1, 2, 7] })]);
   assert.deepEqual(waitingOn(s, task(3, { blockedBy: [1, 2, 7] })), [2]);
 });
 
-test('the bridge tag round-trips inside a native subject', () => {
+test('the bridge tag round-trips inside a native subject (R24a)', () => {
   assert.equal(tag('vole-8126', 3), '[room vole-8126#3]');
   assert.deepEqual(parseTag(`Paging handler ${tag('vole-8126', 3)}`), { code: 'vole-8126', n: 3 });
   const two = `${tag('otter-4821', 1)} paging ${tag('vole-8126', 3)}`;
@@ -85,7 +85,7 @@ test('the bridge tag round-trips inside a native subject', () => {
   for (const s of ['paging', '[room vole-8126]', '[room #3]', '[room vole 8126#3]', 'room vole-8126#3']) assert.equal(parseTag(s), null, s);
 });
 
-test('bridgeOp: completed is done, deleted is release, a reopen is nothing, untagged is activity', () => {
+test('bridgeOp: completed is done, deleted is release, a reopen is nothing, untagged is activity (R23b, R24a)', () => {
   const t = { code: 'vole-8126', n: 3 };
   const rows: [{ from: string; to: string } | undefined, typeof t | null, ReturnType<typeof bridgeOp>][] = [
     [{ from: 'in_progress', to: 'completed' }, t, { kind: 'done', ...t }],

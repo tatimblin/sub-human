@@ -12,7 +12,7 @@ test('nameFrom: the first word, lowercased, marks dropped; reserved words, -digi
   ] as const) assert.equal(nameFrom(text), want, text);
 });
 
-test('newCode is a word and four digits', () => {
+test('newCode is a word and four digits (R2)', () => {
   let x = 0;
   for (let i = 0; i < 50; i++) assert.match(newCode(() => (x = (x + 0.137) % 1)), CODE);
   assert.equal(newCode(() => 0), 'otter-0000');

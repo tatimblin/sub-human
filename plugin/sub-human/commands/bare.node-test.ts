@@ -16,7 +16,7 @@ async function seed(fake: FakeHome, code: string, name: string, state: 'idle' | 
   assert.ok(r.ok);
 }
 
-test('a bare /sub-human with no room open opens one, as the git name, with repo and branch', async () => {
+test('a bare /sub-human with no room open opens one, as the git name, with repo and branch (R1)', async () => {
   const fake = fakeHome();
   const ctx = testCtx(fake);
   const a = await runCommand('', ctx);
@@ -134,7 +134,7 @@ test('a name ending in -digits is refused in one line, as a title would read', a
   assert.deepEqual(fake.calls, []);
 });
 
-test('NAME and ROOM may be given, in either order', async () => {
+test('NAME and ROOM may be given, in either order (R1)', async () => {
   const fake = fakeHome();
   await runCommand('', testCtx(fake));
   const code = await fake.code();
@@ -154,7 +154,7 @@ test('a session already in a room says so, and joins no other', async () => {
   assert.deepEqual(fake.calls, ['join session-1 alice']);
 });
 
-test('with several rooms open it lists them and joins none', async () => {
+test('with several rooms open it lists them and joins none (R1)', async () => {
   const fake = fakeHome();
   await seed(fake, 'vole-0001', 'x');
   await seed(fake, 'wren-0002', 'y');
@@ -164,7 +164,7 @@ test('with several rooms open it lists them and joins none', async () => {
   assert.equal((await runCommand('wren-0002', ctx)).text, 'You\'re in wren-0002 as alice, with y.');
 });
 
-test('a room whose every member is away, or who left, is not open: a bare join opens a new one', async () => {
+test('a room whose every member is away, or who left, is not open: a bare join opens a new one (R3)', async () => {
   const fake = fakeHome();
   await seed(fake, 'vole-0001', 'x', 'away');
   await seed(fake, 'wren-0002', 'y');
@@ -173,7 +173,7 @@ test('a room whose every member is away, or who left, is not open: a bare join o
   assert.equal((await fake.rooms.codes()).length, 3);
 });
 
-test('refusals: an unknown room, no name, a bad name, two names, a kicked name', async () => {
+test('refusals: an unknown room, no name, a bad name, two names, a kicked name (R43)', async () => {
   const fake = fakeHome();
   assert.deepEqual(await runCommand('mole-1234', testCtx(fake)),
     { kind: 'refused', text: 'Nobody joined: there is no room mole-1234 on this machine. Type /sub-human to open one.' });

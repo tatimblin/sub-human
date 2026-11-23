@@ -20,7 +20,7 @@ async function room(): Promise<{ fake: FakeHome; alice: Ctx; bob: Ctx; code: str
   return { fake, alice, bob, code: await fake.code() };
 }
 
-test('who lists the members here, their machines, state, focus and where they work', async () => {
+test('who lists the members here, their machines, state, focus and where they work (R4, R14)', async () => {
   const { fake, alice, code } = await room();
   await fake.daemon.putDoc(code, { kind: 'focus', doc: { name: 'bob', text: 'paging handler', repo: 'web', branch: 'paging', at: 1 } });
   await fake.daemon.putDoc(code, { kind: 'presence', doc: { name: 'alice', state: 'working', at: 1 } });
@@ -53,7 +53,7 @@ test('who, tasks, leave and kick in a session in no room say so', async () => {
   assert.equal((await runCommand('kick bob', ctx)).kind, 'refused');
 });
 
-test('tasks lists the open tasks with owners and blockers, and counts the done ones', async () => {
+test('tasks lists the open tasks with owners and blockers, and counts the done ones (R24)', async () => {
   const { fake, alice, code } = await room();
   assert.equal((await runCommand('tasks', alice)).text, `${code} has no tasks yet.`);
   const task = (n: number, title: string, rest: object) => fake.host(code, [{
@@ -67,7 +67,7 @@ test('tasks lists the open tasks with owners and blockers, and counts the done o
   ].join('\n'));
 });
 
-test('leave writes left and an away presence, and forgets the session; another session as the name keeps it', async () => {
+test('leave writes left and an away presence, and forgets the session; another session as the name keeps it (R3)', async () => {
   const { fake, alice, bob, code } = await room();
   const alice2 = testCtx(fake, { session: 'session-3' });
   await runCommand('', alice2);
@@ -103,7 +103,7 @@ test('a leave retried after its left was stored writes it once: the pointer keep
   assert.equal(lines.length, 1);
 });
 
-test('kick removes a member for good; never yourself, nobody unknown, nobody twice', async () => {
+test('kick removes a member for good; never yourself, nobody unknown, nobody twice (R31)', async () => {
   const { fake, alice, bob, code } = await room();
   assert.equal((await runCommand('kick', alice)).text, 'Nobody was removed. Type /sub-human kick NAME.');
   assert.equal((await runCommand('kick alice', alice)).text, 'You were not removed: to go, type /sub-human leave.');
@@ -114,7 +114,7 @@ test('kick removes a member for good; never yourself, nobody unknown, nobody twi
   assert.match((await runCommand('leave', bob)).text, /^You're still in .*: bob was removed/);
 });
 
-test('help is at most six lines', async () => {
+test('help is at most six lines (R4)', async () => {
   const ctx = testCtx(fakeHome());
   const help = await runCommand('help', ctx);
   assert.ok(help.text.split('\n').length <= 6);
@@ -160,7 +160,7 @@ test('join: the line is dialled as the git name; let in, the session takes its p
   assert.match((await runCommand(`join ${line}`, bob)).text, /so it joined no other/);
 });
 
-test('doctor: node, the socket path, the module, the version checked on, every room log, sshd and Tailscale', async () => {
+test('doctor: node, the socket path, the module, the version checked on, every room log, sshd and Tailscale (R29b)', async () => {
   const { fake, code } = await room();
   const ran: string[] = [];
   const answers: Record<string, string> = { 'sshd -G': 'port 22\nallowtcpforwarding yes', 'tailscale status --json': '{"Version":"1.80","BackendState":"Running"}' };

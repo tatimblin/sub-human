@@ -332,7 +332,7 @@ const TABLE: { name: string; seed?: number; run(r: Rig): void }[] = [
   },
 ];
 
-for (const row of TABLE) test(`link engine: ${row.name}`, () => row.run(rig(row.seed)));
+for (const row of TABLE) test(`link engine: ${row.name} (R32)`, () => row.run(rig(row.seed)));
 
 test('link engine: step never changes the state passed in', () => {
   const s = initial(T, 0, 1);

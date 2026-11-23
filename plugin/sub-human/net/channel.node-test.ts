@@ -23,7 +23,7 @@ const fixtures = path.join(import.meta.dirname, '..', 'test', 'fixtures', 'noise
 
 for (const file of ['cacophony-xk.json', 'snow-xk.json']) {
   const { vectors } = v.parse(Vectors, JSON.parse(fs.readFileSync(path.join(fixtures, file), 'utf8')));
-  test(`Noise XK vectors (${file}): every message byte for byte, both sides`, () => {
+  test(`Noise XK vectors (${file}): every message byte for byte, both sides (R29c)`, () => {
     assert.equal(vectors.length, 1);
     for (const x of vectors) {
       const is = keyPair(hex(x.init_static));
@@ -101,7 +101,7 @@ async function pair(o: { rs?: Buffer; payload?: Buffer; admit?: boolean } = {}) 
 const next = (c: Channel): Promise<Buffer> => new Promise(ok => c.onMessage(ok));
 const closed = (c: Channel): Promise<Error | null> => new Promise(ok => c.onClose(ok));
 
-test('channel: admit sees the joiner key and message 3 payload; both show one check string; messages both ways', async () => {
+test('channel: admit sees the joiner key and message 3 payload; both show one check string; messages both ways (R29c, R30)', async () => {
   const p = await pair({ payload: Buffer.from('the-mac') });
   const [h, j] = await Promise.all([p.hostSide, p.joiner]);
   assert.ok(h);
@@ -123,7 +123,7 @@ test('channel: admit sees the joiner key and message 3 payload; both show one ch
   assert.equal(await end, null);
 });
 
-test('channel: a wrong host key fails at message 1, before message 3 (and the MAC) is ever written', async () => {
+test('channel: a wrong host key fails at message 1, before message 3 (and the MAC) is ever written (R29c)', async () => {
   const p = await pair({ rs: generateKeyPair().pub, payload: Buffer.from('secret-mac') });
   await assert.rejects(p.hostSide, NoiseError);
   await assert.rejects(p.joiner, NoiseError);

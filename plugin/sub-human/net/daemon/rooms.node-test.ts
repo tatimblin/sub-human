@@ -54,7 +54,7 @@ test('a cold room\'s concurrent first appends share one room: no join lost, the 
   assert.equal(takes, 16, 'each append took the lock at its first try');
 });
 
-test('a retried append (same id) answers the first seq and hash and writes nothing, after a restart too', async () => {
+test('a retried append (same id) answers the first seq and hash and writes nothing, after a restart too (R36)', async () => {
   const h = await home();
   const r = rooms(h);
   await room(r, 'D', 'alice');
@@ -70,7 +70,7 @@ test('a retried append (same id) answers the first seq and hash and writes nothi
   assert.equal(lines.ok && lines.value[1]?.entry.id, draft.id, 'the entry keeps the caller\'s id');
 });
 
-test('the host refuses its own kinds, a stranger\'s line and a stranger\'s document', async () => {
+test('the host refuses its own kinds, a stranger\'s line and a stranger\'s document (R37)', async () => {
   const h = await home();
   const r = rooms(h);
   await room(r, 'R', 'alice');
@@ -103,7 +103,7 @@ test('plan asks, answers, sends and accepts come only through the plan op, never
   assert.deepEqual(await kinds(h, 'H'), ['joined', 'joined']);
 });
 
-test('plans: CAS on base, a stale edit names the latest, and the last answer decides and makes owned tasks', async () => {
+test('plans: CAS on base, a stale edit names the latest, and the last answer decides and makes owned tasks (R17, R20)', async () => {
   const h = await home();
   const r = rooms(h);
   await room(r, 'P', 'alice', 'bob');
@@ -213,7 +213,7 @@ test('a handoff and a claim sent together run in order on the cwd\'s chain: the 
   assert.deepEqual(claimed.value, { pointer: BOB });
 });
 
-test('titleFor: NAME.CODE, else the lowest free NAME-N.CODE among the titles held (R5)', () => {
+test('titleFor: NAME.CODE, else the lowest free NAME-N.CODE among the titles held (R5) (R2)', () => {
   assert.equal(titleFor('alice', 'vole-0001', []), 'alice.vole-0001');
   assert.equal(titleFor('alice', 'vole-0001', ['alice.vole-0001']), 'alice-2.vole-0001');
   assert.equal(titleFor('alice', 'vole-0001', ['alice.vole-0001', 'alice-2.vole-0001']), 'alice-3.vole-0001');
@@ -230,7 +230,7 @@ test('a joined for a member who is here, or a left for one who isn\'t, writes no
   assert.deepEqual(await kinds(h, 'J'), ['joined', 'left']);
 });
 
-test('messages go to inboxes by session and room, never the log, and are taken once', async () => {
+test('messages go to inboxes by session and room, never the log, and are taken once (R6)', async () => {
   const h = await home();
   const r = rooms(h);
   await okv(r, { op: 'ping', session: 's-bob', code: 'R1', name: 'bob' });

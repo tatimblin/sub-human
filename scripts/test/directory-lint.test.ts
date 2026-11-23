@@ -48,7 +48,7 @@ test('a clean plugin passes every rule', () => {
   assert.deepEqual(lint(plugin()), []);
 });
 
-test('MOD_PERMISSION_ANSWER_UNREAD: a spread, a computed key, a method, allow, a call or a variable in an answer', () => {
+test('MOD_PERMISSION_ANSWER_UNREAD: a spread, a computed key, a method, allow, a call or a variable in an answer (R39)', () => {
   const hook = (ret: string): string => `on('classic.PreToolUse', async ($, e, next) => {\n  ${ret}\n}).catch((_$, e, next) => next(e));`;
   for (const ret of [
     "return { deny: 'x', ...context };",
@@ -77,7 +77,7 @@ test('MOD_PERMISSION_ANSWER_UNREAD: a spread, a computed key, a method, allow, a
   assert.equal(checkPermissionAnswers("on('classic.PreToolUse', async ($, e, next) => {\n  // return { ...x }\n  const s = '} return {...y}';\n  return next(e);\n});", 'm').length, 0);
 });
 
-test('MOD_PERMISSION_ANSWER_UNREAD: tool.check and classic.PermissionRequest hooks are refused outright', () => {
+test('MOD_PERMISSION_ANSWER_UNREAD: tool.check and classic.PermissionRequest hooks are refused outright (R39)', () => {
   assert.deepEqual(rules(checkPermissionAnswers("on('tool.check', ($, e, next) => next(e));", 'm')), ['MOD_PERMISSION_ANSWER_UNREAD']);
   assert.deepEqual(rules(checkPermissionAnswers("on('classic.PermissionRequest', ($, e, next) => next(e));", 'm')), ['MOD_PERMISSION_ANSWER_UNREAD']);
 });
@@ -96,7 +96,7 @@ test('MOD_RUNS_PROCESS: -c, -e or a shell program in a $.process argv', () => {
 test('COMMAND_PATH_COMPUTED: words; another variable, a missing file, -c, an operator, a glob, a substitution', () => {
   assert.deepEqual(words('exec sh "${CLAUDE_PLUGIN_ROOT}/a b.sh" --x \'y\''), ['exec', 'sh', '${CLAUDE_PLUGIN_ROOT}/a b.sh', '--x', 'y']);
   for (const command of [
-    '"${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status"',
+    '"${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/status"',
     'sh "${CLAUDE_PLUGIN_ROOT}/hooks/missing.sh"',
     'sh "${CLAUDE_PLUGIN_ROOT}/../outside.sh"',
     'sh -c "echo hi"',

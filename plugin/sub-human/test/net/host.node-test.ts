@@ -28,7 +28,7 @@ async function bobIn(t: Parameters<typeof twoHomes>[0], rates?: Record<string, n
 }
 const refusedFor = (r: { got: { t: string; id?: string }[] }, id: string): boolean => r.got.some(m => m.t === 'refused' && m.id === id);
 
-test('a call writes as the link\'s member in its own room only, and counts as an append', async t => {
+test('a call writes as the link\'s member in its own room only, and counts as an append (R37)', async t => {
   const h = await bobIn(t, { append: 2 });
   const r = await rawLink(h);
   r.send({ t: 'call', id: 'c1', req: { op: 'task', code: CODE, from: 'alice', act: 'add', title: 'as alice' } });
@@ -40,7 +40,7 @@ test('a call writes as the link\'s member in its own room only, and counts as an
   assert.deepEqual(['c1', 'c2', 'c3', 'c4', 'c5'].map(id => refusedFor(r, id)), [true, true, false, false, true]);
 });
 
-test('a document is the link\'s member\'s own; documents, messages and plan text are rate-limited', async t => {
+test('a document is the link\'s member\'s own; documents, messages and plan text are rate-limited (R37, R40)', async t => {
   const h = await bobIn(t, { put_doc: 1, put_blob: 1, message: 1 });
   const r = await rawLink(h);
   r.send({ t: 'put_doc', id: 'd1', key: 'focus/alice', doc: { name: 'alice', text: 'not hers', at: 1 } });

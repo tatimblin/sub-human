@@ -1,6 +1,6 @@
 # sub-human v2: Architecture
 
-How v2 is built. It is the design for `docs/PRD.md`; requirement numbers (R…) and questions (Q…) refer to that document. The 0.8 proof of concept's architecture is archived in `docs/archive/ARCHITECTURE-0.8.md`.
+How v2 is built, as of 2.0.0. It is the design for `docs/PRD.md`; requirement numbers (R…) and questions (Q…) refer to that document. The 0.8 proof of concept's architecture is archived in `docs/archive/ARCHITECTURE-0.8.md`.
 
 ## 1. Shape in one paragraph
 
@@ -42,8 +42,6 @@ These hold for every module; review against them.
 
 Small, single-purpose packages with few or no dependencies of their own. Each one maps to a problem we would otherwise write ourselves.
 
-| Problem | Package | Size, deps | Replaces in the POC | Status |
-|---|---|---|---|---|
 | Problem | Package | Vendored as | Runs in | Status |
 |---|---|---|---|---|
 | Validating outside data | `valibot` | `vendor/valibot.mjs` (206 KB) | module and node | chosen |
@@ -113,49 +111,67 @@ The room protocol and channel stay internal.
 
 ## 3. Layout
 
+As built in 2.0.0. Plugin files import each other as `./x.js` (validate refuses `.ts` paths); node loads them through
+`resolve-ts.ts`.
+
 ```
 plugin/sub-human/
   core/            pure: no node:fs, no net, no Claude Code; loadable by the module and by node (relative imports only)
-    entries.ts       entry and document types; the 15 kinds (§4)
+    entries.ts       entry and document types, the kinds (§4), LIMITS
     schema.ts        valibot schemas for everything read from outside
-    fold.ts          snapshot + log → RoomState (members, presence, focus, plans, decisions, tasks)
-    deliver.ts       (entry, member, state) → none | context | notice | wake; relevance (R15c), the token cap, the wake rule and its budget
-    plans.ts         CAS edit, ask, answer, decide; owners on parts → tasks
-    tasks.ts         add, claim, release, done, blockedBy; bridge tags
-    activity.ts      tool result → activity update (edits, commits, tests, task tools); secret filter
+    result.ts        the one Result<T>
+    api.ts           the daemon's socket API: requests, answers, their schemas (§5)
+    fold.ts          snapshot + log + documents → RoomState; updatesSince; snapshots
+    deliver.ts       (input, member, state) → none | context | notice | wake | draw; relevance (R15c), overlap (R15d),
+                     the token cap, the wake rule, its budget and the command/URL rule
+    plans.ts         CAS edit, ask, answer, decide, send, accept; owners on parts → tasks
+    tasks.ts         add, claim, release, done, blockedBy; the bridge tag and its mapping
+    activity.ts      tool result → activity document or event; secrets.ts (+ data/secret-patterns.ts) the filter
     brief.ts         RoomState → catch-up text (R16), size-bounded
+    mechanics.ts     the injected mechanics text (R42)
+    text.ts          one clean line and the datamark; hash.ts SHA-256 through crypto.subtle
     link-engine.ts   reconnect state machine (clock injected)
     protocol.ts      wire messages, version and caps
+    cc/              contract.json (every Claude Code fact relied on) and its probe
   store/
-    store.ts         RoomStore interface
-    fs-store.ts      host: log file, documents, plan blobs, locks
-    mirror-store.ts  remote: local copy plus writes sent to the host
+    store.ts         RoomStore interface, line placing and chain checks
+    fs-store.ts      host: log, documents, plan blobs, the tail file; lock.ts (open 'wx'), atomic.ts (crash-safe write)
+    mirror-store.ts  a room hosted elsewhere: the host's snapshot plus its lines, every write sent to the host
     memory-store.ts  tests
   module/          the hooks module (Claude Code edge); no Node, relative imports only
-    register.ts      wires the event handlers below; nothing else
-    capture.ts       tool.call → activity documents and events; task-tool mirroring (R12, R23)
-    follow.ts        polls the store's tail file ($.clock.every + $.fs.stat/read); feeds deliver()
-    context.ts       prompt.submit context: relevant updates since the last turn, capped (R15a); session.append notes mid-loop (R15d)
-    status.ts        ui.status line; /sub-human news (R15b)
+    register.ts      wires each part's hooks; nothing else
+    session.ts       the plain data the parts share (a `$` never crosses a file)
+    bridge.ts        requests to the daemon over $.http.fetch on its Unix socket
+    capture.ts       tool.call → activity documents and events; presence; pings (R12, R23)
+    follow.ts        polls the tail file, reads the log by ranges, feeds deliver(); follow-lines.ts its pure part
+    context.ts       prompt.submit context: mechanics once, relevant updates capped (R15a); mid-loop heads-up (R15d)
+    status.ts        ui.status line; /sub-human news pane (R15b)
+    messages.ts      session.send caught at the sender for NAME.CODE (R6)
     wake.ts          $.prompt.submit once idle; retry on turn.complete.isAborted (R10)
-    messages.ts      session.send caught at the sender for NAME.CODE; carried over the room channel (R6)
-    plans.ts         ExitPlanMode result → keep / room / send; review card (ui.ask) + pane (ui.open) (R18–R22e)
-    tools.ts         Claude's tools via $.tool.register + tool.run: share, read, plan, task (§6)
-    bridge.ts        talks to the daemon over $.http.fetch on its Unix socket; starts it when it doesn't answer
-  vendor/          committed ESM builds of the dependencies, plus VENDOR.json (§2a)
-  commands/        /sub-human verbs, one small file each: (bare), invite, join, who, tasks, leave, kick, help, doctor
+    plans.ts         ExitPlanMode result → keep / room / send; the plan tool (R17–R18, R22b)
+    plans-review.ts  the reviewer's card (ui.ask) and pane (ui.open) (R21–R22c); plans-cards.ts, plans-pending.ts,
+                     plans-notes.ts and plan-diff.ts its pure parts
+    tasks.ts         the task tool and the bridge into the native list (R24, R24a)
+    tools.ts         Claude's share and read tools via $.tool.register + tool.run (§6)
+    admit.ts         the host's Let in / Refuse card (R30)
+  commands/        /sub-human verbs, one small file each: (bare), invite, join, who, tasks, news, leave, kick, help,
+                   doctor; hooks.ts the four command hooks; context.ts and daemon.ts their real-machine wiring
+  hooks/           hooks.json (the module, plus UserPromptExpansion, SessionStart, Notification, SessionEnd) and node.sh
   net/             the daemon only (the module can't load node:crypto or ws)
-    daemon.ts        one per home: the socket API, store writes, the listener and the links (§5)
+    daemon.ts        one per home: the socket server, its lifetime; daemon/ rooms.ts (the store writes and the rules),
+                     pointers.ts (session pointers, handoffs), open.ts (which room a bare join takes), net.ts (host
+                     and links), client.ts (node's side of the socket)
     channel.ts       Noise XK over any Duplex (the POC's noise.ts, kept; vectors in CI)
     pathways/        tailscale.ts (Funnel | Serve, WebSocket), ssh.ts (ssh -W), pipe.ts (tests)
-    host.ts          host side: accept, PROXY v2, handshake, admission, serve ops
+    host.ts          host side: accept, PROXY v2 (proxy-v2.ts), handshake, admission, serve ops, rate limits
     link.ts          joiner side: one link per room hosted elsewhere, running link-engine
-    invite.ts        invite lines, secret, admission requests
-  keys.ts          machine key, link keys
-  home.ts          where files live (~/.sub-human)
-  config.ts        the knobs (§10)
-  resolve-ts.ts   node's resolve hook: plugin files import `./x.js` (validate refuses `.ts` paths), node loads `x.ts`
-test/              scenes (§12) and unit tests, beside the code they test
+    invite.ts        invite lines, the secret and its MAC
+  vendor/          committed ESM builds of valibot, ignore, diff and ws, plus VENDOR.json (§2a)
+  cli.ts           the one node entry for command hooks, and doctor and help in a terminal
+  keys.ts          the machine key; home.ts where files live (~/.sub-human); config.ts the knobs (§10)
+  resolve-ts.ts    node's resolve hook: `./x.js` → `x.ts`
+  test/            scenes/, net/, support/ (seed-room, two-homes, fake daemon), fixtures/ (cc/2.1.330 recordings);
+                   unit tests sit beside the code they test
 ```
 
 ## 4. Data model
@@ -164,7 +180,7 @@ test/              scenes (§12) and unit tests, beside the code they test
 - Each entry: `{seq, id, at, prev, from, by, machine, kind, …}`.
 - `seq` is assigned by the host, and it is the sync cursor; `at` is the host's clock. The host stamps `seq`, `at`, `prev` and `machine`; `id` is the writer's, a UUID made once and sent again on every retry, so the host answers a repeated id with the first line's seq and hash and writes nothing (R36). Entries the host's rules write (plans, decisions, tasks) get ids from the host.
 - `from` is the member. `by` is `person`, `claude` or `system`, a label only (R35). The wake rule reads it: a `by: person` line can wake by naming someone, and a `by: claude` broadcast never does. Direct Claude-to-Claude messages aren't log entries (R6).
-- `prev` is the hash of the previous line, so a mirror detects a fork (R36). The module computes it with `crypto.subtle.digest`.
+- `prev` is the hash of the previous line, so a mirror detects a fork (R36). The module checks the chain as it reads, with `crypto.subtle.digest`.
 - Only the host appends.
 
 | Kind | Written by | Meaning |
@@ -203,7 +219,9 @@ test/              scenes (§12) and unit tests, beside the code they test
 
 **Every write goes through the daemon** (U4, checked on 2.1.330). `$.fs` has no exclusive create, rename, append or fsync, and its `write` truncates in place, so a module can't keep the log's chain or a document's "old or new, never torn". The module only reads: the tail file and the log by ranges (4 MiB per read), documents and plan text.
 
-**How the module reaches it.** `$.http.fetch` over a Unix socket in the home (`socketPath`), which draws no permission prompt and passes no rule check; a refusal (managed policy, or a build with no socket transport) throws, and the module says so in one line (C3). If the socket doesn't answer, the module starts the daemon with `$.process.spawn` of `node --import resolve-ts.ts net/daemon.ts <home>` (node's absolute path); spawning draws no prompt either, and only a managed deny rule refuses it. Spawned children die when the module unloads, so the daemon re-spawns itself detached (`detached: true` + `unref`, U6: it outlives the session) and the first one to bind the socket wins. Each session pings it; it exits when no local session has pinged for a minute. Command hooks are node, and they write through the same socket, never to the store directly.
+**How the module reaches it.** `$.http.fetch` over a Unix socket in the home (`socketPath`), which draws no permission prompt and passes no rule check; a refusal (managed policy, or a build with no socket transport) throws, and the module says so in one line (C3). If the socket doesn't answer, the module starts the daemon with `$.process.spawn` of `node --import resolve-ts.ts net/daemon.ts <home>` (node's absolute path); spawning draws no prompt either, and only a managed deny rule refuses it. Spawned children die when the module unloads, so the daemon re-spawns itself detached (`detached: true` + `unref`, U6: it outlives the session); a start lock and the socket's bind make sure one wins. Command hooks are node, and they write through the same socket (`net/daemon/client.ts`, which starts the daemon the same way), never to the store directly.
+
+**What it holds.** `net/daemon/rooms.ts` applies every request (core/api.ts): one promise chain per room hosted here, so its own writes never contend for the file lock (the lock guards against a second process), deduplication by entry id, and the plan and task rules of `core/`. `pointers.ts` keeps each session's pointer (`sessions/ID.json`, the room, name and title the module and the command hooks read) and the handoffs `/clear` and `/resume` leave. `net.ts` holds the host side and the links. Each session in a room pings every 20 s with its Claude Code version (`$.session.version()`, for doctor); a session is live while it has pinged within a minute, and the daemon exits once no request has come for its idle time. Private Claude-to-Claude messages wait in the recipient session's inbox there until its module takes them.
 
 When the host's last session leaves a room, the listener stops serving it, and remote members see "host away" until it returns (R34). There is no room-level Claude and no background job besides the daemon (PRD §4).
 
@@ -217,7 +235,7 @@ There are four tools, registered by the module with `$.tool.register` and answer
 |---|---|---|
 | `share` | `finding {text}`, `focus {text}`, `post {text, to?}` | the only way a Claude publishes in its own words (R7, R13, R14); filtered for secrets |
 | `read` | `brief`, `since`, `plan {name, version?}` | the catch-up (R16) and plan text |
-| `plan` | `edit {name, base, text}`, `ask {name, version, people}`, `send {name, to, note}` | CAS on `base`; a conflict returns the current text (R17) |
+| `plan` | `edit {name, base, text}`, `ask {name, version, people}`, `send {name, to?, note?}` | CAS on `base`; a conflict returns the current text (R17). A person's answers (`answer`, `accept`) come from their card, never from the tool. |
 | `task` | `add`, `claim`, `release`, `done {note?}`, `list` | room tasks (R24); answers include the bridge tag to put on the native task (R24a) |
 
 **Claude-to-Claude.** A Claude uses native `SendMessage` to `NAME.CODE` (R6). The message is caught at the **sender**, because the recipient's `session.receive` carries no sender name.
@@ -326,7 +344,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 
 ## 9. Claude Code surfaces
 
-**How this was checked (Q1, 2026-11-22).** These rows were checked against typings extracted from the Claude Code 2.1.330 binary. The committed snapshot is still from 2.1.296, and M0 refreshes it with `npm run typings`.
+**How this was checked (Q1, 2026-11-22).** These rows were checked against typings extracted from the Claude Code 2.1.330 binary, now the committed snapshot (`typings/`, refreshed with `npm run typings`). `core/cc/contract.json` lists each surface below: 23 entries, 19 API and 4 internal.
 
 **What the check changed:**
 - Claude's tools are registered by the module (`$.tool.register`, `tool.run`), so there is no MCP server.
@@ -364,15 +382,13 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 | `/sub-human` command, session end | command hooks (`UserPromptExpansion`, `SessionEnd`) | documented; they survive managed-machine policy |
 | Managed machines | The guard skips user hooks on `classic.*`, `prompt.compose`, `prompt.section`, `prompt.context`, `prompt.attachment`, `skill.prompt`, `attribution.text`, `telemetry.log`, `session.compact`, `settings.read`, and on `session.append` rows filtered by door. `allowManagedModsOnly` refuses the module, but leaves `hooks.json` hooks alone. | documented; v2 needs none of the skipped hooks |
 
-**Internals estimate:** about 2–4 of the 10 allowed.
-- Firm: the task-tool gate and the wake prompt's frame.
-- Possible: honouring a `session.send` answer without `next`, and `sessionTitle` uniqueness.
+**Internals, as built:** 4 of the 10 allowed: the task-tool gate, the wake prompt's frame, honouring a `session.send` answer without `next` (U6 confirmed it on 2.1.330), and `sessionTitle` uniqueness. Total contract entries: 23.
 
-Total contract entries come to about 18–22.
+**Also used, typed:** `$.session.version()` (the version a session runs, which its pings tell the daemon for doctor); the module registers `session.start` in several parts, each with its own matcher, because an event registered twice without one doesn't load.
 
 ## 10. Configuration
 
-Seven knobs, read only by `config.ts`:
+Seven knobs, read only by `config.ts` (a value a knob can't take keeps the default and is listed by doctor):
 
 | Knob | Values |
 |---|---|
@@ -388,17 +404,22 @@ Timings are constants in `config.ts`. Tests pass their own values in through par
 
 ## 11. Size budget
 
-| Area | Lines (max) |
-|---|---|
-| `core/` | 2,500 |
-| `store/` | 800 |
-| `module/` (including tools, 400) | 1,900 |
-| `commands/` | 700 |
-| `net/` (channel 300, pathways 600, host, link, invite) | 2,100 |
-| keys, home, config, CLI, doctor | 1,000 |
-| **Total** | **≈ 9,000** (`vendor/` not counted) |
+Lines of code, comments and blank lines left out, as `node scripts/budget.ts` counts them (`--final` also holds tests
+to no more than the runtime). Built, 2.0.0:
 
-A pull request that pushes an area over its line is either split or comes with a deletion.
+| Area | Lines (max) | Built |
+|---|---|---|
+| `core/` | 2,500 | 1,820 |
+| `store/` | 800 | 529 |
+| `module/` (including tools, 400) | 1,900 | 1,319 (tools 135) |
+| `commands/` | 700 | 464 |
+| `net/` (channel 300, pathways 600, host, link, invite) | 2,100 | 2,065 (channel 285, pathways 173) |
+| keys, home, config, CLI | 1,000 | 209 |
+| **Total** | **9,000** (`vendor/` not counted) | **6,406** |
+| Tests (PRD Q-3: no more than the runtime) | 6,406 | 7,952: over |
+
+The test ratio is over PRD Q-3's 1:1 at the cutover; the owner decides whether to relax it, and no test is deleted to
+fit. A pull request that pushes an area over its line is either split or comes with a deletion.
 
 ## 12. Testing
 
@@ -412,11 +433,14 @@ The full plan is `docs/TESTING.md`: its layers, the test kit pattern, fixtures, 
   - A direct message containing a command, in any mode, must be drawn for the person, not submitted.
   - A direct "the shape changed, update your side" must wake the recipient once, and its Claude must change only its own work.
   - R19's three properties each have a test.
+- **Requirements trace.** `docs/TESTING.md` §12 maps every P0 and P1 requirement to the tests that name it.
 - **Live gate.** One scripted run per release with real Claude sessions, in each permission mode, covering a no-plan pairing, a plan-then-build, a non-code task and an injection scene (PRD Q-2). It records tokens per hour (Q9), colleague context per turn (R15a) and lines per person.
 - **Canary.** Nightly, against Claude Code `latest` and `next`: the contract probe plus a typings diff (C1).
 - **Ratio.** Test code no larger than runtime code.
 
 ## 13. Build order
+
+All of M0–M4 is built in 2.0.0; M5 (relevance tuning) waits on real use, and M6's live gate is run by the owner.
 
 | Milestone | Delivers | First proof |
 |---|---|---|

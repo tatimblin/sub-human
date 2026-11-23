@@ -69,7 +69,7 @@ test('verify: an open line\'s MAC is found; it binds the joiner key, the host ke
   assert.deepEqual(verify(m.subarray(1), hostKey, joinerKey, records, NOW), { kind: 'none' });
 });
 
-test('verify: a pending or used line dialled again is "again"; an expired or refused one is dead', () => {
+test('verify: a pending or used line dialled again is "again"; an expired or refused one is dead (R30)', () => {
   const { line, record } = lineFor({ kind: 'https', origin: 'https://h.ts.net' });
   const p = parse(line);
   assert.ok(p.ok);

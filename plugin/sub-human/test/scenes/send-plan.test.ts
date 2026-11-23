@@ -32,7 +32,7 @@ test('I send my plan to bob, packed for his Claude; his answer reaches mine', as
   await $.session.end(END)
 })
 
-test('a plan sent to me: one line, the card, the full plan in the pane, then Accept gives my Claude the whole plan', async ($, on) => {
+test('a plan sent to me: one line, the card, the full plan in the pane, then Accept gives my Claude the whole plan (R22c)', async ($, on) => {
   const clock = mock.clock(on)
   const w = planWorld(on)
   const room = await seedRoom(on, { me: 'alice', others: ['jess'], now: clock.now })

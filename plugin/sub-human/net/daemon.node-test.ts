@@ -78,7 +78,7 @@ test('appends from two concurrent clients get gapless seqs, and the chain holds'
   assert.ok(lines.value.every(l => l.entry.machine === 'm1'), 'the host stamps the machine');
 });
 
-test('a room hosted elsewhere goes to its link, whose host is away for now', async t => {
+test('a room hosted elsewhere goes to its link, whose host is away for now (R34)', async t => {
   const h = await home();
   await started(t, { home: h, net: linksOnly({ hosts: c => c === 'FAR', forward: () => Promise.resolve(err('the room\'s host is away; nothing was sent')) }) });
   const r = await call(h, { op: 'append', code: 'FAR', draft: joined('alice') });

@@ -13,7 +13,7 @@ const DONE = toolFixture('tool-task-update-completed', 'TaskUpdate', kitReader)
 const Line = v.looseObject({ kind: v.string(), from: v.string(), by: v.string(), text: v.optional(v.string()), event: v.optional(v.string()) })
 const entries = (lines: readonly string[]) => lines.map(l => v.parse(Line, JSON.parse(l)))
 
-test('a commit and a test run are activity entries, mine and labelled my Claude\'s', async ($, on) => {
+test('a commit and a test run are activity entries, mine and labelled my Claude\'s (R12, R35)', async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'Bash' }, (_, e) => (e.command === COMMIT.input.command ? COMMIT.result : NPM_TEST.result))
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
@@ -29,7 +29,7 @@ test('a commit and a test run are activity entries, mine and labelled my Claude\
   await $.session.end(END)
 })
 
-test('a secret in a commit message is never shared', async ($, on) => {
+test('a secret in a commit message is never shared (R14a)', async ($, on) => {
   const clock = mock.clock(on)
   const secret = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
   on('tool.call', { tool: 'Bash' }, () => ({
@@ -47,7 +47,7 @@ test('a secret in a commit message is never shared', async ($, on) => {
   await $.session.end(END)
 })
 
-test('a personal task finished is an activity entry, named by the subject its create carried', async ($, on) => {
+test('a personal task finished is an activity entry, named by the subject its create carried (R23)', async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'TaskCreate' }, () => CREATE.result)
   on('tool.call', { tool: 'TaskUpdate' }, () => DONE.result)
@@ -71,7 +71,7 @@ test('a subagent\'s edit is mine (R16a)', async ($, on) => {
   await $.session.end(END)
 })
 
-test('a main turn marks me working and its end idle; a subagent\'s turn writes nothing', async ($, on) => {
+test('a main turn marks me working and its end idle; a subagent\'s turn writes nothing (R12)', async ($, on) => {
   const clock = mock.clock(on)
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: 'done' }))

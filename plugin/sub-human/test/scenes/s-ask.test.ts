@@ -7,7 +7,7 @@ import { END, START, seedRoom, turnEnd, turnStart, turns } from '../support/seed
 
 const origin: SessionSendOrigin = { kind: 'model' }
 
-test('my Claude asks bob\'s for a fact; his answer wakes mine after my turn, with one line for me', async ($, on) => {
+test('my Claude asks bob\'s for a fact; his answer wakes mine after my turn, with one line for me (R6, R10)', async ($, on) => {
   const clock = mock.clock(on)
   const native: string[] = []
   on('session.send', (_, e) => { native.push(e.to); return { isDelivered: false, reason: 'native' } })

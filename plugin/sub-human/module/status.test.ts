@@ -6,7 +6,7 @@ import { NEWS_PANE } from './status.js'
 const news = { text: '/sub-human news', wait: false, origin: { kind: 'composer' }, command: { name: 'sub-human', args: 'news' } } as const
 const PANE = { title: 'news', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as const
 
-test('the status line names who is here, what they work on, and counts updates', async ($, on) => {
+test('the status line names who is here, what they work on, and counts updates (R15b)', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol', 'dan'], now: clock.now })
   await room.as('bob').focus('cursor paging for listTasks, end to end')
@@ -22,7 +22,7 @@ test('the status line names who is here, what they work on, and counts updates',
   await $.session.end(END)
 })
 
-test('news opens a pane of what each colleague changed and found, clears the count, and starts no turn', async ($, on) => {
+test('news opens a pane of what each colleague changed and found, clears the count, and starts no turn (R15b)', async ($, on) => {
   const clock = mock.clock(on)
   const opened: string[] = []
   on('ui.open', (_, e) => { opened.push(e.id); return { value: { isPlaced: true } } })

@@ -29,7 +29,7 @@ function engine(on: On, tools = WITH_TASKS): void {
   on('tool.call', { tool: 'TaskCreate' }, (_, e) => ({ result: { task: { ...created, subject: e.subject } }, text: CREATE.result.text ?? '' }))
 }
 
-test('the task tool adds, claims, lists and finishes room tasks, each in one line', async ($, on) => {
+test('the task tool adds, claims, lists and finishes room tasks, each in one line (R23a, R24)', async ($, on) => {
   const clock = mock.clock(on)
   engine(on, WITHOUT)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
@@ -64,7 +64,7 @@ test('a claim refused because someone else has the task is one line, and writes 
   await $.session.end(END)
 })
 
-test('M3: a claimed room task goes onto my native list with its tag, and completing it there closes the room task', async ($, on) => {
+test('M3: a claimed room task goes onto my native list with its tag, and completing it there closes the room task (R24a)', async ($, on) => {
   const clock = mock.clock(on)
   engine(on)
   on('tool.call', { tool: 'TaskUpdate' }, (_, e) => (e.status === 'completed' ? DONE.result : REOPEN.result))
@@ -86,7 +86,7 @@ test('M3: a claimed room task goes onto my native list with its tag, and complet
   await $.session.end(END)
 })
 
-test('deleting a tagged native task releases the room task; a subagent\'s call is mine', async ($, on) => {
+test('deleting a tagged native task releases the room task; a subagent\'s call is mine (R23b, R24a)', async ($, on) => {
   const clock = mock.clock(on)
   engine(on)
   on('tool.call', { tool: 'TaskUpdate' }, () => DELETED.result)
@@ -121,7 +121,7 @@ function nativeList(on: On, subject: string, refuse = 0): { lists: number } {
   return seen
 }
 
-test('after a /clear the map is gone; TaskList, asked before the update runs, finds the tag, so a deletion still releases', async ($, on) => {
+test('after a /clear the map is gone; TaskList, asked before the update runs, finds the tag, so a deletion still releases (R23b)', async ($, on) => {
   const clock = mock.clock(on)
   engine(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })

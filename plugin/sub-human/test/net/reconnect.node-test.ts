@@ -49,7 +49,7 @@ async function hostPosts(h: Homes): Promise<string[]> {
   return r.value.flatMap(l => (l.entry.kind === 'post' ? [l.entry.text] : []));
 }
 
-test('offline: a person\'s post queues and is sent again under its id on reconnect; the host keeps one line', async t => {
+test('offline: a person\'s post queues and is sent again under its id on reconnect; the host keeps one line (R32, R36)', async t => {
   const { h, clock, cut } = await setup(t);
   cut();
   await linkIs(h, 'offline');
@@ -83,7 +83,7 @@ test('a post the host never saw is placed once the link is back', async t => {
   assert.deepEqual(await hostPosts(h), ['queued']);
 });
 
-test('a fork: a copy whose chain breaks is discarded for the host\'s snapshot and lines', async t => {
+test('a fork: a copy whose chain breaks is discarded for the host\'s snapshot and lines (R36)', async t => {
   const { h, clock, cut } = await setup(t);
   const dir = roomDir(h.joiner.home, await fileKey(CODE));
   // the copy's last line rewritten: its cursor is no longer on the host's chain
@@ -109,7 +109,7 @@ test('a fork: a copy whose chain breaks is discarded for the host\'s snapshot an
   assert.ok(!(await fs.readFile(logFile(dir), 'utf8')).includes('"by":"person","machine":"mB"'), 'the forged line is gone');
 });
 
-test('the host restarts: links are told the host is away, and come back to the same listener', async t => {
+test('the host restarts: links are told the host is away, and come back to the same listener (R34)', async t => {
   const h = await twoHomes(t, { joinOpts: { timings: { ...timings, retryMs: 50, retryMaxMs: 100 } } });
   const { line } = await joinBob(h);
   await h.joiner.ok({ op: 'append', code: CODE, draft: joined('bob') });

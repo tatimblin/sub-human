@@ -54,6 +54,9 @@ jobs:
       - name: size budget
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
         run: node scripts/budget.ts
+      - name: the requirements trace in docs/TESTING.md is current
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
+        run: node scripts/trace.ts --check
       # oxlint's type-aware rules, the type-escape ratchet and directory-lint; the same on every node, so once
       - name: lint
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24'

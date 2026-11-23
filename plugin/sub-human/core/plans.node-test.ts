@@ -46,7 +46,7 @@ const kinds = (ds: readonly Draft[]) => ds.map(d => d.kind);
 const tasksOf = (s: RoomState) => s.tasks.map(t => [t.n, t.title, t.status, t.owner ?? '-', t.plan?.version ?? 0]);
 const v1 = { name: 'api', version: 1 };
 
-test('edit is compare-and-swap on base; a stale edit is refused and latestVersion gives what to merge', () => {
+test('edit is compare-and-swap on base; a stale edit is refused and latestVersion gives what to merge (R17)', () => {
   const r = room(['ann', 'bob']);
   assert.deepEqual(r.append(r.put('ann', 'api', 0, 'v one')), [
     { kind: 'plan', from: 'ann', by: 'system', name: 'api', version: 1, hash: '#v one', base: 0, scope: 'group' },
@@ -91,7 +91,7 @@ test('ask names members and one exact version, the latest and undecided', () => 
   assert.equal(refusal(ask(many.state(), { name: 'api', version: 1, people, from: 'ann' })), 'Nobody was asked: a version can ask at most 256 people.');
 });
 
-test('answers count for one version; a new version supersedes open asks; everyone named answering decides', () => {
+test('answers count for one version; a new version supersedes open asks; everyone named answering decides (R21, R22)', () => {
   const r = room(['ann', 'bob', 'cy']);
   r.append(r.put('ann', 'api', 0, 'one'));
   r.append(ask(r.state(), { name: 'api', version: 1, people: ['bob', 'cy'], from: 'ann' }));
@@ -140,7 +140,7 @@ test('a kicked member who was asked never blocks the decision', () => {
   assert.deepEqual(kinds(k.append(answer(k.state(), { name: 'api', version: 1, from: 'bob', answer: 'agree' }, k.texts))), ['plan_answer', 'decision']);
 });
 
-test('parts: a heading or list item naming a member owns it; the rest is forgiven', () => {
+test('parts: a heading or list item naming a member owns it; the rest is forgiven (R20)', () => {
   const members = ['tristan', 'jess', 'Bo'];
   const rows: [string, readonly [string, string, string][]][] = [
     ['## Part: Store (owner: tristan)', [['Store', 'Store (owner: tristan)', 'tristan']]],
@@ -163,7 +163,7 @@ test('parts: a heading or list item naming a member owns it; the rest is forgive
   for (const [text, want] of rows) assert.deepEqual(parts(text, members).map(p => [p.title, p.line, p.owner]), want, text);
 });
 
-test('an agreed version claims parts for owners who agreed; anyone else gets an open task with their name', () => {
+test('an agreed version claims parts for owners who agreed; anyone else gets an open task with their name (R20)', () => {
   const r = room(['ann', 'bob', 'cy']);
   r.append([{ kind: 'task', from: 'ann', by: 'system', task: { n: 1, title: 'other', status: 'open', addedBy: 'ann', blockedBy: [] } }]);
   r.append(r.put('ann', 'api', 0, '# api\n## Store @ann\n## Handler @bob\n## Docs @cy'));
@@ -214,7 +214,7 @@ test('a version whose every asked member was kicked unanswered stays open; its w
   assert.deepEqual(kinds(r.agree('api', ['cy'])), ['plan_answer', 'decision', 'task']);
 });
 
-test('send packs a version for one member or the room; the recipient accepts, dismisses or asks for changes', () => {
+test('send packs a version for one member or the room; the recipient accepts, dismisses or asks for changes (R22b, R22c)', () => {
   const r = room(['ann', 'bob', 'cy']);
   r.append(r.put('ann', 'mine', 0, 'one'));
   r.append(r.put('ann', 'mine', 1, 'two'));

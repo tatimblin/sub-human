@@ -74,7 +74,7 @@ test('malformed messages are refused with a reason', () => {
 
 const peer = (version: number, min: number, caps: string[] = []): Hello => ({ t: 'hello', version, min, caps, name: 'tristan', machine: 'devbox' });
 
-test('negotiate: the highest shared version and the shared caps; on a skew, the side behind updates', () => {
+test('negotiate: the highest shared version and the shared caps; on a skew, the side behind updates (R33)', () => {
   assert.deepEqual(negotiate(hello('jess', 'laptop'), hello('tristan', 'devbox')), { ok: true, version: VERSION, caps: [] });
   assert.deepEqual(negotiate(peer(3, 1, ['a', 'b']), peer(2, 2, ['b', 'c'])), { ok: true, version: 2, caps: ['b'] });
   assert.deepEqual(negotiate(peer(2, 1), peer(4, 3)), { ok: false, update: 'me' });

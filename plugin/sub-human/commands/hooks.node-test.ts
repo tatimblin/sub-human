@@ -23,7 +23,7 @@ function setup() {
   return { fake, ctx };
 }
 
-test('the /sub-human expansion blocks with the answer as one line for the person', async () => {
+test('the /sub-human expansion blocks with the answer as one line for the person (R43)', async () => {
   const { fake, ctx } = setup();
   const r = await HOOKS.expand(expansion(''), ctx);
   const code = await fake.code();
@@ -64,7 +64,7 @@ test('a permission prompt marks the member waiting; no room, or another notifica
   assert.deepEqual(await HOOKS.notify(notification, ctx), { err: `sub-human: alice isn't shown as waiting in ${code}: sub-human's daemon did not answer; nothing was done`, exit: 1 });
 });
 
-test('SessionEnd posts no left: the pointer goes and the member is away; a session in no room writes nothing', async () => {
+test('SessionEnd posts no left: the pointer goes and the member is away; a session in no room writes nothing (R3)', async () => {
   const { fake, ctx } = setup();
   const end = hookFixture('hook-session-end-steps', 'SessionEnd');
   assert.deepEqual(await HOOKS.end(end, ctx), { exit: 0 });

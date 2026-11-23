@@ -27,7 +27,7 @@ async function funnel(t: Parameters<typeof twoHomes>[0], env: Record<string, str
   return { h, f, port: () => port };
 }
 
-test('a join over Funnel: an https line, a WebSocket through the front, the joiner\'s address as its source', async t => {
+test('a join over Funnel: an https line, a WebSocket through the front, the joiner\'s address as its source (R29, R29a)', async t => {
   const { h, f } = await funnel(t);
   const { line } = await joinBob(h, 'public');
   assert.match(line, new RegExp(`^${f.origin}/${CODE}#`));
@@ -36,7 +36,7 @@ test('a join over Funnel: an https line, a WebSocket through the front, the join
   assert.ok(placed.seq > 0);
 });
 
-test('the joiner\'s dialer goes through HTTPS_PROXY', async t => {
+test('the joiner\'s dialer goes through HTTPS_PROXY (R29a)', async t => {
   const seen: string[] = [], auth: string[] = [];
   const proxy = http.createServer();
   proxy.on('connect', (q: http.IncomingMessage, sock: Duplex) => {
@@ -68,7 +68,7 @@ function raw(port: number, bytes: Buffer | string): Promise<string> {
   });
 }
 
-test('an upgrade with no PROXY header did not come through the forward, and is refused; with one it is answered', async t => {
+test('an upgrade with no PROXY header did not come through the forward, and is refused; with one it is answered (R29a)', async t => {
   const { h, port } = await funnel(t);
   await hostRoom(h);
   await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'public' });
@@ -126,7 +126,7 @@ test('a WebSocket message larger than one Noise frame is refused before the hand
   assert.equal(await code, 1009, 'message too big');
 });
 
-test('each PROXY source has its own connection cap', async t => {
+test('each PROXY source has its own connection cap (R29a, R40)', async t => {
   const { h, f } = await funnel(t);
   await hostRoom(h);
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'public' });

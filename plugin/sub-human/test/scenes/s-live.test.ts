@@ -8,7 +8,7 @@ const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer'
 /** The room's updates in a prompt's context: the blocks past the mechanics the first prompt also carries. */
 const updates = (r: { context?: readonly string[] | undefined }) => (r.context ?? []).filter(c => c.startsWith('[room '))
 
-test('a relevant colleague change reaches my next prompt, capped', async ($, on) => {
+test('a relevant colleague change reaches my next prompt, capped (R15, R15a)', async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'Edit' }, () => EDIT.result) // the recorded answer
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })

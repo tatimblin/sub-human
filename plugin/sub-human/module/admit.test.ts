@@ -38,7 +38,7 @@ function world(on: On, asks: readonly object[], pick: string | null, text?: stri
   return { clock, sent, asked, logged }
 }
 
-test('a joiner waiting: the card names them, their machine and the check; Let in is posted for this session', async ($, on) => {
+test('a joiner waiting: the card names them, their machine and the check; Let in is posted for this session (R30)', async ($, on) => {
   const w = world(on, [ASK], 'Let in')
   await $.session.start(START)
   await $.prompt.submit(INVITE)

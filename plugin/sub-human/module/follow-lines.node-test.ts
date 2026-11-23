@@ -53,7 +53,7 @@ test('a torn last line is left for the next read, and the bytes counted stop bef
   assert.equal(r.value.bytes, new TextEncoder().encode(`${lines[0]}\n${lines[1]}\n`).length);
 });
 
-test('a line that does not follow the head is a fork', async () => {
+test('a line that does not follow the head is a fork (R36)', async () => {
   const lines = await log('one', 'two');
   const first = await linesAfter(`${lines[0]}\n`, START);
   assert.ok(first.ok);

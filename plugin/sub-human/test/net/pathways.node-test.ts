@@ -21,12 +21,12 @@ async function logged(file: string): Promise<string[][]> {
 }
 const PATH = `${BIN}${path.delimiter}${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? ''}`;
 
-test('ssh: the arguments name the listener and the joiner\'s own account, and never an option as the host', () => {
+test('ssh: the arguments name the listener and the joiner\'s own account, and never an option as the host (R29b)', () => {
   assert.deepEqual(sshArgs({ kind: 'ssh', host: 'devbox', user: 'jess', sshPort: 2222, port: 7420 }),
     ['-W', '127.0.0.1:7420', '-o', 'BatchMode=yes', '-o', 'ExitOnForwardFailure=yes', '-p', '2222', '-l', 'jess', '--', 'devbox']);
 });
 
-test('ssh: a join over ssh -W reaches the host\'s loopback listener', async t => {
+test('ssh: a join over ssh -W reaches the host\'s loopback listener (R29, R29b)', async t => {
   const dir = await scratch();
   const env = { ...process.env, PATH, FAKE_SSH_LOG: path.join(dir, 'ssh.log') };
   const h = await twoHomes(t, { joinOpts: { dial: via => (via.kind === 'ssh' ? dialSsh(via, env) : Promise.reject(new Error('ssh only'))) } });
@@ -63,7 +63,7 @@ test('tailscale: found on PATH, else at the macOS app\'s path', async () => {
   assert.equal(findTailscale({ PATH: '/nonexistent' }, path.join(BIN, 'tailscale')), path.join(BIN, 'tailscale'));
 });
 
-test('tailscale: Funnel publishes the listener on 443 with PROXY v2; Serve the same for the tailnet', async () => {
+test('tailscale: Funnel publishes the listener on 443 with PROXY v2; Serve the same for the tailnet (R29a)', async () => {
   const f = await ts();
   const pub = await expose('public', 7420, f.env, NO_APP);
   assert.ok(pub.ok);

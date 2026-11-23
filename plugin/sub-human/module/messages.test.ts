@@ -16,7 +16,7 @@ async function setup(on: On) {
   return { clock, reached, room, messages: () => room.requests.filter(r => r.op === 'message') }
 }
 
-test('a message to a colleague\'s Claude is answered delivered, carried stamped with me, and never logged', async ($, on) => {
+test('a message to a colleague\'s Claude is answered delivered, carried stamped with me, and never logged (R6)', async ($, on) => {
   const { clock, reached, room, messages } = await setup(on)
   await $.session.start(START)
   await room.settled(clock)

@@ -7,7 +7,7 @@ import { CWD, EDIT, EDITED, END, START, seedRoom } from '../support/seed-room.js
 const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer' } }) as const
 const updates = (r: { context?: readonly string[] | undefined }) => (r.context ?? []).filter(c => c.startsWith('[room ')).join('\n')
 
-test('an interface named in a plan I\'m on reaches my Claude in full; an unrelated update is only counted', async ($, on) => {
+test('an interface named in a plan I\'m on reaches my Claude in full; an unrelated update is only counted (R15c)', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol'], now: clock.now })
   await room.as('bob').plan('paging', 'The store\'s `listTasks(cursor)` returns `{items, next}`; the handler passes `next` on.', ['alice'])
@@ -23,7 +23,7 @@ test('an interface named in a plan I\'m on reaches my Claude in full; an unrelat
   await $.session.end(END)
 })
 
-test('a line naming me, or a file I edited, reaches my Claude and is drawn; a colleague\'s unrelated line is only counted', async ($, on) => {
+test('a line naming me, or a file I edited, reaches my Claude and is drawn; a colleague\'s unrelated line is only counted (R15b, R15c)', async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'Edit' }, () => EDIT.result)
   const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol'], now: clock.now })

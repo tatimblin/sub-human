@@ -39,7 +39,7 @@ async function inRoom($: Engine, on: On, o: { others?: string[]; world?: Paramet
   return { clock, w, room, start }
 }
 
-test('at approval the person is asked once: keep it, a room plan, or send it; keeping it shares nothing', async ($, on) => {
+test('at approval the person is asked once: keep it, a room plan, or send it; keeping it shares nothing (R18, R19)', async ($, on) => {
   const { w, room, start } = await inRoom($, on)
   await start()
   w.plan = PAGING
@@ -71,7 +71,7 @@ test('a room plan is stored, the people picked are asked, and the approval reach
   await $.session.end(END)
 })
 
-test('the next version of a room plan this session stored asks nothing: one line, and the same people asked again', async ($, on) => {
+test('the next version of a room plan this session stored asks nothing: one line, and the same people asked again (R18, R19)', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on)
   await start()
   w.plan = PAGING
@@ -145,7 +145,7 @@ test('an approval Claude Code marks a subagent\'s is not shared', async ($, on) 
   await $.session.end(END)
 })
 
-test('send packs the plan with my branch, the files I touched and a note; a typed name sends it to them', async ($, on) => {
+test('send packs the plan with my branch, the files I touched and a note; a typed name sends it to them (R22b)', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on, { others: ['bob', 'carol', 'dan'], world: { branch: 'alice/paging' } })
   await room.as('alice').activity({ files: ['src/store.js'] })
   await start()
@@ -180,7 +180,7 @@ test('a name nobody has keeps the plan, in one line; "Don\'t send" and a dismiss
   await $.session.end(END)
 })
 
-test('a plan I am asked about is a card at my turn\'s end; Agree is recorded, and my part reaches my next prompt', async ($, on) => {
+test('a plan I am asked about is a card at my turn\'s end; Agree is recorded, and my part reaches my next prompt (R19, R21, R22a)', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on)
   await start()
   await room.as('bob').plan('paging', PAGING, ['alice'])
@@ -204,7 +204,7 @@ test('a plan I am asked about is a card at my turn\'s end; Agree is recorded, an
   await $.session.end(END)
 })
 
-test('ask for changes: text typed under Other is the note; the label asks for the note on a second card', async ($, on) => {
+test('ask for changes: text typed under Other is the note; the label asks for the note on a second card (R21, R22)', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on)
   await start()
   await room.as('bob').plan('paging', PAGING, ['alice'])
@@ -223,7 +223,7 @@ test('ask for changes: text typed under Other is the note; the label asks for th
   await $.session.end(END)
 })
 
-test('Read the full plan opens a pane with the diff and the whole text; taller than its window, and its button asks again', async ($, on) => {
+test('Read the full plan opens a pane with the diff and the whole text; taller than its window, and its button asks again (R21)', async ($, on) => {
   const { w, room, start } = await inRoom($, on)
   await room.as('bob').plan('paging', PAGING, ['alice'])
   await room.as('bob').plan('paging', PAGING.replace('`{items, next}`', '`{items, cursor}`'), ['alice'])
@@ -264,7 +264,7 @@ test('a dismissed card waits: not on the next prompt, but again at the turn\'s e
   await $.session.end(END)
 })
 
-test('a plan sent to me is one line, then a card; accepting it puts it, its branch, files and note in my Claude\'s context', async ($, on) => {
+test('a plan sent to me is one line, then a card; accepting it puts it, its branch, files and note in my Claude\'s context (R22c)', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on)
   await start()
   await room.as('bob').planAct({ act: 'edit', name: 'api-store', base: 0, text: PAGING, scope: 'personal' })
@@ -284,7 +284,7 @@ test('a plan sent to me is one line, then a card; accepting it puts it, its bran
   await $.session.end(END)
 })
 
-test('plan tool: edit is compare-and-swap; a stale base is refused with the current text, as data and no error', async ($, on) => {
+test('plan tool: edit is compare-and-swap; a stale base is refused with the current text, as data and no error (R17)', async ($, on) => {
   const { clock, room, start } = await inRoom($, on)
   await start()
   expect(await $.tool.run(planTool({ op: 'edit', name: 'notes', base: 0, text: '# Notes\none' }))).toEqual({ result: `Stored plan notes v1 in ${room.code}.` })
@@ -318,7 +318,7 @@ test('a stale edit\'s current text is data: a forged [room label is defused and 
   await $.session.end(END)
 })
 
-test('a save the daemon can\'t take is an answer for Claude, never a red error', async ($, on) => {
+test('a save the daemon can\'t take is an answer for Claude, never a red error (R19)', async ($, on) => {
   const { room, start } = await inRoom($, on)
   await start()
   room.broken.daemon = true

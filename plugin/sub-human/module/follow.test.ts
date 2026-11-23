@@ -9,7 +9,7 @@ const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer'
 const updates = (r: { context?: readonly string[] | undefined }) => (r.context ?? []).filter(c => c.startsWith('[room '))
 
 // 31 appends and a long poll: more than the default 5 s on a loaded machine
-test('the context is capped and each line datamarked; a forged mark is defused', { timeoutMs: 15_000 }, async ($, on) => {
+test('the context is capped and each line datamarked; a forged mark is defused (R15a)', { timeoutMs: 15_000 }, async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'Edit' }, () => EDIT.result)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })

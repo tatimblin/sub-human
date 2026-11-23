@@ -11,7 +11,7 @@ const V1 = '# Cursor paging\n\n## Store @alice\n- `listTasks(cursor)` returns `{
 const V2 = V1.replace('`{items, next}`', '`{items, next}`, `next` an opaque string')
 const Line = v.looseObject({ kind: v.string(), version: v.optional(v.number()) })
 
-test('one shared plan, asked, changed, agreed for its exact version; then my Claude knows its part', async ($, on) => {
+test('one shared plan, asked, changed, agreed for its exact version; then my Claude knows its part (R21, R22, R22a)', async ($, on) => {
   const clock = mock.clock(on)
   const w = planWorld(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })

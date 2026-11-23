@@ -42,7 +42,7 @@ const room: RoomState = {
   ],
 };
 
-test('the catch-up: who is doing what, plans, open tasks, then updates newest first', () => {
+test('the catch-up: who is doing what, plans, open tasks, then updates newest first (R16)', () => {
   assert.equal(brief(room, { code: 'vole-8126' }), [
     'Room vole-8126, at update 42.',
     'Members here:',
@@ -67,7 +67,7 @@ test('an empty room says so in plain words', () => {
     'Room vole-8126, at update 0.\nMembers here: nobody.\nPlans: none.\nOpen tasks: none.\nRecent updates, newest first: none.');
 });
 
-test('bounded by maxChars, cutting whole lines from the end, and deterministic', () => {
+test('bounded by maxChars, cutting whole lines from the end, and deterministic (R16)', () => {
   const many: Update[] = Array.from({ length: 30 }, (_, i) => ({ ...env(i + 1, 'bob', 'claude'), kind: 'finding', text: `update ${i} ${'x'.repeat(300)}\n injected` }));
   const big: RoomState = { ...room, recent: many };
   for (const max of [0, 5, 50, 200, 800, BRIEF_MAX]) {
