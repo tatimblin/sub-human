@@ -8,12 +8,15 @@
  * this side does not know decodes to null, so a newer peer can add both behind a cap.
  *
  * To the host: append {entry} (the entry as its writer drafted it: the host restamps seq, at, prev and machine, and
- * deduplicates on its id, under which a queued post is re-sent), put_doc, put_blob, subscribe {after_seq, hash} and
- * message {to}. To a link: ack or refused for a write's id, snapshot then lines for a subscribe (a cursor off the host's
- * chain gets the snapshot again: a fork), put_doc for a document that changed, message from another link, and bye
- * before the host closes it. Both ways: hello, ping, pong.
+ * deduplicates on its id, under which a queued post is re-sent), put_doc, put_blob, subscribe {after_seq, hash},
+ * message {to}, and call {id, req}: a plan or task request of core/api.ts, which the host's rules answer. To a link: ack
+ * or refused for a write's id, answer {id, value} for a call, snapshot then one lines for a subscribe (a cursor off the
+ * host's chain gets the snapshot again: a fork; later lines are live), put_doc and put_blob for a document or plan text
+ * the mirror lacks, message from another link, and bye before the host closes it. Both ways: hello, ping, pong.
  */
 import * as v from '../vendor/valibot.mjs';
+import type { Request } from './api.js';
+import { decodeRequest } from './api.js';
 import type { Entry, LogLine, Snapshot } from './entries.js';
 import type { Result } from './result.js';
 import { err, ok } from './result.js';
@@ -30,19 +33,21 @@ export interface Hello { t: 'hello'; version: number; min: number; caps: string[
 export interface Ping { t: 'ping'; n: number }
 export interface Pong { t: 'pong'; n: number }
 export interface PutDoc { t: 'put_doc'; id: string; key: string; doc: unknown }
+export interface PutBlob { t: 'put_blob'; id: string; hash: string; text: string }
 /** A Claude-to-Claude message: `from` is set by the host from the link, never trusted from the sender. */
 export interface Message { t: 'message'; to: string; from: string; text: string }
 
 export type ToHost =
-  | Hello | Ping | Pong | PutDoc | Message
+  | Hello | Ping | Pong | PutDoc | PutBlob | Message
   // TODO(U7b): an entry before the host stamps it is core/entries.ts `Draft` once that merges.
   | { t: 'append'; entry: Entry }
-  | { t: 'put_blob'; id: string; hash: string; text: string }
-  | { t: 'subscribe'; after_seq: number; hash: string };
+  | { t: 'subscribe'; after_seq: number; hash: string }
+  | { t: 'call'; id: string; req: Extract<Request, { op: 'plan' | 'task' }> };
 
 export type ToLink =
-  | Hello | Ping | Pong | PutDoc | Message
+  | Hello | Ping | Pong | PutDoc | PutBlob | Message
   | { t: 'ack'; id: string }
+  | { t: 'answer'; id: string; value: unknown }
   | { t: 'refused'; id: string; reason: string }
   | { t: 'snapshot'; snapshot: Snapshot }
   | { t: 'lines'; lines: LogLine[] }
@@ -50,6 +55,7 @@ export type ToLink =
 
 /** What the variant reads before entries and snapshots go through schema.ts. */
 type Raw<M> = M extends { t: 'append' } ? { t: 'append'; entry: unknown }
+  : M extends { t: 'call' } ? { t: 'call'; id: string; req: unknown }
   : M extends { t: 'snapshot' } ? { t: 'snapshot'; snapshot: unknown }
   : M extends { t: 'lines' } ? { t: 'lines'; lines: { entry: unknown; hash: string }[] }
   : M;
@@ -65,18 +71,20 @@ const both = [
   v.object({ t: v.literal('pong'), n: count }),
   v.object({ t: v.literal('put_doc'), id, key: id, doc: v.unknown() }),
   v.object({ t: v.literal('message'), to: id, from: str, text: str }),
+  v.object({ t: v.literal('put_blob'), id, hash: id, text: str }),
 ] as const;
 
 const toHost: v.GenericSchema<unknown, Raw<ToHost>> = v.variant('t', [
   ...both,
   v.object({ t: v.literal('append'), entry: v.unknown() }),
-  v.object({ t: v.literal('put_blob'), id, hash: id, text: str }),
   v.object({ t: v.literal('subscribe'), after_seq: count, hash: str }),
+  v.object({ t: v.literal('call'), id, req: v.unknown() }),
 ]);
 
 const toLink: v.GenericSchema<unknown, Raw<ToLink>> = v.variant('t', [
   ...both,
   v.object({ t: v.literal('ack'), id }),
+  v.object({ t: v.literal('answer'), id, value: v.unknown() }),
   v.object({ t: v.literal('refused'), id, reason: str }),
   v.object({ t: v.literal('snapshot'), snapshot: v.unknown() }),
   v.object({ t: v.literal('lines'), lines: v.array(v.object({ entry: v.unknown(), hash: id })) }),
@@ -84,8 +92,8 @@ const toLink: v.GenericSchema<unknown, Raw<ToLink>> = v.variant('t', [
 ]);
 
 const KNOWN: Readonly<Record<'host' | 'link', readonly string[]>> = {
-  host: ['hello', 'ping', 'pong', 'put_doc', 'message', 'append', 'put_blob', 'subscribe'],
-  link: ['hello', 'ping', 'pong', 'put_doc', 'message', 'ack', 'refused', 'snapshot', 'lines', 'bye'],
+  host: ['hello', 'ping', 'pong', 'put_doc', 'put_blob', 'message', 'append', 'subscribe', 'call'],
+  link: ['hello', 'ping', 'pong', 'put_doc', 'put_blob', 'message', 'ack', 'answer', 'refused', 'snapshot', 'lines', 'bye'],
 };
 
 export const hello = (name: string, machine: string): Hello =>
@@ -117,6 +125,11 @@ export function decodeToHost(text: string): Result<ToHost | null> {
   const r = parse(toHost, KNOWN.host, text);
   if (!r.ok) return r;
   const m = r.value;
+  if (m?.t === 'call') {
+    const q = decodeRequest(m.req);
+    if (!q.ok || (q.value.op !== 'plan' && q.value.op !== 'task')) return err('a bad call');
+    return ok({ t: 'call', id: m.id, req: q.value });
+  }
   if (m?.t !== 'append') return ok(m);
   const e = decodeEntry(m.entry);
   return e.ok ? ok({ t: 'append', entry: e.value }) : err(`a bad append: ${e.error}`);

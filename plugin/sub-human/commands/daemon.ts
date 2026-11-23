@@ -22,8 +22,10 @@ export function daemonFor(home: string): Daemon {
   return {
     append: (code, draft, id) => send({ op: 'append', code, draft: { ...draft, id } }),
     putDoc: (code, d) => send({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
-    // the daemon has no op for the host's kick yet: it comes with the links that a kick ends
-    kick: () => Promise.resolve(err('removing a member is not available yet')),
+    kick: (code, name, from) => send({ op: 'kick', code, from, name }),
+    invite: (code, from, name, via) => send({ op: 'invite', code, from, name, via }),
+    dial: (line, name) => send({ op: 'dial', line, name }),
+    link: code => send({ op: 'link', code }),
     join: r => send({ op: 'join', ...r }),
     leave: id => send({ op: 'leave', id }),
     retire: id => send({ op: 'retire', id }),

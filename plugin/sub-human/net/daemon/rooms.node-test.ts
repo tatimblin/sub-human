@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { Request } from '../../core/api.js';
+import type { RoomRequest as Request } from '../../core/api.js';
 import { HANDOFF_MS, decodePointer, sessionFile } from '../../core/api.js';
 import type { Kind } from '../../core/entries.js';
 import { openFsStore } from '../../store/fs-store.js';

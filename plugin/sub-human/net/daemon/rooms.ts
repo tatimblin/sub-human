@@ -1,16 +1,17 @@
 // What the daemon does with each request (core/api.ts). Rooms hosted here are FsStores, one promise chain per room, so
 // writes in this daemon never wait on each other's file lock: the lock only guards against a second daemon, and a
 // laptop asleep mid-append can't make a waiter here break a live lock. The rules are core's (plans.ts, tasks.ts); this
-// only applies them to the room's state and appends what they return. Rooms hosted elsewhere go to `links` (U15).
+// only applies them to the room's state and appends what they return. Rooms hosted elsewhere go to `links`; for rooms
+// hosted here, net/host.ts writes what its links send through handle() with the link's machine, and follows each room.
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
-import type { Answers, Message, PlanAct, Request, TaskAct } from '../../core/api.js';
+import type { Answers, Message, Op, PlanAct, RoomRequest, TaskAct } from '../../core/api.js';
 import { API_VERSION, CODE, SESSION_ID, sessionFile } from '../../core/api.js';
 import { sha256 } from '../../core/hash.js';
 import { Pointers } from './pointers.js';
 import { asRoom, fold } from '../../core/fold.js';
 import { pick } from './open.js';
-import type { Draft, Kind, RoomState, Snapshot } from '../../core/entries.js';
+import type { Docs, Draft, Kind, LogLine, RoomState, Snapshot } from '../../core/entries.js';
 import { accept, answer, ask, decide, edit, latestVersion, send } from '../../core/plans.js';
 import type { Texts } from '../../core/plans.js';
 import type { Result } from '../../core/result.js';
@@ -21,16 +22,26 @@ import { openFsStore } from '../../store/fs-store.js';
 import type { Draft as StoreDraft } from '../../store/store.js';
 import { nextSnapshot } from '../../store/store.js';
 
-/** Rooms hosted on another machine: their writes and messages go over that room's link. */
+/** Rooms hosted on another machine: their writes and messages go over that room's link (net/link.ts). */
 export interface Links {
   hosts(code: string): boolean;
-  forward(code: string, req: Request): Promise<Result<never>>;
+  forward(code: string, req: RoomRequest): Promise<Result<Answers[Op]>>;
+  /** For a room hosted here: a message to a member on another machine, over their link; false when none is up. */
+  relay(code: string, to: string, from: string, text: string): boolean;
+  /** Such a room's state as this machine's copy holds it, or null when there is none. */
+  state(code: string): Promise<RoomState | null>;
 }
-/** Until the links exist (U15), a room hosted elsewhere has its host away. */
+/** No links: every room is hosted here. */
 export const NO_LINKS: Links = {
   hosts: () => false,
   forward: () => Promise.resolve(err('the room\'s host is away; nothing was sent')),
+  relay: () => false,
+  state: () => Promise.resolve(null),
 };
+/** A link following a room hosted here: each line placed and each document put, as they happen. */
+export interface Follower { line(l: LogLine): void; doc(key: string, doc: unknown): void }
+/** What a follower starts from: the lines after its cursor, or (off the host's chain, or new) a snapshot first. */
+export interface Start { readonly snapshot: Snapshot | null; readonly lines: readonly LogLine[]; readonly docs: Docs }
 
 /** Entries only the host writes, from its own rules; a caller asks for them with plan and task. */
 const HOST_KINDS: ReadonlySet<Kind> = new Set<Kind>([
@@ -44,7 +55,7 @@ const DAY_MS = 24 * 3600_000;
 const OPEN = '#open';
 
 interface Placed { readonly seq: number; readonly hash: string }
-interface Room { readonly store: FsStore; snap: Snapshot; readonly ids: Map<string, Placed> }
+interface Room { readonly store: FsStore; snap: Snapshot; readonly ids: Map<string, Placed>; readonly followers: Set<Follower> }
 /** A session's rooms (code → its name there) and when it was last heard from. */
 interface Session { at: number; readonly rooms: Map<string, string> }
 interface Writer { readonly code: string; readonly from: string }
@@ -82,7 +93,8 @@ export class Rooms {
     });
   }
 
-  handle(req: Request): Promise<Result<Answers[Request['op']]>> {
+  /** `machine` is a link's, for a write that came over it. */
+  handle(req: RoomRequest, machine: string = this.o.machine): Promise<Result<Answers[Op]>> {
     const { links } = this.o;
     const now = (this.lastSeen = this.o.now());
     switch (req.op) {
@@ -99,7 +111,7 @@ export class Rooms {
           // membership is per name: a joined for a member who is here, or a left for one who isn't, changes nothing
           const here = m?.machine !== undefined;
           if ((draft.kind === 'joined' && here) || (draft.kind === 'left' && !here)) return ok({ seq: room.snap.state.seq, hash: room.snap.state.hash });
-          return this.place(room, { ...draft, at: now, machine: this.o.machine });
+          return this.place(room, { ...draft, at: now, machine });
         });
       }
       case 'plan':
@@ -110,11 +122,17 @@ export class Rooms {
         if (links.hosts(req.code)) return links.forward(req.code, req);
         return this.queue(req.code, async room => {
           if (!member(asRoom(room.snap.state), req.name)) return err(`${req.name} is not in ${req.code}; nothing was written`);
-          // a presence is one machine's: `presence/NAME@MACHINE`, stamped with this daemon's machine; the store renews
+          // a presence is one machine's: `presence/NAME@MACHINE`, stamped with the writer's machine; the store renews
           // the tail's documents stamp
           const doc = req.doc;
-          if ('state' in doc) await room.store.putDoc('presence', `${req.name}@${this.o.machine}`, { ...doc, machine: this.o.machine });
-          else await room.store.putDoc(req.kind, req.name, doc);
+          if ('state' in doc) {
+            const stamped = { ...doc, machine };
+            await room.store.putDoc('presence', `${req.name}@${machine}`, stamped);
+            for (const f of room.followers) f.doc(`presence/${req.name}@${machine}`, stamped);
+          } else {
+            await room.store.putDoc(req.kind, req.name, doc);
+            for (const f of room.followers) f.doc(`${req.kind}/${req.name}`, doc);
+          }
           return ok(null);
         });
       case 'put_blob':
@@ -139,18 +157,10 @@ export class Rooms {
         for (const [id, x] of this.sessions) if (now - x.at > this.o.idleMs) this.sessions.delete(id);
         return Promise.resolve(ok(null));
       }
-      case 'message': {
-        const to = [...this.live()].filter(([, s]) => s.rooms.get(req.code) === req.to).map(([id]) => id);
-        if (!to.length) {
-          if (links.hosts(req.code)) return links.forward(req.code, req);
-          return refuse(`${req.to} isn't in ${req.code} on this machine; nothing was sent`);
-        }
-        for (const id of to) {
-          const key = `${id}\n${req.code}`;
-          this.inboxes.set(key, [...(this.inboxes.get(key) ?? []), { code: req.code, from: req.from, text: req.text, at: now }].slice(-INBOX_MAX));
-        }
-        return Promise.resolve(ok(null));
-      }
+      case 'message':
+        if (this.receive(req.code, req.to, req.from, req.text) || links.relay(req.code, req.to, req.from, req.text)) return Promise.resolve(ok(null));
+        if (links.hosts(req.code)) return links.forward(req.code, req);
+        return refuse(`${req.to} isn't in ${req.code} on this machine; nothing was sent`);
       case 'inbox': {
         const messages: Message[] = [];
         for (const code of this.sessions.get(req.session)?.rooms.keys() ?? []) {
@@ -165,6 +175,48 @@ export class Rooms {
     }
   }
 
+  /** A private message into the inbox of each session here that is `to` in the room; false when there is none. */
+  receive(code: string, to: string, from: string, text: string): boolean {
+    const ids = [...this.live()].filter(([, s]) => s.rooms.get(code) === to).map(([id]) => id);
+    for (const id of ids) {
+      const key = `${id}\n${code}`;
+      this.inboxes.set(key, [...(this.inboxes.get(key) ?? []), { code, from, text, at: this.o.now() }].slice(-INBOX_MAX));
+    }
+    return ids.length > 0;
+  }
+
+  /** The rooms a session here is in; its name in one; whether any live session is in `code`. */
+  roomsOf(session: string): string[] { return [...this.sessions.get(session)?.rooms.keys() ?? []]; }
+  nameIn(session: string, code: string): string | undefined { return this.sessions.get(session)?.rooms.get(code); }
+  present(code: string): boolean { return [...this.live()].some(([, s]) => s.rooms.has(code)); }
+
+  /** The room's state now, after every write already under way. */
+  state(code: string): Promise<Result<RoomState>> { return this.queue(code, room => Promise.resolve(ok(asRoom(room.snap.state)))); }
+  async blob(code: string, hash: string): Promise<string | null> {
+    const room = await this.room(code);
+    return room.ok ? room.value.store.getBlob(hash) : null;
+  }
+
+  /**
+   * Starts `f` following the room after the cursor (seq and hash; 0 for a new mirror): in the room's chain, so no line
+   * falls between what it starts from and what it is then told. The returned function stops it.
+   */
+  follow(code: string, seq: number, hash: string, f: Follower): Promise<Result<{ start: Start; stop: () => void }>> {
+    return this.queue(code, async room => {
+      const docs = await room.store.docs();
+      const after = seq > 0 ? await room.store.read(seq, hash) : null;
+      let start: Start;
+      if (after?.ok) start = { snapshot: null, lines: after.value, docs };
+      else {
+        const c = await room.store.catchup();
+        if (!c.ok) return c;
+        start = { snapshot: c.value.snapshot ?? nextSnapshot(null, []), lines: c.value.lines, docs };
+      }
+      room.followers.add(f);
+      return ok({ start, stop: () => { room.followers.delete(f); } });
+    });
+  }
+
   /** The host's own entries (U15's admission and kicks), placed in order in the room's chain. */
   write(code: string, drafts: readonly Draft[]): Promise<Result<Placed | null>> {
     return this.queue(code, room => this.commit(room, drafts));
@@ -174,9 +226,14 @@ export class Rooms {
    * A bare /sub-human, on one chain so two first opens make one room: open.ts picks the room; `joined` only when the
    * name isn't a member; then an idle presence here (which makes the room open), the pointer and the cwd's last room.
    */
-  private async join(req: Extract<Request, { op: 'join' }>): Promise<Result<Answers['join']>> {
+  private async join(req: Extract<RoomRequest, { op: 'join' }>): Promise<Result<Answers['join']>> {
     const rooms = new Map<string, RoomState>();
     for (const code of (await fs.readdir(`${this.o.home}/rooms`).catch(() => [])).filter(c => CODE.test(c))) {
+      if (this.o.links.hosts(code)) {
+        const s = await this.o.links.state(code); // a room hosted elsewhere, as its copy here stands
+        if (s) rooms.set(code, s);
+        continue;
+      }
       const room = await this.room(code);
       if (room.ok) rooms.set(code, fold(room.value.snap, [], await room.value.store.docs()));
     }
@@ -260,6 +317,7 @@ export class Rooms {
     room.snap = nextSnapshot(room.snap, [line.value]);
     const placed = { seq: line.value.entry.seq, hash: line.value.hash };
     remember(room.ids, d.id, placed);
+    for (const f of room.followers) f.line(line.value);
     if (d.kind === 'kick') {
       // a kicked member who was asked never blocks a decision (core/plans.ts decide)
       const s = asRoom(room.snap.state);
@@ -289,7 +347,7 @@ export class Rooms {
     if (!c.ok) return err(`room ${code}'s log can't be read (${c.error}); nothing was written`);
     const ids = new Map<string, Placed>();
     for (const l of c.value.lines) remember(ids, l.entry.id, { seq: l.entry.seq, hash: l.hash });
-    const room = { store: store.value, snap: nextSnapshot(c.value.snapshot, c.value.lines), ids };
+    const room = { store: store.value, snap: nextSnapshot(c.value.snapshot, c.value.lines), ids, followers: new Set<Follower>() };
     this.rooms.set(code, room);
     return ok(room);
   }

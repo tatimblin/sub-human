@@ -67,6 +67,18 @@ test('readAnswer: the value for its op, the daemon\'s own error, and one line fo
   }
 });
 
+test('the net ops are read with their fields, and an admit answer is one of three', () => {
+  assert.ok(decodeRequest({ op: 'invite', code: 'vole-8126', from: 'tristan', name: 'jess', via: 'public' }).ok);
+  assert.ok(!decodeRequest({ op: 'invite', code: 'vole-8126', from: 'tristan', name: 'jess', via: 'forward' }).ok);
+  assert.ok(decodeRequest({ op: 'admit', session: 's1', code: 'vole-8126', id: 'a1', answer: 'kick' }).ok);
+  assert.ok(!decodeRequest({ op: 'admit', session: 's1', code: 'vole-8126', id: 'a1', answer: 'yes' }).ok);
+  assert.ok(decodeRequest({ op: 'dial', line: 'https://n.ts.net/vole-8126#x', name: 'jess' }).ok);
+  assert.ok(!decodeRequest({ op: 'dial', line: 'x'.repeat(2000), name: 'jess' }).ok);
+  const asks = readAnswer('asks', 200, JSON.stringify({ ok: true, value: { asks: [{ id: 'a', code: 'c', kind: 'leaked', name: 'n', expected: 'n', machine: '', check: '1-2', member: false }] } }));
+  assert.ok(asks.ok);
+  assert.deepEqual(readAnswer('link', 200, '{"ok":true,"value":null}'), { ok: true, value: null });
+});
+
 test('the socket and the daemon\'s argv are under the home and the plugin', () => {
   assert.equal(socketFile('/h'), '/h/daemon.sock');
   assert.deepEqual(daemonArgv('/bin/node', '/p', '/h'), ['/bin/node', '--import', '/p/resolve-ts.ts', '/p/net/daemon.ts', '/h']);

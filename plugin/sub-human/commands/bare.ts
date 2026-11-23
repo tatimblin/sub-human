@@ -37,7 +37,7 @@ export const bare: Verb = async (args, ctx) => {
   return say(`You're in ${room} as ${name}${others.length ? `, with ${others.join(', ')}` : ''}.`);
 };
 
-async function defaultName(ctx: Ctx): Promise<string | null> {
+export async function defaultName(ctx: Ctx): Promise<string | null> {
   if (ctx.config.name !== undefined) return nameFrom(ctx.config.name);
   for (const key of ['user.name', 'user.email']) {
     const got = await ctx.run('git', ['config', '--get', key], ctx.cwd);

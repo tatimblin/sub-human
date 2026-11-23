@@ -22,10 +22,13 @@ const toHost: ToHost[] = [
   { t: 'append', entry },
   { t: 'put_blob', id: 'b1', hash: 'sha256-abc', text: '# plan' },
   { t: 'subscribe', after_seq: 0, hash: '' },
+  { t: 'call', id: 'q1', req: { op: 'task', code: 'vole-8126', from: 'jess', act: 'claim', n: 2 } },
 ];
 const toLink: ToLink[] = [
   ...both,
   { t: 'ack', id: 'c-1' },
+  { t: 'answer', id: 'q1', value: { seq: 9, hash: 'h9', n: 2 } },
+  { t: 'put_blob', id: 'b2', hash: 'sha256-abc', text: '# plan' },
   { t: 'refused', id: 'c-1', reason: 'not a member of this link' },
   { t: 'snapshot', snapshot },
   { t: 'lines', lines: [{ entry, hash: 'h41' }] },
@@ -54,6 +57,8 @@ test('malformed messages are refused with a reason', () => {
     '{"t":"append","id":"c","entry":{"from":"jess","by":"root","kind":"post"}}',
     '{"t":"subscribe","after_seq":1.5,"hash":""}',
     '{"t":"hello","version":0,"min":0,"caps":[],"name":"a","machine":"b"}',
+    '{"t":"call","id":"q","req":{"op":"status"}}',
+    '{"t":"call","id":"q","req":{"op":"kick","code":"vole-8126","from":"jess","name":"tristan"}}',
   ]) {
     const r = decodeToHost(bad);
     assert.ok(!r.ok, bad);

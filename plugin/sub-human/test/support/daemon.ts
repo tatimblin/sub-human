@@ -10,6 +10,9 @@ import type { AppendDraft } from '../../core/api.js';
 import { startDaemon } from '../../net/daemon.js';
 import type { Daemon, DaemonOptions } from '../../net/daemon.js';
 import { call } from '../../net/daemon/client.js';
+import type { Net } from '../../net/daemon/net.js';
+import type { Links } from '../../net/daemon/rooms.js';
+import { err } from '../../core/result.js';
 import { must } from './must.js';
 
 export const PLUGIN: string = path.join(import.meta.dirname, '..', '..');
@@ -25,6 +28,17 @@ export async function started(t: TestContext, o: DaemonOptions): Promise<Daemon>
   const daemon = must(d.value, 'a daemon');
   t.after(() => daemon.close()); // a failed test must not leave it up for its idle minute
   return daemon;
+}
+
+/** A net with only these links: no listener, and every net op refused. */
+export function linksOnly(l: Pick<Links, 'hosts' | 'forward'>): () => Net {
+  return () => ({
+    links: { ...l, relay: () => false, state: () => Promise.resolve(null) },
+    start: () => Promise.resolve(),
+    stop: () => Promise.resolve(),
+    handle: () => Promise.resolve(err('no net in this test')),
+    accept: s => { s.destroy(); },
+  });
 }
 
 export const joined = (from: string): AppendDraft => ({ kind: 'joined', id: randomUUID(), from, by: 'system' });

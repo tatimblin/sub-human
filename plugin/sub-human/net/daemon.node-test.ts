@@ -12,7 +12,7 @@ import { withLock } from '../store/lock.js';
 import { startDaemon } from './daemon.js';
 import { call, ensure } from './daemon/client.js';
 import { must } from '../test/support/must.js';
-import { DAEMON, RESOLVE, gone, home, joined, pidOf, post, run, started, stop, until } from '../test/support/daemon.js';
+import { DAEMON, RESOLVE, gone, home, joined, linksOnly, pidOf, post, run, started, stop, until } from '../test/support/daemon.js';
 
 /** The pids of every daemon process of this home. */
 function daemons(h: string): number[] {
@@ -80,7 +80,7 @@ test('appends from two concurrent clients get gapless seqs, and the chain holds'
 
 test('a room hosted elsewhere goes to its link, whose host is away for now', async t => {
   const h = await home();
-  await started(t, { home: h, links: { hosts: c => c === 'FAR', forward: () => Promise.resolve(err('the room\'s host is away; nothing was sent')) } });
+  await started(t, { home: h, net: linksOnly({ hosts: c => c === 'FAR', forward: () => Promise.resolve(err('the room\'s host is away; nothing was sent')) }) });
   const r = await call(h, { op: 'append', code: 'FAR', draft: joined('alice') });
   assert.ok(!r.ok && /host is away/.test(r.error));
   await assert.rejects(fs.access(path.join(h, 'rooms', 'FAR')));
@@ -114,7 +114,7 @@ test('idle: any request keeps it up, and it exits once none has come for the idl
 test('shutdown answers the requests it took before it cuts a connection', async t => {
   const h = await home();
   const slow = { hosts: () => true, forward: async () => { await sleep(300); return err('the room\'s host is away; nothing was sent'); } };
-  const d = await started(t, { home: h, links: slow });
+  const d = await started(t, { home: h, net: linksOnly(slow) });
   const pending = call(h, { op: 'append', code: 'R5', draft: joined('alice') });
   await sleep(100);
   await d.close();

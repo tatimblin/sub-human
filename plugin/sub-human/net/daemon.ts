@@ -18,23 +18,22 @@ import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { withLock } from '../store/lock.js';
 import type { Links } from './daemon/rooms.js';
-import { NO_LINKS, Rooms } from './daemon/rooms.js';
+import { Rooms } from './daemon/rooms.js';
+import type { Net } from './daemon/net.js';
+import { isNet, makeNet } from './daemon/net.js';
 
 /** The daemon exits once no request has come for this long: twice a session's liveness, so a slow ping never stops it. */
 export const IDLE_MS: number = 2 * LIVE_MS;
 /** The start lock: one killed while binding holds it for a second, well inside the next one's wait. */
 const START_LOCK = { waitMs: 3000, staleMs: 1000 } as const;
 
-/** The listener for rooms hosted here (U15): started once the socket is bound, stopped at shutdown. */
-export interface Listener { start(): Promise<void>; stop(): Promise<void> }
-
 export interface DaemonOptions {
   readonly home: string;
   readonly idleMs?: number;
   readonly now?: () => number;
   readonly machine?: string;
-  readonly links?: Links;
-  readonly listener?: Listener;
+  /** net/ for these rooms: the listener and links, started once the socket is bound (default net/daemon/net.ts). */
+  readonly net?: (rooms: Rooms) => Net;
 }
 export interface Daemon {
   /** Settles once the daemon has shut down, idle or closed. */
@@ -57,14 +56,24 @@ export async function readyHome(home: string): Promise<Result<string>> {
 
 /** A serving daemon, null when another one already answers on the socket, or why it couldn't start. */
 export async function startDaemon(o: DaemonOptions): Promise<Result<Daemon | null>> {
-  const { home, idleMs = IDLE_MS, now = Date.now, machine = os.hostname(), links = NO_LINKS, listener } = o;
+  const { home, idleMs = IDLE_MS, now = Date.now, machine = os.hostname() } = o;
   const ready = await readyHome(home);
   if (!ready.ok) return ready;
   const sock = ready.value;
+  let net: Net | null = null;
+  // the rooms reach the links through `net`, made from the rooms just after
+  const links: Links = {
+    hosts: code => net?.links.hosts(code) ?? false,
+    forward: (code, req) => net?.links.forward(code, req) ?? Promise.resolve(err('the room\'s host is away; nothing was sent')),
+    relay: (code, to, from, text) => net?.links.relay(code, to, from, text) ?? false,
+    state: code => net?.links.state(code) ?? Promise.resolve(null),
+  };
   const rooms = new Rooms({ home, now, machine, idleMs, links });
+  const theNet = (o.net ?? (r => makeNet(r, { home, machine, now })))(rooms);
+  net = theNet;
   const inflight = new Set<Promise<void>>();
   const server = http.createServer((q, s) => {
-    const p = serve(rooms, q, s);
+    const p = serve(rooms, theNet, q, s);
     inflight.add(p);
     void p.finally(() => inflight.delete(p));
   });
@@ -86,7 +95,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Result<Daemon | nul
   }
   if (!bound.ok) return err(`sub-human's daemon did not start: another one held its start lock for ${START_LOCK.waitMs / 1000} s`);
   if (!bound.value.ok || !bound.value.value) return bound.value.ok ? ok(null) : bound.value;
-  await listener?.start();
+  await theNet.start();
 
   let done = (): void => undefined;
   const closed = new Promise<void>(resolve => { done = resolve; });
@@ -98,7 +107,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Result<Daemon | nul
       // every request already taken gets its answer, and every write its line, before a connection is cut
       while (inflight.size) await Promise.all([...inflight]);
       await rooms.drain();
-      await listener?.stop();
+      await theNet.stop();
       server.closeAllConnections();
       await shut;
       done();
@@ -120,7 +129,7 @@ function answers(sock: string): Promise<boolean> {
   });
 }
 
-async function serve(rooms: Rooms, q: http.IncomingMessage, s: http.ServerResponse): Promise<void> {
+async function serve(rooms: Rooms, net: Net, q: http.IncomingMessage, s: http.ServerResponse): Promise<void> {
   const send = (status: number, body: Result<unknown>): void => {
     s.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
   };
@@ -137,7 +146,8 @@ async function serve(rooms: Rooms, q: http.IncomingMessage, s: http.ServerRespon
   try { json = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { send(400, err('the request is not JSON; nothing was done')); return; }
   const req = decodeRequest(json);
   if (!req.ok) { send(400, req); return; }
-  try { send(200, await rooms.handle(req.value)); } catch (e) {
+  const r = req.value;
+  try { send(200, await (isNet(r) ? net.handle(r) : rooms.handle(r))); } catch (e) {
     send(500, err(`the sub-human daemon failed (${msg(e)}); nothing was done`));
   }
 }

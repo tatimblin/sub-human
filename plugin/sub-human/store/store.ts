@@ -75,14 +75,16 @@ export async function headOf(last: string | undefined): Promise<Result<Head>> {
  * The lines of a log after `afterSeq` (raw complete lines, seq 1 first). Each must carry the next seq and name the
  * hash of the line before it; `expect`, when given, is the hash the line at `afterSeq` must have (a snapshot's, a cursor's).
  * A line that chains but doesn't decode (a newer writer's kind) is left out, and the chain runs on through it.
+ * A mirror's copy starts after `base` (raws[0] is seq base + 1), the first line's prev taken as the host's.
  */
-export async function verifyLines(raws: readonly string[], afterSeq: number, expect?: string): Promise<Result<readonly LogLine[]>> {
-  if (afterSeq > raws.length) return expect === undefined ? ok([]) : err(`fork: the log ends before seq ${afterSeq}`);
-  const anchor = afterSeq > 0 ? raws[afterSeq - 1] : undefined;
-  let prev = anchor === undefined ? '' : await lineHash(anchor);
+export async function verifyLines(raws: readonly string[], afterSeq: number, expect?: string, base = 0): Promise<Result<readonly LogLine[]>> {
+  if (afterSeq < base) return err(`the copy here starts after seq ${base}; nothing older is kept`);
+  if (afterSeq > base + raws.length) return expect === undefined ? ok([]) : err(`fork: the log ends before seq ${afterSeq}`);
+  const anchor = afterSeq > base ? raws[afterSeq - base - 1] : undefined;
+  let prev = anchor !== undefined ? await lineHash(anchor) : afterSeq > 0 ? expect ?? chainOf(raws[0] ?? '')?.prev ?? '' : '';
   if (anchor !== undefined && chainOf(anchor)?.seq !== afterSeq) return err(`fork: no line ${afterSeq} where it belongs`);
   if (expect !== undefined && prev !== expect) return err(`fork: line ${afterSeq} is not the one expected`);
-  const rest = raws.slice(afterSeq);
+  const rest = raws.slice(afterSeq - base);
   const hashes = await Promise.all(rest.map(lineHash));
   const out: LogLine[] = [];
   for (const [i, line] of rest.entries()) {

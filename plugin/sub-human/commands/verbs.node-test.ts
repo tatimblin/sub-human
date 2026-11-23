@@ -114,12 +114,11 @@ test('kick removes a member for good; never yourself, nobody unknown, nobody twi
   assert.match((await runCommand('leave', bob)).text, /^You're still in .*: bob was removed/);
 });
 
-test('help is at most six lines; invite and join say they are not available yet', async () => {
+test('help is at most six lines', async () => {
   const ctx = testCtx(fakeHome());
   const help = await runCommand('help', ctx);
   assert.ok(help.text.split('\n').length <= 6);
   assert.match(help.text, /^\/sub-human \[NAME\]/);
-  for (const v of ['invite bob', 'join https://x/y#z']) assert.match((await runCommand(v, ctx)).text, /not available yet/);
   assert.deepEqual(fakeHome().calls, []);
 });
 
@@ -129,6 +128,36 @@ test('news reaches the command only where the module is off: one line saying so 
   assert.deepEqual(await runCommand('news', alice), {
     kind: 'refused', text: "News wasn't shown: sub-human's module draws it, and it isn't running in this session. /sub-human who shows what each member is doing.",
   });
+});
+
+test('invite: one line for NAME by the pathway asked, else the default; only from a session in a room', async () => {
+  const { fake, alice, code } = await room();
+  const r = await runCommand('invite carol', alice);
+  assert.equal(r.kind, 'say');
+  assert.match(r.text, new RegExp(`^Send carol this line .*\n/sub-human join ssh://devbox/${code}\\?port=7420#0+$`));
+  await runCommand('invite carol --ssh', alice);
+  assert.deepEqual(fake.calls.filter(c => c.startsWith('invite')), [`invite ${code} carol public alice`, `invite ${code} carol ssh alice`]);
+  assert.equal((await runCommand('invite', alice)).kind, 'refused');
+  assert.equal((await runCommand('invite carol --forward', alice)).kind, 'refused');
+  assert.match((await runCommand('invite carol', testCtx(fake, { session: 'session-9' }))).text, /in no room/);
+});
+
+test('join: the line is dialled as the git name; let in, the session takes its place; refused, it says so', async () => {
+  const fake = fakeHome();
+  const line = `ssh://devbox/otter-4821?port=7420#${'0'.repeat(77)}`;
+  fake.linked.set('otter-4821', { phase: 'stopped', why: 'refused' });
+  const r = await runCommand(`join ${line}`, testCtx(fake));
+  assert.deepEqual(r, { kind: 'refused', text: 'You did not join otter-4821: the host did not let this machine in. Ask them for a new invite.' });
+  assert.deepEqual(fake.calls.filter(c => c.startsWith('dial')), ['dial alice']);
+  // let in: here the room's code is one this home holds, as a mirror would after its first sync
+  const host = testCtx(fake, { session: 'session-h' });
+  await runCommand('', host);
+  const code = await fake.code();
+  fake.linked.set(code, { phase: 'online', why: null });
+  const bob = testCtx(fake, { session: 'session-b' });
+  const j = await runCommand(`join ssh://devbox/${code}?port=7420#${'0'.repeat(77)} bob`, bob);
+  assert.deepEqual(j, { kind: 'say', text: `You're in ${code} as bob, with alice.` });
+  assert.match((await runCommand(`join ${line}`, bob)).text, /so it joined no other/);
 });
 
 test('doctor: node, the socket path, the module, the version checked on, every room log, and the stubs', async () => {

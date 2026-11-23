@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for ssh in the network tests: it records its arguments and bridges stdin and stdout to the -W target.
+exec node "$(dirname "$0")/fake-ssh.mjs" "$@"

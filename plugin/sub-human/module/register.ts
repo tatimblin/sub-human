@@ -6,6 +6,7 @@ import { registerContext } from './context.js';
 import { registerFollow } from './follow.js';
 import { registerStatus } from './status.js';
 import { registerTools } from './tools.js';
+import { admitCards } from './admit.js';
 // not wired yet: re-exported so validate type-checks it and the vendored diff it imports (U10 uses it)
 export { planDiff } from './plan-diff.js';
 
@@ -15,4 +16,5 @@ export function register(on: On): void {
   registerContext(on);
   registerStatus(on);
   registerTools(on);
+  admitCards(on);
 }

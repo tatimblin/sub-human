@@ -32,6 +32,20 @@
 //   inbox    {session}                 → {messages}   takes this session's messages in all its rooms, once
 //   status   {}                        → {version, pid, sessions}
 //
+// Across machines (net/, U15):
+//   invite   {code, from, name, via}   → {line}       a line for NAME (via public, tailnet or ssh); starts the listener
+//   asks     {session}                 → {asks}       who waits to be let into this session's rooms, and any line
+//                                                     dialled twice; module/admit.ts shows each as a card
+//   admit    {session, code, id, answer}  → null      a session's answer to an ask of its room: let_in or refuse,
+//                                                     or kick the member a leaked line let in
+//   kick     {code, from, name}        → null         NAME is out for good; their link is cut at once
+//   dial     {line, name}              → {code, check}  dials the line's host and proves the line; the host's answer
+//                                                     comes later (link)
+//   link     {code}                    → {phase, why} | null  how this machine's link to a room hosted elsewhere is
+//                                                     doing; waiting until the host lets it in
+// An append to a room hosted elsewhere while its host is away answers seq 0 for a person's post, queued for a while
+// under its id; every other write there fails at once.
+//
 // Every request keeps the daemon up; it exits after a minute with none.
 import * as v from '../vendor/valibot.mjs';
 import type { Acceptance, ActivityDoc, Answer, Entry, FocusDoc, PlanScope, PresenceDoc } from './entries.js';
@@ -41,7 +55,7 @@ import { err, ok } from './result.js';
 import { decodeDoc, decodeEntry } from './schema.js';
 
 /** Bumped when a request or an answer changes shape; status carries it. */
-export const API_VERSION = 2;
+export const API_VERSION = 3;
 /** A request body larger than this is refused unread. */
 export const MAX_BODY: number = 1024 * 1024;
 export const DAEMON_URL: string = 'http://daemon/';
@@ -111,6 +125,26 @@ export type TaskAct =
   | { readonly act: 'claim' | 'release'; readonly n: number }
   | { readonly act: 'done'; readonly n: number; readonly note?: string };
 interface Writer { readonly code: string; readonly from: string }
+/** How an invite line reaches this machine: Tailscale Funnel, Tailscale Serve, or the joiner's own ssh login. */
+export type Via = 'public' | 'tailnet' | 'ssh';
+/**
+ * A dial for the host: a joiner to let in (admit); or a line dialled a second time, both dials refused: before anyone
+ * was let in with it (again), or after `name` was (leaked, and the card offers to kick them).
+ */
+export interface Ask {
+  readonly id: string;
+  readonly code: string;
+  readonly kind: 'admit' | 'again' | 'leaked';
+  /** The name the joiner gave, and the name the invite was for. */
+  readonly name: string;
+  readonly expected: string;
+  readonly machine: string;
+  readonly check: string;
+  /** Whether `name` is already a member of the room. */
+  readonly member: boolean;
+}
+export type LinkPhase = 'waiting' | 'connecting' | 'online' | 'offline' | 'host_away' | 'stopped';
+export interface LinkStatus { readonly phase: LinkPhase; readonly why: string | null }
 
 export type Request =
   | { readonly op: 'append'; readonly code: string; readonly draft: AppendDraft }
@@ -129,8 +163,18 @@ export type Request =
   | { readonly op: 'ping'; readonly session: string; readonly code?: string; readonly name?: string }
   | { readonly op: 'message'; readonly code: string; readonly to: string; readonly from: string; readonly text: string }
   | { readonly op: 'inbox'; readonly session: string }
-  | { readonly op: 'status' };
+  | { readonly op: 'status' }
+  | ({ readonly op: 'invite'; readonly name: string; readonly via: Via } & Writer)
+  | { readonly op: 'asks'; readonly session: string }
+  | { readonly op: 'admit'; readonly session: string; readonly code: string; readonly id: string; readonly answer: 'let_in' | 'refuse' | 'kick' }
+  | ({ readonly op: 'kick'; readonly name: string } & Writer)
+  | { readonly op: 'dial'; readonly line: string; readonly name: string }
+  | { readonly op: 'link'; readonly code: string };
 export type Op = Request['op'];
+/** The ops net/ answers (the host's side and the links); every other op is the rooms'. */
+export type NetOp = 'invite' | 'asks' | 'admit' | 'kick' | 'dial' | 'link';
+export type NetRequest = Extract<Request, { readonly op: NetOp }>;
+export type RoomRequest = Exclude<Request, { readonly op: NetOp }>;
 export interface Answers {
   append: { readonly seq: number; readonly hash: string };
   plan: { readonly seq: number; readonly hash: string; readonly latest: Version | null } | { readonly refused: string; readonly latest: Version | null };
@@ -146,6 +190,12 @@ export interface Answers {
   message: null;
   inbox: { readonly messages: readonly Message[] };
   status: Status;
+  invite: { readonly line: string };
+  asks: { readonly asks: readonly Ask[] };
+  admit: null;
+  kick: null;
+  dial: { readonly code: string; readonly check: string };
+  link: LinkStatus | null;
 }
 
 const name = v.pipe(v.string(), v.minLength(1), v.maxLength(LIMITS.name));
@@ -194,6 +244,12 @@ const request = v.variant('op', [
   v.object({ op: v.literal('message'), code: name, to: name, from: name, text }),
   v.object({ op: v.literal('inbox'), session }),
   v.object({ op: v.literal('status') }),
+  v.object({ op: v.literal('invite'), ...writer, name, via: v.picklist(['public', 'tailnet', 'ssh']) }),
+  v.object({ op: v.literal('asks'), session }),
+  v.object({ op: v.literal('admit'), session, code: name, id: name, answer: v.picklist(['let_in', 'refuse', 'kick']) }),
+  v.object({ op: v.literal('kick'), ...writer, name }),
+  v.object({ op: v.literal('dial'), line: v.pipe(v.string(), v.maxLength(LIMITS.short)), name }),
+  v.object({ op: v.literal('link'), code: name }),
 ]);
 
 const placed = { seq: count, hash: v.string() };
@@ -216,6 +272,16 @@ const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
   message: v.null(),
   inbox: v.object({ messages: v.array(v.object({ code: name, from: name, text, at: count })) }),
   status: v.object({ version: count, pid: count, sessions: count }),
+  invite: v.object({ line: v.string() }),
+  asks: v.object({ asks: v.array(v.object({
+    id: name, code: name, kind: v.picklist(['admit', 'again', 'leaked']), name, expected: name, machine: v.string(), check: v.string(), member: v.boolean(),
+  })) }),
+  admit: v.null(),
+  kick: v.null(),
+  dial: v.object({ code: name, check: v.string() }),
+  link: v.nullable(v.object({
+    phase: v.picklist(['waiting', 'connecting', 'online', 'offline', 'host_away', 'stopped']), why: v.nullable(v.string()),
+  })),
 };
 const envelope = v.variant('ok', [v.object({ ok: v.literal(true), value: v.unknown() }), v.object({ ok: v.literal(false), error: v.string() })]);
 

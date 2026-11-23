@@ -325,11 +325,11 @@ export async function connect(stream: Duplex, o: { s: KeyPair; rs: Buffer; paylo
   return channel(stream, io, hs);
 }
 
-/** The host's side. admit() sees the joiner's key and message 3's payload; false ends the stream (null). Nothing past
- *  message 3 is read until it answers. The timeout covers the three messages, not the host's answer. */
+/** The host's side. admit() sees the joiner's key, message 3's payload and the check string; false ends the stream
+ *  (null). Nothing past message 3 is read until it answers. The timeout covers the three messages, not the answer. */
 export async function accept(
   stream: Duplex,
-  o: { s: KeyPair; timeoutMs?: number; admit(remoteKey: Buffer, payload: Buffer): boolean | Promise<boolean> },
+  o: { s: KeyPair; timeoutMs?: number; admit(remoteKey: Buffer, payload: Buffer, check: string): boolean | Promise<boolean> },
 ): Promise<Channel | null> {
   const io = frames(stream);
   const hs = new Handshake(false, { s: o.s });
@@ -341,7 +341,7 @@ export async function accept(
     payload = hs.readMessage(await io.next());
     io.pause();
   } catch (e) { stream.destroy(); throw e; } finally { done(); }
-  try { admitted = await o.admit(key32(hs.remoteKey, 'the joiner key'), payload); } catch (e) { stream.destroy(); throw e; }
+  try { admitted = await o.admit(key32(hs.remoteKey, 'the joiner key'), payload, checkString(key32(hs.hash, 'the handshake hash'))); } catch (e) { stream.destroy(); throw e; }
   if (!admitted || stream.destroyed) { stream.destroy(); return null; }
   return channel(stream, io, hs);
 }

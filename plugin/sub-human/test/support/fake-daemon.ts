@@ -24,6 +24,8 @@ export interface FakeHome {
   down: string | null;
   /** An error one op answers while it is here, by the op's first word in `calls` (`session`, `retire`, …). */
   readonly failing: Map<string, string>;
+  /** What `link` answers per room: a test sets one to `online` as a host letting it in would. */
+  readonly linked: Map<string, { phase: 'waiting' | 'online' | 'stopped'; why: string | null }>;
   /** What status says of the modules. */
   sessions: number;
   /** The daemon's clock. */
@@ -55,7 +57,7 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
   };
   const log = async (code: string): Promise<string> => logFile(roomDir(dir, await fileKey(code)));
   const home: FakeHome = {
-    calls: [], dir, down: null, failing: new Map(), sessions: 1, now: Date.now(),
+    calls: [], dir, down: null, failing: new Map(), linked: new Map(), sessions: 1, now: Date.now(),
     daemon: {
       append: async (code, draft, id) => guard(`append ${code} ${draft.kind} ${draft.from}`) ?? real.handle({ op: 'append', code, draft: { ...draft, id } }),
       putDoc: async (code, d) => guard(`put ${code} ${d.kind} ${d.doc.name}`) ?? real.handle({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
@@ -84,6 +86,10 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
         if (!r.ok) return r;
         return r.value !== null && typeof r.value === 'object' && 'pointer' in r.value ? ok(r.value.pointer) : err('not a claim');
       },
+      // the network is test/net's (two homes); here a line is one fixed answer, and no link is up
+      invite: async (code, from, name, via) => guard(`invite ${code} ${name} ${via} ${from}`) ?? ok({ line: `ssh://devbox/${code}?port=7420#${'0'.repeat(77)}` }),
+      dial: async (line, name) => guard(`dial ${name}`) ?? ok({ code: /\/([a-z]+-\d{4})/.exec(line)?.[1] ?? 'none', check: '1f2e-3d4c' }),
+      link: async code => guard(`link ${code}`) ?? ok(home.linked.get(code) ?? null),
       status: () => Promise.resolve(home.down === null ? ok({ sessions: home.sessions }) : err(home.down)),
     },
     rooms: fsRooms(dir),

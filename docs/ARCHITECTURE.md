@@ -297,7 +297,9 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 ## 8. Network
 
 - **Pathway interface.** One interface, `{dial(line): Promise<Duplex>, listen?(port): Stop}`. Pathways only produce byte streams; everything above them is shared.
-  - `tailscale` runs `tailscale funnel` or `tailscale serve` (HTTPS) to the listener, with `--proxy-protocol=2`. The wire is WebSocket over HTTPS, using `ws`. The joiner's dialer honours `HTTPS_PROXY`. The raw-TCP spike stays unmerged (Q2).
+  - `tailscale` runs `tailscale funnel` (public) or `tailscale serve` (tailnet) with `--tls-terminated-tcp=PORT --proxy-protocol=2 tcp://127.0.0.1:LISTENER`. tailscaled ends TLS for the host's `ts.net` name and forwards plain TCP, each connection led by a PROXY v2 header naming the joiner's address. Only TCP forwarders (`--tcp`, `--tls-terminated-tcp`) carry that header; an `--https` web forward carries none, so it isn't used. Such a forward takes a whole port, and Funnel offers 443, 8443 and 10000: the first one free is taken, one of ours already there is kept (refused, in one line, if it lacks the header), and turning ours off leaves every other forward alone.
+  - The listener reads the PROXY header, then speaks HTTP and upgrades to a WebSocket (`ws`); one WebSocket message carries one Noise frame, so `maxPayload` is a frame plus its 2-byte length (65,537 bytes). The joiner dials `wss://NODE.ts.net[:PORT]/CODE`, through `HTTPS_PROXY` (an HTTP CONNECT, with the proxy URL's user and password) when it is set. The raw-TCP spike stays unmerged (Q2).
+  - A connection with no PROXY header is an `ssh -W` one and carries Noise frames as they are; an HTTP request without the header, or a header naming a loopback source, is refused.
   - `ssh` runs `ssh -W 127.0.0.1:PORT HOST` through any account the joiner has on the host machine. That reaches the same listener, with no shim and no login as the host. It needs `AllowTcpForwarding`, which `doctor` checks.
   - `pipe` is for tests.
 - **Channel.** `net/channel.ts` runs Noise XK (`Noise_XK_25519_ChaChaPoly_SHA256`) on every pathway's stream (R29c). It is the POC's `noise.ts`: `node:crypto` primitives only, no dependencies, checked against the published vectors in CI.
@@ -306,11 +308,11 @@ No Claude Code task file is read or written, and the mirror never waits on a del
   - On the stream, each Noise message is a frame: a 2-byte length, then at most 64 KB. After the handshake, each frame's plaintext starts with a continuation byte (1: the message goes on in the next frame), so a message can be up to 8 MB.
   - The host reads nothing past message 3 until it answers the admission, and holds at most about 128 KB before then. The handshake times out after 10 s.
 - **Protocol.** JSON messages inside the channel (`core/protocol.ts`). Both sides open with `hello {version, min, caps, name, machine}` (R33). The ops are:
-  - to the host: `append {entry}` (the host stamps seq, at, prev and machine, and deduplicates on the entry's id), `put_doc`, `put_blob`;
+  - to the host: `append {entry}` (the host stamps seq, at, prev and machine, and deduplicates on the entry's id), `put_doc`, `put_blob`, and `call {id, req}` for a plan or task request, answered `answer {id, value}`;
   - `subscribe {after_seq, hash}`, answered with `snapshot` (when the cursor is not on the host's chain, a fork) and then `lines` (entries with their hashes);
   - `ack` or `refused {reason}` for each write's id;
   - `message {to}`, for private Claude-to-Claude messages, which are forwarded to the recipient's link and never logged;
-  - `put_doc` from the host, for a document that changed;
+  - `put_doc` and `put_blob` from the host, for a document that changed and for plan text the mirror lacks;
   - `ping` and `pong`, both ways;
   - `bye {reason}` before the host closes a link: `kicked`, `refused`, `skew`, `host_away` or `closed`.
 
@@ -320,7 +322,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
   - a connection with no PROXY v2 header behind Funnel;
   - a handshake whose third message carries neither a known link key nor a valid invite MAC.
 
-  After that, each write's `from` must be a member bound to that link, and system kinds from links are refused. Connections are limited per real source. Writes are rate-limited per link on `append` and `put_blob` (R37, R40).
+  After that, each write's `from` must be a member bound to that link, and system kinds from links are refused. Connections are limited per real source, counted from the PROXY header on, and in all. Every write (`append` and `call`, `put_doc`, `put_blob`, `message`) and `subscribe` is rate-limited per link; a link that subscribes again past its limit gets `bye closed` rather than the room re-sent (R37, R40). Of the 64 connections the listener holds in all, 8 are kept for local (`ssh -W`) ones.
 
 ## 9. Claude Code surfaces
 
