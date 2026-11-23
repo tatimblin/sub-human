@@ -104,6 +104,13 @@ export type Entry =
   | PlanEntry | PlanAsk | PlanAnswer | Decision | PlanSent | PlanAccept
   | TaskEntry | Invite | Admit | Kick;
 export type Kind = Entry['kind'];
+/**
+ * The caps on what the log holds, the one source for schema.ts and the rules: a rule refuses what decodeEntry would
+ * reject, so the host never appends a line it can't read. `names` also caps a task's blockers.
+ */
+export const LIMITS = { name: 64, short: 1024, text: 8000, names: 256, files: 1000 } as const;
+/** An entry as a rule writes it, before the host stamps the envelope fields it owns. */
+export type Draft<E extends Entry = Entry> = E extends Entry ? Omit<E, 'seq' | 'id' | 'at' | 'prev' | 'machine'> : never;
 
 /** An entry with the hash of its own line, which the next entry's `prev` names. The store computes it. */
 export interface LogLine { readonly entry: Entry; readonly hash: string }

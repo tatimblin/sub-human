@@ -6,6 +6,7 @@ import type {
   ActivityDoc, DocKind, DocKinds, Entry, FocusDoc, LogState, MemberRecord, MembersDoc, Plan, PresenceDoc, SentPlan,
   Snapshot, Task, Update,
 } from './entries.js';
+import { LIMITS } from './entries.js';
 import type { Result } from './result.js';
 import { err, ok } from './result.js';
 
@@ -18,11 +19,11 @@ type Same<A, B> = (<X>() => X extends Deep<A> ? 1 : 2) extends (<X>() => X exten
 const exact = <T>() => <S extends Schema<T>>(schema: S, _same: Same<v.InferOutput<S>, T>): Schema<T> => schema;
 
 const count = v.pipe(v.number(), v.integer(), v.minValue(0));
-const name = v.pipe(v.string(), v.minLength(1), v.maxLength(64));
-const short = v.pipe(v.string(), v.maxLength(1024));
-const text = v.pipe(v.string(), v.maxLength(8000));
-const names = v.pipe(v.array(name), v.maxLength(256));
-const files = v.pipe(v.array(short), v.maxLength(1000));
+const name = v.pipe(v.string(), v.minLength(1), v.maxLength(LIMITS.name));
+const short = v.pipe(v.string(), v.maxLength(LIMITS.short));
+const text = v.pipe(v.string(), v.maxLength(LIMITS.text));
+const names = v.pipe(v.array(name), v.maxLength(LIMITS.names));
+const files = v.pipe(v.array(short), v.maxLength(LIMITS.files));
 const opt = v.exactOptional;
 
 const envelope = {
@@ -46,7 +47,7 @@ const task = exact<Task>()(v.object({
   status: v.picklist(['open', 'claimed', 'done']),
   addedBy: name,
   owner: opt(name),
-  blockedBy: v.pipe(v.array(count), v.maxLength(256)),
+  blockedBy: v.pipe(v.array(count), v.maxLength(LIMITS.names)),
   note: opt(text),
   plan: opt(v.object(ref)),
 }), true);
