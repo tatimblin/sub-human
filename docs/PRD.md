@@ -32,7 +32,6 @@ When two or more people each work with their own Claude on related tasks, contex
 - Each Claude knows only its own person's session. Questions like "which port does the server listen on?" or "what shape did you give `listTasks`?" get answered by a person copying and pasting between chats, or by interrupting a teammate.
 - Decisions that affect several people (an API shape, a split of work) are made in one session and relayed by hand, with no record of who agreed to which version.
 - Nobody can see what the others are doing right now, which files they are touching, or when a piece they depend on is done.
-
 - What one session discovers (a bug's cause, a constraint, an interface change, a failing test) stays in that session until its person remembers to tell someone.
 
 Existing options are:
@@ -123,7 +122,7 @@ This is the product. Everything else supports it. The POC scored itself 1/5 here
   - Updates never start a turn on their own (R10).
 - **R15b (P0)** **To the person, ambiently:** one status line, e.g. `vole-8126 · bob (working on paging), carol here · 3 updates`. An update that bears on the person's own work (R15c) is drawn as one dim line; everything else is only counted. `/sub-human news` shows what each member changed and found since the person last looked, drawn by the module with no model call, and clears the count.
 - **R15c (P0)** **Relevance:** an update bears on a member when it touches a file they have edited or opened, a plan or task they are part of, or names them. Across repos, file paths rarely match, so the interfaces a plan names count as well (an endpoint, a type, a schema). Those come first and in full. Others are summarised in one line or left to the catch-up.
-- **R15d (P1)** **Overlap heads-up:** when two members edit the same file, or one changes a file named in an agreed plan, both get one dim line. This is never a wake.
+- **R15d (P0)** **Overlap heads-up**, the main push signal (Q15): when two members edit the same file, or one changes a file named in an agreed plan, both get one dim line. This is never a wake.
 - **R16 (P0)** **Catch-up:** a Claude can read a short summary of the room on demand: who is working on what, recent updates and findings, open plans and their state, open tasks and recent decisions. It is bounded in size and framed as content.
 - **R16a (P2)** Subagents in a member's session show in their activity and are attributed to that member's Claude.
 
@@ -145,7 +144,7 @@ Talking is secondary. People have chat already; these exist so the Claudes can t
   - **This is a known risk, accepted.** Text planted in a repo could still reach my Claude through bob's. The framing, the rule above and the wake budget limit what it can do, but they don't make it impossible. The live gate includes an injection scene (Q-2).
   - A wake waits until my current turn ends and never changes my permission mode.
   - **Bounded:** one wake per question, debounced, so four answers make one wake. There is also a per-person wake budget per hour, after which wakes become unread lines.
-- **R11 (P1)** A Claude answering a question, whether woken by a person's line or handed a colleague Claude's question as context, answers only facts it is sure of, in one line. Anything else (an opinion, a choice) waits for its person, who sees it as unread.
+- **R11 (P1)** A Claude woken by a question, from a person's line or from a colleague's Claude (R10), answers only facts it is sure of, in one line. Anything else (an opinion, a choice) waits for its person, who sees it as unread.
 
 ### 6.4 Plans
 Plans are how one person's Claude learns what another's should do. They stay a core feature. People write them in Claude Code's native plan mode. Reviewing someone else's plan happens in a Claude Code-drawn card, with the full text in a scrollable pane (R21). The plugin never swaps a plan file or forces a mode.
@@ -195,8 +194,8 @@ There are two ways to use them, and either works alone:
 None of that is needed if the room reads the native list instead of writing it.
 
 **Two layers**
-1. **Personal tasks are native and mirrored, read-only.** Whatever native task tool the person's session uses (TodoWrite, or TaskCreate/TaskUpdate where the Task tools are enabled) works untouched. The hooks module's tool-result event on those tools (C1) reads the tool's input and result and publishes each change as an activity update (R12): `bob: started "paging handler" (2 of 5)`.
-   - No files are read or written under the config dir, and no env var or launcher is needed.
+1. **Personal tasks are native and mirrored, read-only.** The person's native Task tools (TaskCreate/TaskUpdate, once they have enabled them, R23a) work untouched; TodoWrite is best-effort (R23c). The hooks module's tool-result event on those tools (C1) reads the tool's input and result and publishes each change as an activity update (R12): `bob: started "paging handler" (2 of 5)`.
+   - No files are read or written under the config dir, and the plugin sets no env var and needs no launcher.
    - It works mid-session and on every machine, because it rides the room log.
 2. **Room tasks are for work handed between people,** with a small room list held by the host:
    - anyone can add a task;
@@ -208,7 +207,7 @@ None of that is needed if the room reads the native list instead of writing it.
    The bridge is the model's own documented tool calls plus a documented hook: no file is shared, and no file format is parsed.
 
 **Requirements**
-- **R23 (P0)** Personal native task changes are mirrored to the room as activity, from the module's `tool.call` results on the native task tools only. Nothing under Claude Code's config dir is read or written. It is on whenever the member is in a room (R14a).
+- **R23 (P0)** Personal native task changes are mirrored to the room as activity, from the module's `tool.call` results on the native task tools only. Nothing under Claude Code's config dir is read or written. It is on whenever the member is in a room (R14a) and the session has the Task tools (R23a).
 - **R24 (P0)** The room task list: add; claim, for oneself only, refused while someone else owns the task; release; and done, owner only. The host applies each change immediately. Reached by the `task` tool, `/sub-human tasks`, the catch-up, and a count on the status line.
 - **R24a (P0)** **Bridge into the native list:** a room task I claim or am handed is added to my native list by my own Claude, carrying the room task id. Native status changes on a tagged task update the room task through R23's hook. If the person's session has no native task tool, the room list still works on its own.
 - **R25 (P1)** A room task can depend on others (`blockedBy`). When a task is done or released, the members who depend on it, or who suggested it, get it as context and one dim line.
@@ -296,7 +295,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
 - **R43 (P0)** One speaker (`sub-human:`), past-tense events, and errors written as "what didn't happen, plus one action".
 - **R44 (P0)** **Glossary of at most 10 user-facing terms,** used the same way in code, docs and copy: room, code, host, member, invite, update, plan, version, agree, task.
   - Internal names match the user-facing ones wherever a user-facing one exists.
-  - Engineering-only names (mirror, link, pathway) never appear in copy.
+  - Engineering-only names (mirror, link, pathway, listener) never appear in copy.
   - Findings, focus and activity are all shown to people as "updates".
 
 ## 7. Platform constraints and dependency policy
@@ -325,11 +324,6 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
   - The POC had 101 entries in total. With the typed and documented ones counted, v2 will have about 25–30.
 - **C3. No fallback chains.** A feature either works or degrades straight to "not available" with one line to the person.
 - **C4. Runtime.** Node 22.18+ with type stripping and no build step. A plugin's MCP server must answer `initialize` even when its tools fail to load, because Claude Code skips a failed server for 15 minutes.
-- **C6. Open-source dependencies for solved problems.**
-  - **The rule:** where a maintained open-source package solves a problem, v2 uses it instead of writing its own. This covers replication and sync, encryption, peer connection, invites, validation, file locking and CLI parsing. The POC's no-dependency rule is dropped.
-  - **What a dependency needs:** active maintenance, a permissive licence, a real user base, and a pinned version. Native addons are allowed when they ship prebuilt binaries for macOS (arm64, x64) and Linux (x64, arm64).
-  - **What v2 writes itself:** only the product: relevance, wakes, plans, tasks, activity capture and the Claude Code adapter.
-  - **How dependencies get installed:** they must reach the user with the plugin, either vendored in the plugin directory with a lockfile, or installed once into the plugin's data directory on first run. Which of the two is settled in M0 (Q13).
 - **C5. Process count.** Per session there are two processes: the module, which runs in-process and does the following, delivery and status line, and the MCP server. There is no tail child.
 
   Per machine, only for rooms that span machines:
@@ -337,6 +331,12 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
   - one **link daemon** per room, on each mirror.
 
   Nothing else is started.
+- **C6. Open-source dependencies for solved problems.**
+  - **The rule:** where a small, maintained open-source package solves a problem, v2 uses it instead of writing its own. The POC's no-dependency rule is dropped. The chosen set covers validation, file locking, atomic writes, ignore-pattern matching, plan diffs and the Funnel WebSocket wire (ARCHITECTURE §2a).
+  - **Deliberate exceptions,** each weighed and recorded: the Noise channel (Q2), the log (Q14) and invites (Q14) stay ours, because the packaged alternatives cost far more than the code they would replace.
+  - **What a dependency needs:** active maintenance, a permissive licence, a real user base, and a pinned version. Native addons are allowed when they ship prebuilt binaries for macOS (arm64, x64) and Linux (x64, arm64).
+  - **What v2 writes itself:** the product (relevance, wakes, plans, tasks, activity capture, the Claude Code adapter) and the exceptions above.
+  - **How dependencies get installed:** they must reach the user with the plugin, either vendored in the plugin directory with a lockfile, or installed once into the plugin's data directory on first run. Which of the two is settled in M0 (Q13).
 
 ## 8. Architecture direction (keep / change / drop)
 
@@ -351,7 +351,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
 
 ## 9. Quality and verification
 
-- **Q-1. Deterministic scenes.** Each reference scene (join, live update reaching a colleague's Claude, relevance, ask, plan and agree, split, leave, remote join) runs without a live model, against the memory store and a fake clock, in CI.
+- **Q-1. Deterministic scenes.** Each reference scene (join, live update reaching a colleague's Claude, relevance, overlap heads-up, ask and Claude-to-Claude wake, plan and agree, send a plan, split, leave, remote join) runs without a live model, against the memory store and a fake clock, in CI.
 - **Q-2. Small live gate.** One named live run per release, at a known cost, across the three permission modes. It covers at least three workflows: no-plan pairing, plan-then-build, and non-code writing. It also includes an injection scene: a planted instruction travels through one Claude's direct message, and it must not lead the recipient to run anything unattended.
 - **Q-3. Test-to-runtime ratio** of at most 1:1. Remote end-to-end tests are deterministic over the memory and pipe transports. Any Docker lab runs in CI or is deleted.
 - **Q-4. Canary.** A nightly probe of the (small) internals list against Claude Code `latest` and `next` stays.
@@ -386,15 +386,17 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
 
 ## 11. Milestones
 
-1. **M0, Foundations.** Log and snapshot, store seam, folds, memory store, the scene harness on `claude plugin test`. The typings snapshot is refreshed, and the surface table (ARCHITECTURE §9) is checked against it.
-2. **M1, Live updates on one machine.** Join and leave, activity and findings (R12–R14a), delivery to Claude and status line (R15–R16), `SendMessage`, the R10 wake rule. Covers "work as normal; my colleague is kept up to date" end to end. `@room` (R8) only if it's cheap.
+1. **M0, Foundations.** Log and snapshot, store seam, schemas, folds, memory store, the scene harness on `claude plugin test`. The typings snapshot is refreshed, the surface table (ARCHITECTURE §9) is re-checked against it (Q1), and the way dependencies ship is decided (Q13).
+2. **M1, Live updates on one machine.** Join and leave, activity and findings (R12–R14a), delivery to Claude, the status line and `/sub-human news` (R15–R16), the overlap heads-up (R15d), `SendMessage` taken over, the R10 wake rule. Covers "work as normal; my colleague is kept up to date" end to end. `@room` (R8) only if it's cheap.
 3. **M2, Plans.** Versioned plans, compare-and-swap, the question at plan approval, sent plans, owners on parts, and review on the AskUserQuestion card plus the scrollable pane. R19's three properties are tested.
 4. **M3, Tasks.** Native-list mirroring (R23, R23b), the room list (R24), the bridge into each person's native list (R24a), dependencies and done notices. (Q11 is answered.)
 5. **M4, Remote.** Transport layer; Tailscale pathway (Funnel and Serve, WebSocket over HTTPS, hardened); ssh pathway (`ssh -W`); name-bound invite; mirror with snapshot sync; reconnect engine; kick. Ships with M1–M3 if early users need it first; most will.
-6. **M5, Relevance tuning.** Overlap heads-up (R15d), relevance ranking from real use, subagent activity (R16a).
+6. **M5, Relevance tuning.** Relevance ranking from real use, subagent activity (R16a).
 7. **M6, Release.** Live gate, README, migration note. 0.8.x rooms are not migrated: v2 starts clean.
 
-## 12. Open questions
+## 12. Decisions and open questions
+
+Still open: Q1's per-requirement surface table and Q13, both settled in M0, and Q12, a feature request to Anthropic. Everything else is decided.
 
 - **Q1. The hooks module. Decided: build on it (C1).** Open sub-question: which `$` surfaces v2.0 uses for each requirement. Make one table per requirement, checked against the current typings in M0.
 - **Q2. The common security layer. Decided: Noise XK on every pathway, using the POC's own `noise.ts` (R29c).**
@@ -423,13 +425,9 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
   *The wire, closed.* The TLS-terminated-TCP spike worked locally, but it is not adopted. Proxies that inspect TLS drop raw TCP, and Node's `tls.connect` ignores `HTTPS_PROXY`. The Funnel wire stays WebSocket over HTTPS, using the `ws` package (R29a), and the spike branch stays unmerged. Record the tailnet identity in `who` when Serve provides it.
 - **Q3. Admission. Decided:** the invite line, which can't be guessed, plus the host's Let in / Refuse (R30). No PIN.
 - **Q4. Cross-machine Claude-to-Claude. Decided:** private, as it is locally (R6). Relayed messages are delivered only to the recipient. The owner has no preference; this is the simpler choice and matches native behaviour.
+- **Q5. A room row. Dropped:** v2 has no agent-panel row; presence and unread counts live on the status line (§4).
 - **Q6. Scope of a room. Decided:** not tied to a repo or directory (R1). The example: a front-end dev in one repo, the back end in another.
 - **Q7. Sharing from plan mode. Decided:** a hook (R18), asked once at plan approval: keep, room plan, or send to NAME. The review confirmed there is no module event for entering plan mode. Approval is the typed `ExitPlanMode` result (`{plan, filePath}`); the shape of a rejection is internal.
-- **Q13. Shipping dependencies.** Vendor `node_modules`, with native prebuilds, in the plugin directory? Or install once into the plugin's data directory on first run? Check what Claude Code's plugin install supports, and what it costs in install size and first-run time. M0.
-- **Q14. Holepunch for invites and connecting. Closed (spike):** keep our own invite code.
-  - The log stays ours too. Hypercore and Autobase are not used: one trusted writer needs no peer replication, multiple writers only serve host failover (a non-goal), and Hypercore 11 pulls in about 126 MB of RocksDB.
-  - `blind-pairing` works, tested on a local testnet and inside our Noise channel. But inside Noise XK its "blind" property adds nothing, and it brings 19 MB of sodium-native to replace about 100–150 lines. Its last release was October 2024. A 128-bit secret sent inside Noise does the same job in about 20 lines (R30).
-  - `hyperswarm` connected in 15–24 ms on the testnet. It is UDP only, so it fails on the networks ssh exists for. It is deferred to P2, as an opt-in "no Tailscale on either side" pathway with Noise inside, at about 13 MB of native code.
 - **Q8. The reviewer's view. Decided:** an AskUserQuestion card, shown through `$.tool.call`, plus a scrollable module pane for the full plan (R21).
   - Showing a reviewer someone else's plan in their native plan view has no documented surface. `ExitPlanMode` takes no plan text and shows the session's own plan file, so it would mean the swap again.
   - The owner dislikes cards because they can't scroll. The card holds the summary, the diff and the answer; the pane holds the full text.
@@ -439,18 +437,23 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
   - Findings (R13) only ride a turn that is already running, and never cost one of their own.
   - Tokens per hour are measured in the live gate.
 - **Q10. Default on. Decided:** sharing is always on in a room; not joining one is the opt-out (R14a). There is no pause and no per-room mode.
-- **Q11. Native task hooks. Answered (spike, 2.1.296):** the events are rich enough to mirror and bridge, but current models get no task tool unless the person sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`. So the bridge is opt-in, and the room list stands on its own (R23a–R23c).
+- **Q11. Native task hooks. Answered (spike, 2.1.296):** the events are rich enough to mirror and bridge, but current models get no task tool unless the person sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`. So the bridge works for people who enable the Task tools, it stays P0 (Q15), and the room list stands on its own (R23a–R23c).
 - **Q12. Ask for native tasks by default?** Should Anthropic be asked to expose the Task tools to plugins (e.g. a plugin-declared opt-in), so the bridge works without a launch env var? This is the feature request C2 calls for.
-- **Q15. Reviewer proposals pending the owner's decision.** The 2026-11-22 adversarial review proposed three changes that are not applied:
-  - **C2, smaller plans:** one plan concept with agreement optional, deferring sent plans, owners and merging (R22b–R22e, R20) to v2.1.
-  - **C3, priorities:** overlap heads-up (R15d) to P0 as the main push signal, with findings pushed only when relevant. R15a already pushes only relevant updates.
-  - **C4, task bridge to P1:** move R23 and R24a to P1, because native task tools are off by default. Room tasks and done and blocked notices stay P0.
+- **Q13. Shipping dependencies.** Vendor `node_modules` in the plugin directory, or install once into the plugin's data directory on first run? Check what Claude Code's plugin install supports, and what it costs in install size and first-run time. The chosen set has no native code (ARCHITECTURE §2a), so vendoring is the likely answer. Decided in M0.
+- **Q14. Holepunch for invites and connecting. Closed (spike):** keep our own invite code.
+  - The log stays ours too. Hypercore and Autobase are not used: one trusted writer needs no peer replication, multiple writers only serve host failover (a non-goal), and Hypercore 11 pulls in about 126 MB of RocksDB.
+  - `blind-pairing` works, tested on a local testnet and inside our Noise channel. But inside Noise XK its "blind" property adds nothing, and it brings 19 MB of sodium-native to replace about 100–150 lines. Its last release was October 2024. A 128-bit secret sent inside Noise does the same job in about 20 lines (R30).
+  - `hyperswarm` connected in 15–24 ms on the testnet. It is UDP only, so it fails on the networks ssh exists for. It is deferred to P2, as an opt-in "no Tailscale on either side" pathway with Noise inside, at about 13 MB of native code.
+- **Q15. The review's open proposals. Decided by the owner (2026-11-22):**
+  - **C2, plans:** kept as designed: shared plans with owners and per-version agreement, plus sent plans (R17–R22e).
+  - **C3, what is pushed:** only relevant updates, under the ~400-token cap (R15a). The overlap heads-up (R15d) is promoted to P0 as the main push signal and ships in M1.
+  - **C4, task bridge:** stays P0 (R23–R24a). It works for anyone who enables the Task tools, and the room list works without them.
 
 ## Appendix A. Evidence
 
 These findings come from five parallel surveys of the 0.8.1 tree (2026-11-22). Sources in the repo:
 - **Architecture and design:** `docs/archive/ARCHITECTURE-0.8.md`, `plugin/sub-human/README.md`, `plugin/sub-human/lib/cc/contract.json` (101 entries).
-- **Adversarial review (2026-11-22):** five reviews (overengineering and prior art, design flaws, platform feasibility, network and security, product and UX) plus the Q11 and Q14 spikes. Applied in this revision, except Q15.
+- **Adversarial review (2026-11-22):** five reviews (overengineering and prior art, design flaws, platform feasibility, network and security, product and UX) plus the Q11 and Q14 spikes. All applied, with the owner's Q15 decisions.
 - **Design reviews:** `docs/next/quiet/{PRINCIPLES,COPY,GOAL-REVIEW,EVALUATION,WORTH}.md`, `docs/next/ROOM-PLAN.md`.
 - **Claude Code internals notes:** `docs/internals/cc-2.1.302.md`.
 - **Open issues:** #8, #9, #12, #15, #20, #21, #34–#39.
