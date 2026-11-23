@@ -11,7 +11,7 @@ How v2 is tested. It pairs with `docs/PRD.md` (requirements R…, quality bar Q-
 | 1. Unit | `node:test` | every commit | the pure `core/` rules |
 | 2. Store contract | `node:test` | every commit | fs, mirror and memory stores behave the same |
 | 3. Module | Claude Code's test kit (`claude plugin test`) | every commit | the hooks module reacts to Claude Code events correctly |
-| 4. Edges | `node:test` | every commit | command hooks, the MCP server, the CLI |
+| 4. Edges | `node:test` | every commit | command hooks, the module-to-node bridge, vendored files, the CLI |
 | 5. Network | `node:test`, two homes in one process | every commit | sync, admission, kick, reconnect, hardening |
 | 6. Canary | real Claude Code binary, no model | nightly, on `latest` and `next` | Claude Code still behaves as the contract says |
 | 7. Live gate | real sessions, real model | once per release | the product works, and is quiet and cheap enough |
@@ -97,15 +97,17 @@ test('a relevant colleague change reaches my next prompt, capped', async ($, on)
 | Capture (R12, R23) | `$.tool.call` with recorded results (Edit, Bash with `gitOperation`, TaskCreate, TaskUpdate) | the right document or entry is written; secrets are refused |
 | Context (R15a) | `$.prompt.submit` | only relevant updates, datamarked, under the cap; nothing for broadcasts that don't bear on my work |
 | Status and news (R15b, R16) | `mock.clock` advance | the `ui.status` text; `/sub-human news` renders with no model call |
-| Wakes (R10) | `$.session.receive({ origin: { kind: 'peer-send-message' }, … })`, `$.turn.complete(...)` | one `prompt.submit` after the turn ends; debounce and budget; in auto mode a command-bearing message is drawn, not submitted; the permission mode is untouched |
-| Messages (R6) | `$.session.receive`; stub `session.send` → `{ isDelivered: true }` | native delivery is taken over; a remote recipient goes to the link, never the log |
-| Plans (R18–R22) | `$.tool.call({ tool: 'ExitPlanMode', … })` with a recorded result | the keep / room / send question; the review card arrives as a `tool.call` to `AskUserQuestion`, stubbed to answer; the plan pane is mounted and scrolls |
+| Messages (R6), sender side | a `SendMessage` to `bob.CODE`, which fires the module's `session.send` hook | answered `{ isDelivered: true }` without `next`; the message goes to the room channel stamped with the sender, never the log. **The M1 risk test:** run under `claude plugin test` against the real engine to show the answer without `next` is honoured. |
+| Wakes (R10), recipient side | a scripted incoming message on the room channel, then `$.turn.complete(...)` | one `prompt.submit` after the turn ends, framed `bob's Claude asks: …`; debounce and budget; a retry when `isAborted`; in every mode, a command- or URL-bearing message is drawn, not submitted; the permission mode is untouched |
+| Claude's tools (§6 of ARCHITECTURE) | `$.tool.run` for `share`, `read`, `plan`, `task` | each registered with `$.tool.register`; one-line answers; plan compare-and-swap conflicts; secrets refused on `share` |
+| Plans (R18–R22) | `$.tool.call({ tool: 'ExitPlanMode', … })` with a recorded result | the keep / room / send question; the review card from `ui.ask` (it arrives as a `tool.call` to `AskUserQuestion`), stubbed to answer Agree, Ask for changes (Other) or Read the full plan; the last one mounts the pane, which scrolls |
 | R19's three properties | the plan flows above | the person's own plan file is never written (`fs.write` stub records nothing); the mode is unchanged |
 | Admission (R30) | host side: a knock arrives | `ui.ask` Let in / Refuse with name, machine and check string; a second dial alerts |
 | Panes | `$.ui.mount({ component: 'Pane', … })`, `ui.press`, `ui.find` | the plan pane and the news view draw and scroll |
 | Degradation (C3) | `mock.env`, refused stubs | a missing surface gives one line, never a fallback chain |
 
-**Kit facts this plan relies on.** Each needs a check against the refreshed typings in M0:
+**Kit facts this plan relies on.** Each needs a check against the refreshed 2.1.330 typings in M0:
+- The module imports the vendored files (`vendor/*.mjs`) by relative path under the kit, as the Q13 spike showed for valibot and diff.
 - Stubs must be registered before the first `$` call.
 - `$.ui.ask` arrives as `tool.call` to `AskUserQuestion`.
 - `mock.clock` starts at 0; `advance` resolves after due timers.
@@ -118,7 +120,8 @@ test('a relevant colleague change reaches my next prompt, capped', async ($, on)
 | Gap | Covered by |
 |---|---|
 | No model runs | the canary and live gate (§7, §9) |
-| No command hooks (`hooks.json`) or MCP servers | the edge tests (§5) |
+| No command hooks (`hooks.json`) | the edge tests (§5). There is no MCP server to test; Claude's tools are module tools, tested here through `tool.run`. |
+| No node children (listener, link daemon) | the network tests (§6); the module side stubs `$.process.spawn` and `$.http.fetch` |
 | No two real sessions at once | one side is scripted here; two-sided behaviour is tested in the store and network tests (§3, §6) and in the live gate |
 | It doesn't check painting | `ui.find` on mounted trees is enough |
 
@@ -127,7 +130,8 @@ The kit needs hooks modules turned on in the shell that runs it. If they're off,
 ## 5. Edge tests (`node:test`)
 
 - **Command hooks.** Each `hooks.json` handler (the `/sub-human` expansion, `SessionEnd`, and the policy-surviving plan and title hooks, F7) runs with recorded stdin fixtures. The tests assert its stdout `Reply` and exit code, and that nothing is written to stderr on success.
-- **The MCP server** is spawned over stdio. JSON-RPC drives `initialize`, `tools/list` and each tool (`share`, `read`, `plan`, `task`). It must answer `initialize` even when tool loading fails (C4).
+- **The module-to-node bridge:** the listener and link daemon answer the module's loopback `$.http.fetch` calls, detach from their parent, and exit when no local session is left in the room.
+- **Vendored files:** `scripts/vendor.ts --check` fails when `vendor/VENDOR.json` disagrees with the pinned devDependencies or the file hashes; each vendored file loads in node.
 - **CLI and commands:** `parseArgs` cases; every `/sub-human` verb against a temp home.
 
 ## 6. Network tests
@@ -159,7 +163,7 @@ Any failure files one line per feature, and turns that feature off through `SUB_
 ## 8. Fixtures from real Claude Code
 
 Stubs are only honest if their shapes are real.
-- `test/fixtures/cc/<version>/` holds recorded payloads: tool results (Edit, Bash with `gitOperation`, TaskCreate, TaskUpdate, ExitPlanMode, AskUserQuestion answers), `session.receive` peer messages, and hook stdin.
+- `test/fixtures/cc/<version>/` holds recorded payloads: tool results (Edit, Bash with `gitOperation`, TaskCreate, TaskUpdate, ExitPlanMode, AskUserQuestion answers), `session.send` calls, and hook stdin.
 - They're recorded once per Claude Code version by a small capture script, as in the Q11 spike's `r1`–`r4` runs, using `claude -p` with a logging hook and the default model. That costs about $0.40 per refresh.
 - The canary checks the fixtures against the typings.
 - Unit and module tests import fixtures; they never build tool results by hand.
@@ -194,8 +198,8 @@ These are real Claude sessions with the default model, never pinned, and their c
 
 | Milestone | Tests that land with it |
 |---|---|
-| M0 | `node:test` harness; kit smoke test; fixtures capture script and the first recording; store contract on the memory store; schemas and Noise vectors |
-| M1 | unit tests for `deliver`, `activity` and the filter; module tests for capture, context, status, news, messages and wakes; edge tests for command hooks and the MCP server |
+| M0 | `node:test` harness; kit smoke test; vendored files and their drift check; fixtures capture script and the first recording; store contract on the memory store; schemas and Noise vectors |
+| M1 | unit tests for `deliver`, `activity` and the filter; module tests for capture, context, status, news, messages (including the sender-side risk test), wakes and tools; edge tests for command hooks and the bridge |
 | M2 | plan rules; card and pane module tests; R19's properties |
 | M3 | task rules and the bridge mapping; TaskCreate and TaskUpdate fixtures |
 | M4 | network tests (§6); the fake `ssh` and `tailscale`; the manual Funnel check |

@@ -4,9 +4,7 @@ How v2 is built. It is the design for `docs/PRD.md`; requirement numbers (R…) 
 
 ## 1. Shape in one paragraph
 
-Each Claude Code session in a room runs two pieces of sub-human:
-- a **hooks module**, in-process, which watches the session's work, delivers updates to it and draws the status line;
-- an **MCP server**, which gives that session's Claude a few tools.
+Each Claude Code session in a room runs one piece of sub-human: a **hooks module**, in-process. It watches the session's work, delivers updates to it, draws the status line, and registers Claude's few tools (`$.tool.register`). There is no MCP server. The module has no Node, so network work (the link, Noise, WebSocket) runs in node children it starts.
 
 One machine is the room's **host**. It holds the room's **log**, an append-only list of entries, and applies every write. Other machines keep a **mirror** of the log, fed by one **link** per room over Tailscale or ssh. Everything a person sees and every piece of context a Claude gets is computed by pure functions over the log. Everything else is a thin adapter around those functions.
 
@@ -14,11 +12,11 @@ One machine is the room's **host**. It holds the room's **log**, an append-only 
  machine A (host)                                          machine B
 ┌─────────────────────────────────────────┐              ┌──────────────────────────────┐
 │ Claude Code session (alice)             │              │ Claude Code session (bob)    │
-│  ├─ hooks module ─┐   ├─ MCP server ─┐  │              │  ├─ hooks module  ├─ MCP     │
-│  │ capture·deliver│   │ share·read·  │  │              │  │                │          │
-│  │ status·plans   │   │ plan·task    │  │              │  └──────┬─────────┴───┬──────┘
-│  └───────┬────────┘   └──────┬───────┘  │              │         │ MirrorStore │       │
-│          └── FsStore (host) ─┘          │◄── link ────►│   link daemon (1 per room)    │
+│  └─ hooks module ──────────────────┐    │              │  └─ hooks module ────┐       │
+│     capture·deliver·status·plans   │    │              │     (same)           │       │
+│     tools: share·read·plan·task    │    │              │                      │       │
+│                                    │    │              │        MirrorStore ──┘       │
+│          FsStore (host) ───────────┘    │◄── link ────►│   link daemon (node child)    │
 │   rooms/CODE/log.jsonl  docs/  plans/   │  Tailscale   │   rooms/CODE/ (mirror copy)   │
 │   listener 127.0.0.1 ← tailscaled/sshd  │  or ssh      │                               │
 └─────────────────────────────────────────┘              └───────────────────────────────┘
@@ -28,7 +26,7 @@ One machine is the room's **host**. It holds the room's **log**, an append-only 
 
 These hold for every module; review against them.
 
-1. **Pure core, thin edges.** Rules live in `core/` as pure functions of `(state, input, now)`: folds, delivery, relevance, plan and task rules, the link state machine. Edges (module, MCP, store, net) only translate events and do I/O. Every edge stays under about 150 lines.
+1. **Pure core, thin edges.** Rules live in `core/` as pure functions of `(state, input, now)`: folds, delivery, relevance, plan and task rules, the link state machine. Edges (module, store, net) only translate events and do I/O. Every edge stays under about 150 lines.
 2. **One way to do each thing.** One transport layer, one handshake, one store interface, one delivery function. No fallback chains (PRD C3): a feature either works or says, in one line, that it's unavailable.
 3. **Names are the glossary.** These are used in code, copy and docs alike: room, code, host, member, invite, update, plan, version, agree, task.
    - There are no private nicknames (row, keeper, seat, lane, tail, walk).
@@ -46,15 +44,26 @@ Small, single-purpose packages with few or no dependencies of their own. Each on
 
 | Problem | Package | Size, deps | Replaces in the POC | Status |
 |---|---|---|---|---|
-| Validating outside data | `valibot` | 1.8 MB, 0 deps | the hand-written decoders | chosen |
-| Locks on the host store | `proper-lockfile` | 29 KB, 3 deps | `lock.ts` | chosen |
-| Crash-safe document writes | `write-file-atomic` | 12 KB, 1 dep | ad-hoc temp-and-rename | chosen |
-| Not sharing ignored, excluded or secret files (R12, R14a) | `ignore` | 131 KB, 0 deps | none (new); gitignore semantics, used for our own patterns too | chosen |
-| The diff since the last version, on the review card (R21) | `diff` | 601 KB, 0 deps | none (new) | chosen (M2) |
-| The Funnel wire: WebSocket over HTTPS, proxy-friendly (R29a) | `ws` | small, 0 deps | `ws.ts` (346 lines) | chosen |
-| Peer connection without Tailscale | `hyperswarm` | ~13 MB, mostly udx-native binaries; UDP only | none (an optional third pathway) | P2, opt-in (Q14) |
+| Problem | Package | Vendored as | Runs in | Status |
+|---|---|---|---|---|
+| Validating outside data | `valibot` | `vendor/valibot.mjs` (206 KB) | module and node | chosen |
+| Not sharing ignored, excluded or secret files (R12, R14a) | `ignore` | `vendor/ignore.mjs` (50 KB; CommonJS wrapped as ESM) | module | chosen |
+| The diff since the last version, in the review pane (R21) | `diff` | `vendor/diff/` (its `libesm`, 152 KB) | module | chosen (M2) |
+| The Funnel wire: WebSocket over HTTPS, proxy-friendly (R29a) | `ws` | `vendor/ws/` (176 KB) | node children only | chosen |
+| Peer connection without Tailscale | `hyperswarm` | — (~13 MB, mostly udx-native; UDP only) | — | P2, opt-in (Q14) |
 
-The chosen set is about 3 MB with no native code; valibot is most of it.
+**Vendored, not installed** (PRD Q13):
+- **Why:** the hooks module imports only its own files by relative path. `claude plugin validate` refuses a bare specifier or `node_modules`, so no package manager can serve it.
+- **Where:** each package's ESM build is committed under `plugin/sub-human/vendor/`, with its LICENSE, about 580 KB in all. Module and node code import it by relative path.
+- **No install step:** the plugin root has no lockfile, so Claude Code's automatic `npm ci` never runs, and nothing is installed at run time.
+- **Drift check:** the repo root's `package.json` pins each package as an exact devDependency (which also supplies the types). `scripts/vendor.ts` copies the files and records versions, lockfile integrity and file hashes in `vendor/VENDOR.json`. `npm test` fails on drift.
+- **Lint:** `vendor/` is excluded from lint and the cast ratchet. `directory-lint`'s invisible-character rule exempts it, after checking that its non-ASCII characters are visible ones.
+
+**Dropped:**
+- `proper-lockfile`: no release since 2021, and CommonJS.
+- `write-file-atomic`: its current version excludes Node 22.18–22.22.1.
+
+`node:fs` covers both: a lock is `open('wx')` with a stale-mtime check, and a crash-safe write is temp file, fsync, rename.
 
 **Ours on purpose**
 
@@ -64,10 +73,13 @@ The chosen set is about 3 MB with no native code; valibot is most of it.
 | **The log** | A hash-chained JSON-lines file in `store/` (§4), a few hundred lines. Presence, activity and focus stay JSON documents. |
 | **Invites and admission** | A 128-bit secret sent inside Noise, compared in constant time, about 20 lines (R30). The Q14 spike rejected `blind-pairing`: it brings 19 MB of sodium-native, inside Noise it adds nothing, and its last release was October 2024. |
 | **Tailscale control** | No maintained package exists; `net/pathways/tailscale.ts` drives the `tailscale` CLI. |
-| **The stdio MCP server** | About 150 lines of JSON-RPC. `@modelcontextprotocol/sdk` is 4.4 MB with 17 dependencies (express, hono, ajv, zod and more), mostly HTTP server code we would never run. |
+| **Claude's tools** | Registered by the module with `$.tool.register` (typed). There is no MCP server, so no `@modelcontextprotocol/sdk` (4.4 MB, 17 dependencies) and no reliance on the MCP failure cache. |
 | **A PROXY-protocol v2 parser** | It is mandatory behind Funnel (R29a) and small. |
 
-**From Node or the system:** `node:crypto` (keys, hashes, ids), `node:util` (`parseArgs`, `styleText`), `node:test` with `mock.timers`, `fs.watch` (in the listener and link daemon, which are node processes); the `ssh`, `git` and `tailscale` commands. The person's own ssh config, agent and `known_hosts` are respected.
+**From Node, the module runtime or the system:**
+- Node: `node:crypto` (keys, hashes, ids), `node:util` (`parseArgs`, `styleText`), `node:test` with `mock.timers`, `fs.watch` in the node children, and `node:fs` for locks and crash-safe writes.
+- The module runtime: the global `crypto.subtle.digest`, for the hash chain inside the module.
+- The system: the `ssh`, `git` and `tailscale` commands. The person's own ssh config, agent and `known_hosts` are respected.
 
 **Not used**
 - **Hypercore, Autobase, Hyperbee.** v2's log has one trusted writer, and mirrors want the whole log, so peer replication, Merkle proofs and sparse sync buy nothing. Autobase's multiple writers would only help host failover, a PRD non-goal. Hypercore 11 also pulls in `rocksdb-native`, about 126 MB.
@@ -76,10 +88,9 @@ The chosen set is about 3 MB with no native code; valibot is most of it.
 - **`@peculiar/x509`, `node-forge`:** we don't need TLS certificates.
 - **`chokidar`:** the module has no file watch and polls a small file; the node processes use `fs.watch`.
 - **`ssh2`:** it would ignore the person's own ssh config, agent and `known_hosts`.
-- **git libraries:** the repo comes from `session.repo`; the branch, and anything else, is one `git` command.
+- **git libraries:** the repo comes from `session.repo`. The branch, and anything else, is one `git` command through `$.process.run`, or `$.vcs.detect`, which is experimental.
 - **Secret scanners:** we use a curated MIT pattern list (from gitleaks) as data, matched with `ignore` and a few regexes.
-
-Dependencies reach the user either vendored in the plugin directory or installed into its data directory on first run (PRD Q13, decided in M0).
+- **`proper-lockfile`, `write-file-atomic`:** see "Dropped" above.
 
 **Packages we could publish.** We only publish what nobody else offers (checked 2026-11-22):
 - `tailscale-expose`, for giving a local port a Funnel or Serve URL with conflict handling. It is built as `net/pathways/tailscale.ts` behind a clean interface, and published once v2 is stable. The name appears free on npm.
@@ -104,7 +115,7 @@ The room protocol and channel stay internal.
 
 ```
 plugin/sub-human/
-  core/            pure: no node:fs, no net, no Claude Code
+  core/            pure: no node:fs, no net, no Claude Code; loadable by the module and by node (relative imports only)
     entries.ts       entry and document types; the 15 kinds (§4)
     schema.ts        valibot schemas for everything read from outside
     fold.ts          snapshot + log → RoomState (members, presence, focus, plans, decisions, tasks)
@@ -120,19 +131,20 @@ plugin/sub-human/
     fs-store.ts      host: log file, documents, plan blobs, locks
     mirror-store.ts  remote: local copy plus writes sent to the host
     memory-store.ts  tests
-  module/          the hooks module (Claude Code edge)
+  module/          the hooks module (Claude Code edge); no Node, relative imports only
     register.ts      wires the event handlers below; nothing else
     capture.ts       tool.call → activity documents and events; task-tool mirroring (R12, R23)
-    follow.ts        polls the store's tail file ($.clock.every); feeds deliver()
-    context.ts       prompt.submit context: relevant updates since the last turn, capped (R15a)
+    follow.ts        polls the store's tail file ($.clock.every + $.fs.stat/read); feeds deliver()
+    context.ts       prompt.submit context: relevant updates since the last turn, capped (R15a); session.append notes mid-loop (R15d)
     status.ts        ui.status line; /sub-human news (R15b)
-    wake.ts          prompt.submit at turn end (R10)
-    messages.ts      session.receive: takes over SendMessage delivery; relays remote ones (R6)
-    plans.ts         ExitPlanMode result → keep / room / send; review card ($.tool.call AskUserQuestion) + pane (ui.open) (R18–R22e)
-  mcp/
-    server.ts        tools: share, read, plan, task (§6)
+    wake.ts          $.prompt.submit once idle; retry on turn.complete.isAborted (R10)
+    messages.ts      session.send caught at the sender for NAME.CODE; carried over the room channel (R6)
+    plans.ts         ExitPlanMode result → keep / room / send; review card (ui.ask) + pane (ui.open) (R18–R22e)
+    tools.ts         Claude's tools via $.tool.register + tool.run: share, read, plan, task (§6)
+    bridge.ts        talks to the node children over $.http.fetch (loopback) or files
+  vendor/          committed ESM builds of the dependencies, plus VENDOR.json (§2a)
   commands/        /sub-human verbs, one small file each: (bare), invite, join, who, tasks, leave, kick, help, doctor
-  net/
+  net/             node children only (the module can't load node:crypto or ws)
     channel.ts       Noise XK over any Duplex (the POC's noise.ts, kept; vectors in CI)
     pathways/        tailscale.ts (Funnel | Serve, WebSocket), ssh.ts (ssh -W), pipe.ts (tests)
     host.ts          host side: accept, PROXY v2, handshake, admission, serve ops
@@ -150,7 +162,7 @@ test/              scenes (§12) and unit tests, beside the code they test
 - Each entry: `{seq, id, at, prev, from, by, kind, …}`.
 - `seq` is assigned by the host, and it is the sync cursor; `at` is the host's clock.
 - `from` is the member. `by` is `person`, `claude` or `system`, a label only (R35). The wake rule reads it: a `by: person` line can wake by naming someone, and a `by: claude` broadcast never does. Direct Claude-to-Claude messages aren't log entries (R6).
-- `prev` is the hash of the previous line, so a mirror detects a fork (R36).
+- `prev` is the hash of the previous line, so a mirror detects a fork (R36). The module computes it with `crypto.subtle.digest`.
 - Only the host appends.
 
 | Kind | Written by | Meaning |
@@ -184,18 +196,19 @@ test/              scenes (§12) and unit tests, beside the code they test
 
 | Process | Where | Lifetime | Job |
 |---|---|---|---|
-| Hooks module | inside each Claude Code session | the session | capture, follow, deliver, status, plan hooks, message delivery, wakes |
-| MCP server | child of each session (stdio) | the session | Claude's tools; it answers `initialize` even if loading fails (C4) |
-| Listener | host, one per home | while the host has a session in a room with remote members | the `127.0.0.1` port behind tailscaled (Funnel or Serve) or reached by `ssh -W`; accepts links; holds a sleep assertion while links are live |
-| Link daemon | each mirror, one per room | while a local member is in the room | runs `link-engine`; keeps the mirror in sync; relays writes and private messages |
+| Hooks module | inside each Claude Code session | the session | capture, follow, deliver, status, plan hooks, message routing, wakes, Claude's tools |
+| Listener (node) | host, one per home | while the host has a session in a room with remote members | the `127.0.0.1` port behind tailscaled (Funnel or Serve) or reached by `ssh -W`; accepts links; holds a sleep assertion while links are live |
+| Link daemon (node) | each mirror, one per room | while a local member is in the room | runs `link-engine`; keeps the mirror in sync; relays writes and private messages |
+
+The module starts the node processes with `$.process.spawn` and talks to them over `$.http.fetch` to loopback, or through files. Spawned children die when the module unloads. So the listener and link daemon detach themselves, and they exit on their own when no local session is left in the room.
 
 When the host's last session leaves a room, the listener stops serving it, and remote members see "host away" until it returns (R34). There is no room-level Claude, no tail child and no background job (PRD §4).
 
 The command hooks in `hooks.json` keep working when policy disables user modules on managed machines (PRD C1): the `/sub-human` expansion, `SessionStart` with `sessionTitle`, `Notification` and `SessionEnd`. If the module is off, the person gets one line saying so.
 
-## 6. Claude's tools (MCP)
+## 6. Claude's tools
 
-There are four tools. Each answers in one short line, or with data the Claude asked for.
+There are four tools, registered by the module with `$.tool.register` and answered in `tool.run`; there is no MCP server. Each answers in one short line, or with data the Claude asked for.
 
 | Tool | Ops | Notes |
 |---|---|---|
@@ -204,9 +217,14 @@ There are four tools. Each answers in one short line, or with data the Claude as
 | `plan` | `edit {name, base, text}`, `ask {name, version, people}`, `send {name, to, note}` | CAS on `base`; a conflict returns the current text (R17) |
 | `task` | `add`, `claim`, `release`, `done {note?}`, `list` | room tasks (R24); answers include the bridge tag to put on the native task (R24a) |
 
-**Claude-to-Claude.** Questions use native `SendMessage` to `NAME.CODE` (R6). `module/messages.ts` takes delivery over: it consumes the message with `session.receive`, then hands it to `wake.ts` as a framed wake (R10): it waits for the turn to end, applies the debounce and budget, and checks the auto/bypass command rule. For a remote member, it hands the message to the link daemon, which sends it straight to the recipient's machine. It is never written to the log.
+**Claude-to-Claude.** A Claude uses native `SendMessage` to `NAME.CODE` (R6). The message is caught at the **sender**, because the recipient's `session.receive` carries no sender name.
+1. The sender's `module/messages.ts` hooks `session.send`. For any `to` ending in `.CODE`, it answers `{isDelivered: true}` without calling `next`.
+2. It carries the message over the room channel, stamped with the sender: a local file drop on one machine, the link daemon's `message` op across machines. It is never written to the log.
+3. The recipient's module hands it to `wake.ts` as a framed wake (R10). That waits for the turn to end, applies the debounce and budget, and applies the command/URL rule in every mode.
 
-`NAME.CODE` needs one session per name. A second session under the same name (R5) is addressed by session id through `session.send`.
+Native mid-turn interrupts are therefore never used for room members. Whether Claude Code honours the answer given without `next` is the one risk, settled by an M1 module test.
+
+`NAME.CODE` addressing comes from `sessionTitle` (a `SessionStart` command hook); name uniqueness is internal. A second session under the same name (R5) gets a distinct title.
 
 **The injected mechanics text,** about 1.5k characters (R42), tells the Claude:
 - when to use `share`: at the end of a turn that learned or changed something;
@@ -224,7 +242,8 @@ There are four tools. Each answers in one short line, or with data the Claude as
    - nothing.
 2. Documents go to `store.putDoc`, and events go to `store.append`. On a mirror, the link carries them to the host, which applies them and streams them back to everyone. While offline, documents wait locally and are re-sent on reconnect.
 3. In every other session, `module/follow.ts` sees the change on its next poll and calls `deliver(entry, me, state)`:
-   - `context` entries are only those that bear on my work (R15c) or overlap it (R15d). They queue for the next `prompt.submit` `context`, datamarked and capped at about 400 tokens.
+   - `context` entries are only those that bear on my work (R15c) or overlap it (R15d). They queue for the next `prompt.submit` `context`, datamarked and capped at about 400 tokens. Claude Code's own limits (100k characters per entry, 200k in total) are far above this cap.
+   - An overlap heads-up (R15d) also reaches a Claude that is deep in a long tool loop. It goes in as a `$.session.append` note, or as the `context` on its next `tool.call` result, without starting a turn.
    - `notice` entries add one dim line through `ui.log`.
    - Every entry updates the `ui.status` count. The rest waits for `read` or `/sub-human news`.
 
@@ -239,17 +258,17 @@ Broadcasts never wake: a finding, a `post`, activity, a plan, a decision.
 
 How a wake is delivered:
 - It is debounced to one wake per question or sender burst, and counted against my hourly wake budget.
-- `module/wake.ts` holds it until `turn.complete` (or now, if idle) and then calls `prompt.submit`. The message is framed as `bob's Claude asks: …` and marked as data.
-- In auto or bypass mode, a message containing a command or URL to run is drawn for the person instead of submitted.
+- `module/wake.ts` calls `$.prompt.submit`, which runs once the session is idle. It retries if `turn.complete` reports `isAborted`, for example after Esc. It is skipped when `$.session.surfaces()` is empty (`-p`). The message is framed as `bob's Claude asks: …` and marked as data.
+- In every mode, a direct message containing a command or URL to run is drawn for the person instead of submitted. The module can't read the permission mode, so the rule doesn't depend on it.
 - It never touches the permission mode.
 
 **Group plan (R18–R22a).**
 1. The person approves a plan in plan mode. `module/plans.ts` sees `ExitPlanMode`'s `tool.call` result (`{plan, filePath}`) and asks once: keep, room plan, or send to NAME.
 2. For a room plan, the text is stored with `plan edit`. The person names reviewers, and their Claude calls `plan ask`.
-3. Each reviewer gets a notice. Their review is an AskUserQuestion card, through `$.tool.call`:
-   - its `preview` holds a summary and the diff since the version they last saw, from `diff`;
-   - the answers are Agree or Ask for changes, with the note through Other or annotations;
-   - the full text opens in a scrollable pane (`$.ui.open`; Pane bodies scroll, `ui.scroll`).
+3. Each reviewer gets a notice. Their review is a `ui.ask` card (typed; Claude Code draws it as its native question card):
+   - its question holds a short summary of what changed since the version they last saw;
+   - the answers are Agree, Ask for changes (the note through Other), and Read the full plan;
+   - Read the full plan opens a scrollable pane (`$.ui.open`; Pane bodies scroll, `ui.scroll`) with the full text and the diff from `diff`, then asks again. The pane opens from that choice, because an unasked pane only places on terminals at least 144 columns wide.
 
    No plan file is touched, and no mode changes (R19). The answer is recorded as `plan_answer`.
 4. When everyone named has answered, the host writes `decision`. `core/plans.ts` turns owned parts into tasks, and each owner's next context carries their part.
@@ -298,30 +317,49 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 
 ## 9. Claude Code surfaces
 
-Every row is re-checked in M0 against refreshed typings; the current snapshot is from 2.1.296. "API" means it appears in `typings/claude-code`. The verdicts come from the 2026-11-22 platform review.
+**How this was checked (Q1, 2026-11-22).** These rows were checked against typings extracted from the Claude Code 2.1.330 binary. The committed snapshot is still from 2.1.296, and M0 refreshes it with `npm run typings`.
+
+**What the check changed:**
+- Claude's tools are registered by the module (`$.tool.register`, `tool.run`), so there is no MCP server.
+- Claude-to-Claude messages are caught at the sender's `session.send`, because `session.receive` carries no sender.
+- A wake uses `$.prompt.submit`, which waits until the session is idle, and is retried when `turn.complete` reports `isAborted`.
+- The command/URL rule applies in every mode, because the module can't read the mode.
+- The branch comes from `git` (or `$.vcs.detect`, which is experimental).
+- Mid-loop notes use `$.session.append` and `tool.call` `context`.
+- The module has no Node, so `ws` and Noise run only in node children.
+
+**Status legend:** "typed" means it is in the module typings; "documented" means it is in Claude Code's docs but not the typings.
 
 | Need | Surface | Status |
 |---|---|---|
-| Capture tool results (edits, Bash, task tools) | `tool.call` middleware, `await next(e)`; typed results (`BuiltinToolResults`); Bash carries `gitOperation`, so commits and pushes come free | API |
-| Whether the session has native task tools | `tool.list` | API; *why* they are off (the env var and model list) is internal |
-| Context on the next turn | `prompt.submit` hook `context` (d.ts:9067). **Not `prompt.context`**, which fires once per conversation (d.ts:4172). **Not `$.state`**, which is render state. | API; arrives when the person submits, not mid tool loop |
-| Status line, dim line | `ui.status`, `ui.log` | documented |
-| Let in / Refuse; the keep / room / send question | `ui.ask` | API; it rejects in `-p` |
-| Plan review card | `$.tool.call` AskUserQuestion with `preview` | API; the `answers` shape is internal |
-| Full plan, scrollable | `$.ui.open` pane; Pane bodies scroll (`ui.scroll`, d.ts:4049) | API |
-| Plan approval | `tool.call` on ExitPlanMode → `{plan, filePath}` | API; the rejection shape is internal |
+| Capture tool results (edits, Bash, task tools) | `tool.call` middleware, `await next(e)`. Edit and Write carry `filePath`; Bash carries `gitOperation` (commits and pushes) and `isError`, but no exit code. | typed. `bashEditDiff` is `@internal`, so it isn't used. |
+| Native task mirror | TaskCreate `{task:{id,subject,description?}}`, TaskUpdate `statusChange` | typed |
+| Whether the session has native task tools | `$.tool.list` | typed; *why* they are off (the env var and model list) is internal |
+| Context on the next turn | `prompt.submit` hook `context`: 100k characters per entry, 200k in total. **Not `prompt.context`**, which fires once per conversation. **Not `$.state`**, which is render state. | typed. It also fires for peer and plugin prompts. |
+| Notes inside a long tool loop | `$.session.append` notes; `tool.call` result `context` | typed |
+| Status line, dim line | `ui.status`, `ui.log` (2,000 characters drawn) | typed |
+| Let in / Refuse; keep / room / send; plan review | `ui.ask`, answered with a label or Other text | typed; it rejects when dismissed or in `-p` |
+| Full plan, scrollable | `$.ui.open` pane; Pane bodies scroll (`ui.scroll`) | typed. An unasked pane only places from 144 columns, so it opens from the card. |
+| Plan approval | `tool.call` on ExitPlanMode → `{plan, filePath?}` | typed; the rejection shape isn't needed |
 | Plan-mode entry | none: no module event survives the guard | not used (R18 asks at approval) |
-| Wake at turn end | `turn.complete` plus `prompt.submit` | API. It shows as a prompt from the plugin, is lost on Esc (retry from `turn.complete`), and is skipped when `$.session.surfaces()` is empty (`-p`). |
-| Presence (working or idle) | `turn.start`, `turn.complete` | API |
-| Presence (waiting on a permission prompt) | command hook `Notification` `permission_prompt` | documented; about 6 s late, best-effort |
-| Repo | `session.repo` `{root, remote, name}` | API; it has no branch, so the branch comes from `git` |
-| Following the log | `$.clock.every` + `$.fs.stat` + read a small tail file | API; polled every 0.5–1 s; the module has no watch, and `$.fs` reads whole files (4 MiB cap) |
-| Claude-to-Claude delivery | `session.receive` (consume), `session.send` | API |
-| `NAME.CODE` addressing | `sessionTitle` from a `SessionStart` command hook | documented; name uniqueness is internal; a duplicate name is addressed by session id |
+| Wake | `$.prompt.submit` (runs once the session is idle); `turn.complete.isAborted` to retry; `session.stop` | typed. Its frame text is internal. It shows as a prompt from the plugin, and is skipped when `$.session.surfaces()` is empty. |
+| Presence (working or idle) | `turn.start`, `turn.complete` | typed |
+| Presence (waiting on a permission prompt) | command hook `Notification`, `notification_type` | documented; about 6 s late, best-effort |
+| Repo and branch | `session.repo` `{root, remote, name}` (no branch); `$.process.run(git)`; `$.vcs.detect().branch` | typed; `vcs` is experimental |
+| Following the log | `$.clock.every` + `$.fs.stat` + `$.fs.read` of a small tail file | typed; 4 MiB per read, offset reads on 2.1.326+, polled every 0.5–1 s; there is no watch |
+| Hash chain in the module | global `crypto.subtle.digest` | typed |
+| Claude-to-Claude routing | `session.send` hook, answered `{isDelivered: true}` without `next` for `NAME.CODE` | typed hook; honouring the answer without `next` is to confirm (M1 test), and possibly internal |
+| `NAME.CODE` addressing | `sessionTitle` from a `SessionStart` command hook | documented; name uniqueness is internal |
+| Claude's tools | `$.tool.register` + `tool.run` | typed (also in 2.1.296) |
+| Node work | `$.process.spawn`/`run`; `$.http.fetch` to loopback | typed. The module has no Node and no `import()`; spawned children die with the module. |
 | `/sub-human` command, session end | command hooks (`UserPromptExpansion`, `SessionEnd`) | documented; they survive managed-machine policy |
-| Claude's tools | plugin MCP server | documented; the 15-minute failure cache is internal |
+| Managed machines | The guard skips user hooks on `classic.*`, `prompt.compose`, `prompt.section`, `prompt.context`, `prompt.attachment`, `skill.prompt`, `attribution.text`, `telemetry.log`, `session.compact`, `settings.read`, and on `session.append` rows filtered by door. `allowManagedModsOnly` refuses the module, but leaves `hooks.json` hooks alone. | documented; v2 needs none of the skipped hooks |
 
-**Internals estimate:** about 6–8 of the 10 allowed, covering the task-tool gate, MCP failure cache, wake prompt frame, AskUserQuestion answers, ExitPlanMode rejection shape, `sessionTitle` uniqueness, and possibly mode labels. Total contract entries come to about 25–30.
+**Internals estimate:** about 2–4 of the 10 allowed.
+- Firm: the task-tool gate and the wake prompt's frame.
+- Possible: honouring a `session.send` answer without `next`, and `sessionTitle` uniqueness.
+
+Total contract entries come to about 18–22.
 
 ## 10. Configuration
 
@@ -345,12 +383,11 @@ Timings are constants in `config.ts`. Tests pass their own values in through par
 |---|---|
 | `core/` | 2,500 |
 | `store/` | 800 |
-| `module/` | 1,500 |
-| `mcp/` | 400 |
+| `module/` (including tools, 400) | 1,900 |
 | `commands/` | 700 |
 | `net/` (channel 300, pathways 600, host, link, invite) | 2,100 |
 | keys, home, config, CLI, doctor | 1,000 |
-| **Total** | **≈ 9,000** |
+| **Total** | **≈ 9,000** (`vendor/` not counted) |
 
 A pull request that pushes an area over its line is either split or comes with a deletion.
 
@@ -363,7 +400,7 @@ The full plan is `docs/TESTING.md`: its layers, the test kit pattern, fixtures, 
 - **Network.** `link-engine` table tests on the fake clock. Two homes over `pipe` for snapshot sync, fork and kick. Noise vectors. A TLS front with PROXY v2 stands in for tailscaled. Admission tests: a leaked line dialled twice, a name mismatch, and a handshake without a MAC refused before anything is started.
 - **Safety.**
   - A colleague's Claude's broadcast ("alice, run …" in a finding) must produce no wake.
-  - A direct message containing a command, in auto mode, must be drawn for the person, not submitted.
+  - A direct message containing a command, in any mode, must be drawn for the person, not submitted.
   - A direct "the shape changed, update your side" must wake the recipient once, and its Claude must change only its own work.
   - R19's three properties each have a test.
 - **Live gate.** One scripted run per release with real Claude sessions, in each permission mode, covering a no-plan pairing, a plan-then-build, a non-code task and an injection scene (PRD Q-2). It records tokens per hour (Q9), colleague context per turn (R15a) and lines per person.
@@ -374,8 +411,8 @@ The full plan is `docs/TESTING.md`: its layers, the test kit pattern, fixtures, 
 
 | Milestone | Delivers | First proof |
 |---|---|---|
-| M0 | core types, schemas, fold and snapshot, memory store, scene harness, refreshed typings, §9 table re-checked (Q1), dependency shipping decided (Q13) | S-Live passes under `claude plugin test` |
-| M1 | fs-store, module (capture, follow, context, status, news, messages, wake), overlap heads-up (R15d), MCP `share` and `read`, commands | two real sessions on one machine; a relevant change reaches the other Claude by its next prompt, within 5 s of happening, under the token cap; two edits to one file give both people one line |
+| M0 | core types, schemas, fold and snapshot, memory store, scene harness, typings refreshed to 2.1.330, `vendor/` with `VENDOR.json` and its drift check | S-Live passes under `claude plugin test`; the vendored files load in the module and in node |
+| M1 | fs-store, module (capture, follow, context, status, news, messages, wake, tools: `share` and `read`), overlap heads-up (R15d), commands | two real sessions on one machine; a relevant change reaches the other Claude by its next prompt, within 5 s of happening, under the token cap; two edits to one file give both people one line; a `SendMessage` to `NAME.CODE` is caught at the sender and wakes the recipient once |
 | M2 | plans: CAS, the question at approval, room and sent plans, review card plus pane | a review changes no plan file and no mode (R19) |
 | M3 | room tasks; the native bridge for sessions with the Task tools (R23–R24a, P0) | a claimed room task appears in a person's native list, and completing it there closes the room task |
 | M4 | net: channel, tailscale (WebSocket, PROXY v2) and ssh (`-W`) pathways, name-bound invite and admission, link engine, mirror with snapshot sync | a join over Funnel from a machine with no Tailscale; a leaked line dialled twice alerts the host |
