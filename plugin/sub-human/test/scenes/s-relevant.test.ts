@@ -23,44 +23,32 @@ test('an interface named in a plan I\'m on reaches my Claude in full; an unrelat
   await $.session.end(END)
 })
 
-test('a line naming me, or a file I edited, reaches my Claude and is drawn; a colleague\'s unrelated line is only counted (R15b, R15c)', async ($, on) => {
+test('a line naming me, or about a file I edited or only read, reaches my Claude and is drawn; a colleague\'s unrelated line is only counted (R15b, R15c)', async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'Edit' }, () => EDIT.result)
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }))
   const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol'], now: clock.now })
   await $.session.start(START)
   await room.settled(clock)
   await $.tool.call(EDIT.input)
+  await $.tool.call({ tool: 'Read', file_path: `${CWD}/src/schema.sql` }) // read, not edited
   await room.as('carol').post('anyone up for lunch at 1')
   await room.as('bob').finding(`alice's ${EDITED} has a stale header`)
   await room.as('carol').finding(`${EDITED} is generated now; edit the template instead`)
+  await room.as('bob').post('src/schema.sql gets a tasks.cursor column today')
   await room.poll(clock)
   const context = updates(await $.prompt.submit(typed('go on')))
   expect(context.split('\n')).toEqual([
     `[room ${room.code} · bob's Claude] alice's ${EDITED} has a stale header`,
     `[room ${room.code} · carol's Claude] ${EDITED} is generated now; edit the template instead`,
+    `[room ${room.code} · bob] src/schema.sql gets a tasks.cursor column today`,
   ])
   expect(room.logs).toEqual([
     `bob's Claude: alice's ${EDITED} has a stale header`, `carol's Claude: ${EDITED} is generated now; edit the template instead`,
+    'bob: src/schema.sql gets a tasks.cursor column today',
   ])
   expect(context).not.toContain('lunch')
   expect(await room.line($)).toBe(`Room ● bob ● carol`) // the lunch line is news's
-  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
-  await $.session.end(END)
-})
-
-test('a person\'s line about a file I read is drawn and reaches my Claude; one about nothing of mine is not', async ($, on) => {
-  const clock = mock.clock(on)
-  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }))
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  await $.session.start(START)
-  await room.settled(clock)
-  await $.tool.call({ tool: 'Read', file_path: `${CWD}/src/schema.sql` }) // read, not edited
-  await room.as('bob').post('src/schema.sql gets a tasks.cursor column today')
-  await room.as('bob').post('standup moved to 10')
-  await room.poll(clock)
-  expect(updates(await $.prompt.submit(typed('go on')))).toBe(`[room ${room.code} · bob] src/schema.sql gets a tasks.cursor column today`)
-  expect(room.logs).toEqual(['bob: src/schema.sql gets a tasks.cursor column today'])
-  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
 })
 

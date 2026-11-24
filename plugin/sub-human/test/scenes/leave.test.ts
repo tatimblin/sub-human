@@ -47,8 +47,7 @@ test('a colleague who leaves goes from my status line, in one change, with no li
   await room.as('carol').left()
   await room.poll(clock)
   expect(await room.line($)).toBe(`Room ● bob`)
-  expect(room.logs).toEqual([])
-  expect(room.logs.length).toBeLessThanOrEqual(6) // R41
+  expect(room.logs).toEqual([]) // R41
   await $.session.end(END)
 })
 

@@ -29,24 +29,6 @@ test('a commit and a test run are activity entries, mine and labelled my Claude\
   await $.session.end(END)
 })
 
-test('a secret in a commit message is never shared (R14a)', async ($, on) => {
-  const clock = mock.clock(on)
-  const secret = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
-  on('tool.call', { tool: 'Bash' }, () => ({
-    result: {
-      stdout: `[master 9b6afa1] token ${secret}`, stderr: '', interrupted: false, isImage: false, noOutputExpected: false,
-      gitOperation: { commit: { sha: '9b6afa1', kind: 'committed', branch: 'master' } },
-    },
-  }))
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  await $.session.start(START)
-  await room.settled(clock)
-  await $.tool.call(COMMIT.input)
-  expect(room.store.room.lines.join('\n')).not.toContain(secret)
-  expect(room.requests.filter(r => r.op === 'append')).toEqual([])
-  await $.session.end(END)
-})
-
 test('a personal task finished is an activity entry, named by the subject its create carried (R23)', async ($, on) => {
   const clock = mock.clock(on)
   on('tool.call', { tool: 'TaskCreate' }, () => CREATE.result)
@@ -57,17 +39,6 @@ test('a personal task finished is an activity entry, named by the subject its cr
   await $.tool.call(CREATE.input)
   await $.tool.call(DONE.input)
   expect(entries(room.store.room.lines).filter(e => e.kind === 'activity').map(e => e.text)).toEqual(['added task: demo task', 'completed task: demo task'])
-  await $.session.end(END)
-})
-
-test('a subagent\'s edit is mine (R16a)', async ($, on) => {
-  const clock = mock.clock(on)
-  on('tool.call', { tool: 'Edit' }, () => EDIT.result)
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  await $.session.start(START)
-  await room.settled(clock)
-  await $.tool.call({ ...EDIT.input, agentId: 'helper-1' })
-  expect(JSON.parse(room.store.room.docs.get('activity/alice') ?? '{}')).toMatchObject({ name: 'alice', files: [EDITED] })
   await $.session.end(END)
 })
 

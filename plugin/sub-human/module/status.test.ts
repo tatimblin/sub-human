@@ -105,7 +105,7 @@ test('where the pane can\'t be placed, news says so in one line and keeps what w
   await $.session.end(END)
 })
 
-test('a colleague who left is news; one still here on another machine never shows as left', async ($, on) => {
+test('a colleague who left is news; bob leaving one machine while his desktop is still present never shows "bob left"', async ($, on) => {
   const clock = mock.clock(on)
   on('ui.open', () => ({ value: { isPlaced: true } }))
   const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol'], now: clock.now })
@@ -116,27 +116,13 @@ test('a colleague who left is news; one still here on another machine never show
   await room.as('carol').left()
   await room.poll(clock)
   expect(await room.line($)).toBe(`Room ● bob`)
-  await $.command.run(news)
-  const pane = await $.ui.mount({ plugin: 'sub-human', surface: 'terminal', component: 'Pane', requestId: NEWS_PANE, props: PANE })
-  const text = (await pane.findAll({ type: 'Text' })).map(t => t.text)
-  expect(text).toEqual([`News in ${room.code} since you last looked:`, '', 'carol', '  left'])
-  await $.session.end(END)
-})
-
-test('bob leaving one machine while his desktop is still present never shows "bob left"', async ($, on) => {
-  const clock = mock.clock(on)
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  await room.as('bob').presence('working', 'bob-desktop')
-  await $.session.start(START)
-  await room.settled(clock)
   await room.as('bob').left() // the laptop's leave: `left`, and the laptop away
   await room.as('bob').finding('still on it from the desktop')
   await room.poll(clock)
   await $.command.run(news)
   const pane = await $.ui.mount({ plugin: 'sub-human', surface: 'terminal', component: 'Pane', requestId: NEWS_PANE, props: PANE })
   expect((await pane.findAll({ type: 'Text' })).map(t => t.text)).toEqual([
-    `News in ${room.code} since you last looked:`, '', 'bob', '  their Claude: still on it from the desktop',
+    `News in ${room.code} since you last looked:`, '', 'carol', '  left', '', 'bob', '  their Claude: still on it from the desktop',
   ])
   await $.session.end(END)
 })

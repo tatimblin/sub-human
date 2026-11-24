@@ -35,9 +35,11 @@ test('one shared plan, asked, changed, agreed for its exact version; then my Cla
   expect(room.logs.filter(l => l.includes('asked for changes'))).toHaveLength(1)
 
   w.plan = V2 // my Claude revises it in plan mode; I approve
-  await $.tool.call(EXIT.input)
+  const revised = await $.tool.call(EXIT.input)
   expect(w.asked).toHaveLength(2) // no third question: a revision of a room plan
   expect(room.logs).toContain('sub-human: shared as "cursor-paging" v2; asked bob again')
+  expect(log().filter(e => e.kind === 'plan' || e.kind === 'plan_ask').slice(-2)).toMatchObject([{ kind: 'plan', version: 2, base: 1 }, { kind: 'plan_ask', version: 2, people: ['bob'] }])
+  expect(revised.context?.at(-1)).toContain('v2 is out for agreement with bob.') // the revision waits again
 
   await $.turn.complete(TURN) // the woken turn ends
   await room.as('bob').planAct({ act: 'answer', name: 'cursor-paging', version: 2, answer: 'agree' })

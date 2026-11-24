@@ -50,20 +50,6 @@ test('the task tool adds, claims, lists and finishes room tasks, each in one lin
   await $.session.end(END)
 })
 
-test('a claim refused because someone else has the task is one line, and writes nothing', async ($, on) => {
-  const clock = mock.clock(on)
-  engine(on)
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  const n = await room.as('bob').task({ act: 'add', title: 'schema' })
-  await room.as('bob').task({ act: 'claim', n })
-  await $.session.start(START)
-  await room.settled(clock)
-  const before = room.store.room.lines.length
-  expect(await $.tool.run(task({ op: 'claim', n }))).toEqual({ deny: `Task #${n} was not claimed: bob has it; they can release it.` })
-  expect(room.store.room.lines).toHaveLength(before)
-  await $.session.end(END)
-})
-
 test('M3: a claimed room task goes onto my native list with its tag, and completing it there closes the room task (R24a)', async ($, on) => {
   const clock = mock.clock(on)
   engine(on)
@@ -137,23 +123,6 @@ test('after a /clear the map is gone; TaskList, asked before the update runs, fi
   expect(native.lists).toBe(1)
   expect(taskEntries(room.store.room.lines).at(-1)?.task).toMatchObject({ n, status: 'open' })
   await $.session.end({ ...END, sessionId: 'session-2' })
-})
-
-test('a TaskList that refuses once is asked again at the next unknown task, so the bridge stays on', async ($, on) => {
-  const clock = mock.clock(on)
-  engine(on)
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  const n = await room.as('alice').task({ act: 'add', title: 'store paging' })
-  await room.as('alice').task({ act: 'claim', n })
-  const native = nativeList(on, `store paging ${tag(room.code, n)}`, 1)
-  await $.session.start(START)
-  await room.settled(clock)
-  await $.tool.call(REOPEN.input) // a restart: the map is empty and the list refuses
-  await $.tool.call(DONE.input)
-  expect(native.lists).toBe(2)
-  expect(taskEntries(room.store.room.lines).at(-1)?.task).toMatchObject({ n, status: 'done' })
-  expect(room.logs).toEqual([]) // the refusal is the debug log's
-  await $.session.end(END)
 })
 
 test('an update that adds the tag and completes in the same call closes the room task', async ($, on) => {

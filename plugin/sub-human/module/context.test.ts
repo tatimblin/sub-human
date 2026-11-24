@@ -54,31 +54,25 @@ test('a join here titles the session NAME.CODE once; a title the person chose is
   await $.session.end(END)
 })
 
-test('a join never titles over a title the person set before it', async ($, on) => {
-  const clock = mock.clock(on)
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  on('classic.UserPromptSubmit', () => ({}))
-  room.pointer(null)
-  await $.session.start(START)
-  await room.settled(clock)
-  room.pointer(SESSION)
-  await $.command.run(slash(''))
-  await room.poll(clock)
-  const r = await $.classic.UserPromptSubmit({ prompt: 'hi', prompt_id: 'p1', permission_mode: 'default', session_title: 'paging work' })
-  expect(r.sessionTitle).toBeUndefined()
-  await $.session.end(END)
-})
-
-test('a session already in its room at start is titled by the SessionStart hook, so no prompt sets it again', async ($, on) => {
-  const clock = mock.clock(on)
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  on('classic.UserPromptSubmit', () => ({}))
-  await $.session.start(START)
-  await room.settled(clock)
-  const r = await $.classic.UserPromptSubmit({ prompt: 'hi', prompt_id: 'p1', permission_mode: 'default', session_title: 'my own name' })
-  expect(r.sessionTitle).toBeUndefined()
-  await $.session.end(END)
-})
+// a session already in its room at start is titled by the SessionStart hook, so no prompt sets it again
+for (const joins of [true, false]) {
+  test(`a title the person set ${joins ? 'before a join' : 'in a session already in its room at start'} is never set over`, async ($, on) => {
+    const clock = mock.clock(on)
+    const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
+    on('classic.UserPromptSubmit', () => ({}))
+    if (joins) room.pointer(null)
+    await $.session.start(START)
+    await room.settled(clock)
+    if (joins) {
+      room.pointer(SESSION)
+      await $.command.run(slash(''))
+      await room.poll(clock)
+    }
+    const r = await $.classic.UserPromptSubmit({ prompt: 'hi', prompt_id: 'p1', permission_mode: 'default', session_title: 'paging work' })
+    expect(r.sessionTitle).toBeUndefined()
+    await $.session.end(END)
+  })
+}
 
 test('a renamed session still gets a colleague\'s message: it is carried by member name, never by title (R6)', async ($, on) => {
   const clock = mock.clock(on)

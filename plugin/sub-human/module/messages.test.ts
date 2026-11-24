@@ -97,15 +97,9 @@ test('a send whose to is no string goes on with next, and the hook never throws'
   const { clock, reached, room, messages } = await setup(on)
   await $.session.start(START)
   await room.settled(clock)
-  // @ts-expect-error -- not a string, as a malformed send could carry
-  expect(await $.session.send({ to: undefined, text: 'hi', origin })).toEqual({ isDelivered: false, reason: 'native' })
-  // @ts-expect-error -- not a string
-  expect(await $.session.send({ to: null, text: 'hi', origin })).toEqual({ isDelivered: false, reason: 'native' })
-  // @ts-expect-error -- not a string
-  expect(await $.session.send({ to: 42, text: 'hi', origin })).toEqual({ isDelivered: false, reason: 'native' })
-  // @ts-expect-error -- not a string
+  // @ts-expect-error -- not a string, as a malformed send could carry (every other shape is messages.node-test.ts's)
   expect(await $.session.send({ to: { name: `bob.${room.code}` }, text: 'hi', origin })).toEqual({ isDelivered: false, reason: 'native' })
-  expect(reached).toHaveLength(4)
+  expect(reached).toHaveLength(1)
   expect(messages()).toEqual([])
   await $.session.end(END)
 })

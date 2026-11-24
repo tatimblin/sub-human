@@ -87,6 +87,7 @@ const HIDDEN: readonly (readonly [string, Alone])[] = [
   ['the host is away', { link: { phase: 'host_away', why: 'the host is away' } }],
   ['the room is hosted elsewhere', { link: { phase: 'online', why: null } }],
   ['SUB_HUMAN_CC_OFF names it', { env: { SUB_HUMAN_CC_OFF: 'invite-band' } }],
+  ['the session is -p', { interactive: false }],
 ]
 for (const [why, o] of HIDDEN) {
   test(`alone, but ${why}: no row`, async ($, on) => {
@@ -148,11 +149,5 @@ test('cancel takes the invite back at the daemon and the row offers the ways in 
   await band.press({ key: 'cancel' })
   expect(room.requests.filter(r => r.op === 'uninvite')).toEqual([{ op: 'uninvite', code: room.code, from: 'alice', id: 'inv1' }])
   expect((await shown()).text).toEqual([ALONE])
-  await $.session.end(END)
-})
-
-test('a -p session draws no row', async ($, on) => {
-  const { shown } = await alone($, on, { interactive: false })
-  expect(await shown()).toEqual({ text: [], buttons: [] })
   await $.session.end(END)
 })

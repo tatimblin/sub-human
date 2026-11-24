@@ -52,13 +52,15 @@ test('a joiner waiting: the card names them, their machine and the check; Let in
   expect(w.sent.filter(s => s.op === 'admit')).toEqual([{ op: 'admit', session: 'sess-1', code: 'otter-4821', id: 'a1', answer: 'let_in', socketPath: '/u/sh/daemon.sock' }])
 })
 
-test('a name that is not the invite\'s is on the card; a dismissed card is a Refuse', async ($, on) => {
-  const w = world(on, [{ ...ASK, name: 'mallory' }], null)
+test('a name that is not the invite\'s, or already a member, is on the card; a dismissed card is a Refuse', async ($, on) => {
+  const w = world(on, [{ ...ASK, name: 'mallory' }, { ...ASK, id: 'a2', member: true }], null)
   await $.session.start(START)
   await $.command.run(INVITE)
   await w.clock.advance(3000)
+  await w.clock.advance(3000)
   expect(w.asked[0]).toContain('mallory (the invite was for bob)')
-  expect(w.sent.filter(s => s.op === 'admit').map(s => s.answer)).toEqual(['refuse'])
+  expect(w.asked[1]).toContain('bob is already a member there.')
+  expect(w.sent.filter(s => s.op === 'admit').map(s => [s.id, s.answer])).toEqual([['a1', 'refuse'], ['a2', 'refuse']])
 })
 
 test('a line dialled twice is one line; one that let someone in offers their removal', async ($, on) => {
@@ -68,14 +70,6 @@ test('a line dialled twice is one line; one that let someone in offers their rem
   await w.clock.advance(3000)
   expect(w.logged).toEqual([INVITED, 'sub-human: someone else also used the invite for bob; nobody got in with it'])
   expect(w.sent.filter(s => s.op === 'admit').map(s => [s.id, s.answer])).toEqual([['a2', 'kick']])
-})
-
-test('a joiner whose name is already a member: the card says so', async ($, on) => {
-  const w = world(on, [{ ...ASK, member: true }], 'Refuse')
-  await $.session.start(START)
-  await $.command.run(INVITE)
-  await w.clock.advance(3000)
-  expect(w.asked[0]).toContain('bob is already a member there.')
 })
 
 test('an answer the module can\'t read is one line, not repeated on the next polls', async ($, on) => {
