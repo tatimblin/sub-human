@@ -24,8 +24,6 @@ export function call<R extends Request>(home: string, req: R, timeoutMs = 5000):
     });
     q.on('timeout', () => { q.destroy(); });
     q.on('error', () => { resolve(err(NO_ANSWER)); });
-    // a daemon ended mid-answer can close the request with no error on some nodes; an answer already given stands
-    q.on('close', () => { resolve(err(NO_ANSWER)); });
     q.end(JSON.stringify(req));
   });
 }
