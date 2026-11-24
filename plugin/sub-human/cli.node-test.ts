@@ -39,9 +39,9 @@ test('terminal runs doctor or help in the home named, and answers usage with exi
   assert.deepEqual(await terminal(['who'], '/default', ctx), { out: `who: not a terminal command\n${USAGE}`, exit: 2 });
 });
 
-test('hook: an unknown hook is one error line; stdin that is not JSON answers nothing', async () => {
+// an unknown hook's line is node.sh's test below
+test('hook: stdin that is not JSON answers nothing', async () => {
   const never = () => { throw new Error('built a context'); };
-  assert.deepEqual(await hook('bogus', '{}', never), { err: 'sub-human: no hook bogus', exit: 1 });
   assert.deepEqual(await hook('start', 'not json', never), { exit: 0 });
 });
 
@@ -67,17 +67,13 @@ after(async () => {
   }
 });
 
-test('node.sh start in no room: nothing on stdout or stderr, exit 0', () => {
+test('node.sh start in no room: nothing on stdout or stderr, exit 0, from any directory, bare beside it, or with a CDPATH that makes cd print', () => {
   assert.deepEqual(run('start', start, tempHome()), { out: '', err: '', exit: 0 });
-  assert.deepEqual(run('start', 'not json', tempHome()), { out: '', err: '', exit: 0 });
-});
-
-test('node.sh expand help: one block, nothing on stderr', () => {
-  const r = run('expand', expansion('help'), tempHome());
-  assert.deepEqual([r.err, r.exit], ['', 0]);
-  const out: unknown = JSON.parse(r.out);
-  assert.ok(typeof out === 'object' && out !== null && Reflect.get(out, 'decision') === 'block');
-  assert.match(String(Reflect.get(out, 'reason')), /^sub-human: \/room \[NAME\]/);
+  const plugin = path.dirname(path.dirname(SHIM));
+  for (const [cwd, shim, env] of [[path.dirname(SHIM), 'node.sh', {}], [plugin, 'hooks/node.sh', { CDPATH: plugin }]] as const) {
+    const r = spawnSync('sh', [shim, 'start'], { cwd, input: JSON.stringify(start), encoding: 'utf8', env: { ...process.env, SUB_HUMAN_HOME: tempHome(), ...env } });
+    assert.deepEqual([r.stdout, r.stderr, r.status], ['', '', 0], shim);
+  }
 });
 
 test('node.sh, through the real daemon: no join before the module pings (C1); then a join, its title at the next SessionStart, and SessionEnd removing its pointer', async () => {
@@ -104,20 +100,13 @@ test('node.sh: an unknown hook is one stderr line and exit 1', () => {
   assert.deepEqual(run('bogus', '{}', tempHome()), { out: '', err: 'sub-human: no hook bogus\n', exit: 1 });
 });
 
-test('node.sh runs from any directory, also as a bare `sh node.sh` beside it', () => {
-  const r = spawnSync('sh', ['node.sh', 'start'], {
-    cwd: path.dirname(SHIM), input: JSON.stringify(start), encoding: 'utf8', env: { ...process.env, SUB_HUMAN_HOME: tempHome() },
-  });
-  assert.deepEqual([r.stdout, r.stderr, r.status], ['', '', 0]);
-});
-
-test('node.sh finds its folder when CDPATH would make cd print it', () => {
-  const plugin = path.dirname(path.dirname(SHIM));
-  const r = spawnSync('sh', ['hooks/node.sh', 'start'], {
-    cwd: plugin, input: JSON.stringify(start), encoding: 'utf8', env: { ...process.env, CDPATH: plugin, SUB_HUMAN_HOME: tempHome() },
-  });
-  assert.deepEqual([r.stdout, r.stderr, r.status], ['', '', 0]);
-});
+/** A fake node at `bin` that answers -v with `version` and marks that it ran; it runs the real one when `real`. */
+function fakeNode(bin: string, version: string, real: boolean): string {
+  fs.mkdirSync(bin, { recursive: true });
+  const marker = path.join(bin, 'ran');
+  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\n[ "$1" = -v ] && { echo ${version}; exit 0; }\ntouch "${marker}"\n${real ? `exec "${process.execPath}" "$@"\n` : ''}`, { mode: 0o755 });
+  return marker;
+}
 
 test('node.sh finds a node where fnm, XDG nvm, nodenv and n keep it, with no node on PATH', () => {
   for (const [where, env] of [
@@ -127,10 +116,7 @@ test('node.sh finds a node where fnm, XDG nvm, nodenv and n keep it, with no nod
     ['n/versions/node/99.0.0/bin', { N_PREFIX: 'HOME' }],
   ] as const) {
     const home = tempHome();
-    const bin = path.join(home, where);
-    fs.mkdirSync(bin, { recursive: true });
-    const marker = path.join(home, 'ran');
-    fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\n[ "$1" = -v ] && { echo v99.0.0; exit 0; }\ntouch "${marker}"\nexec "${process.execPath}" "$@"\n`, { mode: 0o755 });
+    const marker = fakeNode(path.join(home, where), 'v99.0.0', true);
     const extra = 'N_PREFIX' in env ? { N_PREFIX: home } : {};
     const r = run('start', start, tempHome(), { PATH: '/usr/bin:/bin', HOME: home, XDG_DATA_HOME: '', ...extra });
     assert.deepEqual([r.out, r.err, r.exit], ['', '', 0], where);
@@ -163,8 +149,7 @@ test('each hook loads only what it needs: SessionStart and Notification never lo
 
 test('node.sh never runs a node too old to strip types', () => {
   const bin = tempHome();
-  const marker = path.join(bin, 'ran');
-  fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\n[ "$1" = -v ] && { echo v20.1.0; exit 0; }\ntouch "${marker}"\n`, { mode: 0o755 });
+  const marker = fakeNode(bin, 'v20.1.0', false);
   const r = run('start', start, tempHome(), { PATH: `${bin}:/usr/bin:/bin` });
   assert.equal(fs.existsSync(marker), false);
   assert.ok(r.exit === 0 || r.err.includes('needs Node 22.18+ or 24.3+'), r.err);

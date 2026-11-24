@@ -14,7 +14,8 @@ test('each of the six knobs is read', () => {
 });
 
 test('a value a knob can\'t take keeps the default and is a problem for doctor; blank is unset', () => {
-  const c = readConfig({ SUB_HUMAN_INVITE: 'pigeon', SUB_HUMAN_PORT: '70000', SUB_HUMAN_CC_OFF: 'wake,nope,core', SUB_HUMAN_NAME: ' ' }, '/u');
+  const c = readConfig({ SUB_HUMAN_INVITE: 'pigeon', SUB_HUMAN_PORT: '70000', SUB_HUMAN_CC_OFF: 'wake,nope,core', SUB_HUMAN_NAME: ' ', SUB_HUMAN_HOME: '' }, '/u');
+  assert.equal(c.home, '/u/.sub-human');
   assert.equal(c.invite, 'public');
   assert.equal(c.port, 0);
   assert.deepEqual(c.off, ['wake']);

@@ -38,14 +38,6 @@ test('a held lock makes a waiter give up in time', async () => {
   await assert.rejects(fs.access(file));
 });
 
-test('a dead holder\'s lock is broken, and so is a dead breaker\'s', async () => {
-  const file = await lockPath();
-  await dead(file);
-  await dead(`${file}.break`);
-  assert.deepEqual(await withLock(file, () => Promise.resolve(3), { waitMs: 60_000, staleMs: 1000 }), { ok: true, value: 3 });
-  await assert.rejects(fs.access(file));
-});
-
 test('a waiter that judged a lock stale before it was replaced never breaks the new holder\'s', async () => {
   const file = await lockPath();
   await dead(file);
@@ -129,15 +121,17 @@ test('release leaves a lock that is no longer the holder\'s', async () => {
   assert.equal(await fs.readFile(file, 'utf8'), 'another holder');
 });
 
-test('many waiters on a dead lock: one inside at a time', async () => {
+test('many waiters on a dead holder\'s lock, and a dead breaker\'s: both broken, one inside at a time', async () => {
   const file = await lockPath();
   await dead(file);
+  await dead(`${file}.break`);
   let inside = 0;
   let most = 0;
-  const run = () => withLock(file, async () => { most = Math.max(most, ++inside); await sleep(3); inside--; }, { waitMs: 60_000, staleMs: 1000 });
+  const run = () => withLock(file, async () => { most = Math.max(most, ++inside); await sleep(3); inside--; return inside; }, { waitMs: 60_000, staleMs: 1000 });
   const rs = await Promise.all(Array.from({ length: 12 }, run));
-  assert.ok(rs.every(r => r.ok));
+  assert.deepEqual(rs, Array.from({ length: 12 }, () => ({ ok: true, value: 0 })));
   assert.equal(most, 1);
+  await assert.rejects(fs.access(file));
 });
 
 test('two breakers of one dead lock: the second waits on .break, so only one acts on its re-check', async t => {

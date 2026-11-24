@@ -66,23 +66,26 @@ test('a permission prompt marks the member waiting; no room, or another notifica
   assert.deepEqual(await HOOKS.notify(notification, ctx), { err: `sub-human: alice isn't shown as waiting in ${code}: sub-human did not answer; nothing was done`, exit: 1 });
 });
 
-test('SessionEnd posts no left: the pointer goes and the member is away; a session in no room writes nothing (R3)', async () => {
-  const { fake, ctx } = setup();
-  const end = hookFixture('hook-session-end-steps', 'SessionEnd');
-  assert.deepEqual(await HOOKS.end(end, ctx), { exit: 0 });
-  assert.deepEqual(fake.calls, []);
-  await HOOKS.expand(expansion(''), ctx);
-  const code = await fake.code();
-  fake.down = 'sub-human did not answer; nothing was done';
-  assert.equal((await HOOKS.end(end, ctx)).exit, 1);
-  fake.down = null;
-  assert.deepEqual(await HOOKS.end(end, ctx), { exit: 0 });
-  assert.equal(await testCtx(fake, { session: SID }).sessions.get(SID), null);
-  assert.deepEqual(await fake.kinds(code), ['joined']);
-  assert.equal((await fake.presence(code, 'alice'))?.state, 'away');
-  // coming back posts no second joined
-  await HOOKS.expand({ ...expansion(''), session_id: 'back' }, ctx);
-  assert.deepEqual(await fake.kinds(code), ['joined']);
+// no reason posts a left: only /room leave does (clear and resume, the handoff's, are the next test's)
+test('SessionEnd, for any reason, posts no left: the pointer goes and the member is away; a session in no room writes nothing (R3)', async () => {
+  for (const reason of ['logout', 'prompt_input_exit', 'other'] as const) {
+    const { fake, ctx } = setup();
+    const end = { ...hookFixture('hook-session-end-steps', 'SessionEnd'), reason };
+    assert.deepEqual(await HOOKS.end(end, ctx), { exit: 0 });
+    assert.deepEqual(fake.calls, []);
+    await HOOKS.expand(expansion(''), ctx);
+    const code = await fake.code();
+    fake.down = 'sub-human did not answer; nothing was done';
+    assert.equal((await HOOKS.end(end, ctx)).exit, 1);
+    fake.down = null;
+    assert.deepEqual(await HOOKS.end(end, ctx), { exit: 0 });
+    assert.equal(await testCtx(fake, { session: SID }).sessions.get(SID), null);
+    assert.deepEqual(await fake.kinds(code), ['joined'], reason);
+    assert.equal((await fake.presence(code, 'alice'))?.state, 'away');
+    // coming back posts no second joined
+    await HOOKS.expand({ ...expansion(''), session_id: 'back' }, ctx);
+    assert.deepEqual(await fake.kinds(code), ['joined']);
+  }
 });
 
 test('/clear and /resume hand the room on: no left, and the next session in the cwd takes it with its title', async () => {
@@ -134,15 +137,6 @@ test('probe C: a compact 61 s after the last ping keeps the session in its room,
   const start = { ...hookFixture('hook-session-start-steps', 'SessionStart'), source: 'compact' };
   assert.deepEqual(await HOOKS.start(start, ctx), { out: { hookSpecificOutput: { hookEventName: 'SessionStart', sessionTitle: `alice.${code}` } }, exit: 0 });
   assert.deepEqual(await fake.kinds(code), ['joined']);
-});
-
-test('no SessionEnd reason posts a left: only /room leave does', async () => {
-  for (const reason of ['logout', 'prompt_input_exit', 'other', 'clear', 'resume'] as const) {
-    const { fake, ctx } = setup();
-    await HOOKS.expand(expansion(''), ctx);
-    await HOOKS.end({ ...hookFixture('hook-session-end-steps', 'SessionEnd'), reason }, ctx);
-    assert.deepEqual(await fake.kinds(await fake.code()), ['joined'], reason);
-  }
 });
 
 test('a payload that is not the hook\'s answers nothing and builds no context', async () => {

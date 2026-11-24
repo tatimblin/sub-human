@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { headOf, lineHash, parseTail, placeLine, tailText, verifyLines } from './store.js';
 import { sha256 } from '../core/hash.js';
 import { post } from '../test/store-contract.js';
-import { blobFile, docFile, fileKey, homeDir, roomDir } from '../home.js';
+import { blobFile, docFile, fileKey, roomDir } from '../home.js';
 
 async function chain(objs: readonly Record<string, unknown>[]): Promise<string[]> {
   const raws: string[] = [];
@@ -75,10 +75,8 @@ test('the tail file round-trips and refuses what it is not', () => {
   assert.equal(parseTail('torn').ok, false);
 });
 
-test('home: SUB_HUMAN_HOME or ~/.sub-human', () => {
-  assert.equal(homeDir({ SUB_HUMAN_HOME: '/tmp/h' }, '/u'), '/tmp/h');
-  assert.equal(homeDir({ SUB_HUMAN_HOME: '' }, '/u'), '/u/.sub-human');
-  assert.equal(homeDir({}, '/u'), '/u/.sub-human');
+// which home (SUB_HUMAN_HOME, else ~/.sub-human) is config.node-test.ts's
+test('home: a room\'s document and plan files', () => {
   assert.equal(docFile(roomDir('/h', 'ab12'), 'focus', 'ann'), '/h/rooms/ab12/docs/focus/ann.json');
   assert.equal(blobFile(roomDir('/h', 'ab12'), 'ab'), '/h/rooms/ab12/plans/ab.md');
 });

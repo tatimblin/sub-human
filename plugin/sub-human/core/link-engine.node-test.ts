@@ -124,7 +124,7 @@ const TABLE: { name: string; seed?: number; run(r: Rig): void }[] = [
     },
   },
   {
-    name: 'sleep or a clock jump: a ping at once when online; a dial at once, backoff reset, when offline',
+    name: 'sleep or a clock jump: a ping at once when online; a dial at once, backoff reset, when offline; a pending dial dropped and made again',
     run(r) {
       r.send({ type: 'start' });
       r.online(1);
@@ -143,6 +143,15 @@ const TABLE: { name: string; seed?: number; run(r: Rig): void }[] = [
       const s = step(r.st, { type: 'tick' }, back);
       assert.deepEqual(s.effects.filter(e => e.type === 'dial'), [{ type: 'dial', conn: 2 }]);
       assert.ok(s.effects.some(e => e.type === 'clearTimer' && e.name === 'retry'));
+      const dialing = rig(); // asleep with a dial under way: the next tick drops it and dials again at once
+      dialing.send({ type: 'start' });
+      dialing.send({ type: 'tick' });
+      dialing.take();
+      dialing.sleep(10 * 60_000);
+      dialing.send({ type: 'tick' });
+      const out = dialing.take();
+      assert.deepEqual([of(out, 'close'), of(out, 'dial')], [[{ type: 'close', conn: 1 }], [{ type: 'dial', conn: 2 }]]);
+      assert.ok(!dialing.timers.has('retry'), 'no backoff wait: it dials now');
     },
   },
   {
@@ -245,7 +254,7 @@ const TABLE: { name: string; seed?: number; run(r: Rig): void }[] = [
     },
   },
   {
-    name: 'a dial that never connects is dropped after dialMs and retried',
+    name: 'dialMs: a dial that never connects, a host that never answers subscribe and a fork resync are dropped after it and retried; synced in time clears it, and a pong keeps the link online past it',
     run(r) {
       r.send({ type: 'start' });
       r.take();
@@ -254,47 +263,26 @@ const TABLE: { name: string; seed?: number; run(r: Rig): void }[] = [
       assert.deepEqual(of(out, 'close'), [{ type: 'close', conn: 1 }]);
       assert.deepEqual([r.st.phase, r.st.conn, r.timers.has('retry')], ['offline', null, true]);
       assert.match(r.st.why ?? '', /within 20 s/);
-    },
-  },
-  {
-    name: 'a host that never answers subscribe is dropped after dialMs; a fork resync is held to it too',
-    run(r) {
-      r.send({ type: 'start' });
-      r.send({ type: 'connected', conn: 1 });
-      r.advance(T.dialMs);
-      assert.deepEqual([r.st.phase, r.st.conn], ['offline', null]);
-      r.advance(r.st.delay);
-      r.online(2);
-      r.send({ type: 'fork', conn: 2 });
-      r.advance(T.dialMs - 1);
-      assert.equal(r.st.conn, 2);
-      r.advance(1);
-      assert.deepEqual([r.st.phase, r.st.conn], ['offline', null]);
-    },
-  },
-  {
-    name: 'synced in time clears the deadline; a pong keeps it online past dialMs',
-    run(r) {
-      r.send({ type: 'start' });
-      r.online(1);
-      assert.ok(!r.timers.has('dial'));
-      r.advance(T.pingMs);
-      r.send({ type: 'pong', conn: 1 });
-      r.advance(T.dialMs - T.pingMs);
-      assert.equal(r.st.phase, 'online');
-    },
-  },
-  {
-    name: 'sleep during a dial: the next tick drops the pending dial and dials again at once',
-    run(r) {
-      r.send({ type: 'start' });
-      r.send({ type: 'tick' });
-      r.take();
-      r.sleep(10 * 60_000);
-      r.send({ type: 'tick' });
-      const out = r.take();
-      assert.deepEqual([of(out, 'close'), of(out, 'dial')], [[{ type: 'close', conn: 1 }], [{ type: 'dial', conn: 2 }]]);
-      assert.ok(!r.timers.has('retry'), 'no backoff wait: it dials now');
+      const silent = rig();
+      silent.send({ type: 'start' });
+      silent.send({ type: 'connected', conn: 1 });
+      silent.advance(T.dialMs);
+      assert.deepEqual([silent.st.phase, silent.st.conn], ['offline', null]);
+      silent.advance(silent.st.delay);
+      silent.online(2);
+      silent.send({ type: 'fork', conn: 2 });
+      silent.advance(T.dialMs - 1);
+      assert.equal(silent.st.conn, 2);
+      silent.advance(1);
+      assert.deepEqual([silent.st.phase, silent.st.conn], ['offline', null]);
+      const synced = rig();
+      synced.send({ type: 'start' });
+      synced.online(1);
+      assert.ok(!synced.timers.has('dial'));
+      synced.advance(T.pingMs);
+      synced.send({ type: 'pong', conn: 1 });
+      synced.advance(T.dialMs - T.pingMs);
+      assert.equal(synced.st.phase, 'online');
     },
   },
   {

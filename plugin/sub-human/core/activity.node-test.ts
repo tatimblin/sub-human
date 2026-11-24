@@ -74,6 +74,9 @@ test('a test or build run is an event with whether it passed; other commands are
 test('an event whose text holds a secret is dropped; its text is one clean line', () => {
   const command = 'API_TOKEN=Zx81kQ0pLm3n7Rt5vW9yB2cD npm test';
   assert.deepEqual(capture({ ...npmTest.input, command }, npmTest.result, ctx()), { kind: 'none' });
+  const token = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'; // a commit's subject is git's first line of stdout
+  const gitOperation = { commit: { sha: '9b6afa1', kind: 'committed', branch: 'master' } };
+  assert.deepEqual(capture(commit.input, { result: { stdout: `[master 9b6afa1] token ${token}`, stderr: '', gitOperation } }, ctx()), { kind: 'none' });
   // only the raw text matches: cleaning joins the env line onto the command, so its line start is gone
   assert.deepEqual(capture({ ...npmTest.input, command: 'npm test\nAPI_KEY=Zx81kQ0pLm3n7Rt5vW9yB2cD' }, npmTest.result, ctx()), { kind: 'none' });
   const r = capture({ ...npmTest.input, command: 'npm test\n  \u001b[1m--watch=false\u001b[0m' }, npmTest.result, ctx());

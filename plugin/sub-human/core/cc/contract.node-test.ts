@@ -41,23 +41,22 @@ test('every api entry is in the committed typings snapshot, which probed wrote',
 
 test('parseContract refuses a duplicate id, an unknown feature or field, a verified internal with no search, too many internals', () => {
   assert.ok(parseContract(file([api(['x', { in: 'type X =', has: ['y'] }]), internal(['y'])])).ok);
-  const bad: [string, unknown][] = [
-    ['duplicate', file([api(['x']), api(['y'])])],
+  const bad: [string, unknown, RegExp?][] = [
+    ['duplicate', file([api(['x']), api(['y'])]), /unique/],
     ['feature', file([{ ...api(['x']), feature: 'telepathy' }])],
     ['field', file([{ ...api(['x']), extra: 1 }])],
     ['no search', file([internal([])])],
-    ['non-ASCII search', file([internal(['sent \u2192 you'])])],
+    ['non-ASCII search', file([internal(['sent \u2192 you'])]), /ASCII/],
     ['no typings', file([api([])])],
     ['empty has', file([api([{ in: 'type X =', has: [] }])])],
     ['cap', file(Array.from({ length: INTERNAL_CAP + 1 }, (_, i) => ({ ...internal(['y']), id: `i${i}` })))],
     ['probed', { note: 'n', probed: 'latest', entries: [] }],
   ];
-  for (const [what, json] of bad) assert.equal(parseContract(json).ok, false, what);
+  for (const [what, json, why] of bad) {
+    const r = parseContract(json);
+    assert.ok(!r.ok && (!why || why.test(r.error)), what);
+  }
   assert.ok(parseContract(file([internal([], 'no string found')])).ok, 'an unverified internal needs no search');
-  const r = parseContract(file([api(['x']), api(['y'])]));
-  assert.ok(!r.ok && /unique/.test(r.error));
-  const u = parseContract(file([internal(['caf\u00e9'])]));
-  assert.ok(!u.ok && /ASCII/.test(u.error));
 });
 
 test('check, api: every fragment in the declarations, whitespace and comments aside', () => {

@@ -19,7 +19,7 @@ function log(bodies: readonly Body[], from = 0): LogLine[] {
 const state = (bodies: readonly Body[], docs: Docs = NO_DOCS) => fold(null, log(bodies), docs);
 const task = (n: number, t: Partial<Task> = {}): Task => ({ n, title: `t${n}`, status: 'open', addedBy: 'ann', blockedBy: [], ...t });
 
-test('joins and leaves: one membership per name, since resets on a rejoin, kicked stays out', () => {
+test('joins and leaves: one membership per name, since resets on a rejoin, kicked stays out, even kicked before it ever joined', () => {
   const s = state([
     { kind: 'joined', from: 'ann', repo: 'web', branch: 'main' },
     { kind: 'joined', from: 'ann', machine: 'm2' },
@@ -36,31 +36,22 @@ test('joins and leaves: one membership per name, since resets on a rejoin, kicke
   assert.equal(s.hash, 'h6');
   const back = state([{ kind: 'joined', from: 'ann' }, { kind: 'left', from: 'ann' }, { kind: 'joined', from: 'ann', repo: 'api' }]);
   assert.deepEqual(back.members, [{ name: 'ann', machine: 'm1', since: 3, kicked: false, repo: 'api', machines: [] }]);
+  const early = state([{ kind: 'kick', from: 'ann', by: 'system', name: 'eve' }, { kind: 'joined', from: 'eve' }]);
+  assert.deepEqual(early.members, [{ name: 'eve', machines: [], since: 1, kicked: true }]);
 });
 
-test('a member is here on the machines of their presence documents that aren\'t away', () => {
+test('documents join their member, latest wins, and never make one; a member is here on the machines of their presence documents that aren\'t away', () => {
   const s = state([{ kind: 'joined', from: 'ann' }, { kind: 'joined', from: 'bob' }], {
     presence: [
-      { name: 'ann', state: 'idle', machine: 'm1', at: 1 }, { name: 'ann', state: 'working', machine: 'm2', at: 3 },
-      { name: 'bob', state: 'away', machine: 'm1', at: 2 },
+      { name: 'ann', state: 'idle', machine: 'm1', at: 1 }, { name: 'ann', state: 'away', machine: 'm2', at: 2 }, { name: 'ann', state: 'working', machine: 'm2', at: 3 },
+      { name: 'bob', state: 'away', machine: 'm1', at: 2 }, { name: 'zed', state: 'idle', at: 1 },
     ],
-    activity: [], focus: [],
+    activity: [{ name: 'ann', files: ['a.ts'], at: 2 }], focus: [{ name: 'ann', text: 'paging', at: 2 }],
   });
   assert.deepEqual(s.members.map(m => [m.name, m.machine, m.machines, m.presence?.state]), [['ann', 'm1', ['m1', 'm2'], 'working'], ['bob', 'm1', [], 'away']]);
+  assert.deepEqual([s.members[0]?.activity?.files, s.members[0]?.focus?.text], [['a.ts'], 'paging']);
   const one = state([{ kind: 'joined', from: 'ann' }], { presence: [{ name: 'ann', state: 'away', machine: 'm2', at: 5 }, { name: 'ann', state: 'idle', machine: 'm1', at: 1 }], activity: [], focus: [] });
   assert.deepEqual(one.members.map(m => [m.machines, m.presence?.state]), [[['m1'], 'idle']], 'a later away elsewhere leaves the member here');
-});
-
-test('documents join their member, latest wins, and never make a member', () => {
-  const s = state([{ kind: 'joined', from: 'ann' }], {
-    presence: [{ name: 'ann', state: 'idle', at: 1 }, { name: 'ann', state: 'working', at: 2 }, { name: 'zed', state: 'idle', at: 1 }],
-    activity: [{ name: 'ann', files: ['a.ts'], at: 2 }],
-    focus: [{ name: 'ann', text: 'paging', at: 2 }],
-  });
-  assert.equal(s.members.length, 1);
-  assert.equal(s.members[0]?.presence?.state, 'working');
-  assert.deepEqual(s.members[0]?.activity?.files, ['a.ts']);
-  assert.equal(s.members[0]?.focus?.text, 'paging');
 });
 
 test('plans: versions, asks, answers per version, and the decision', () => {
@@ -87,14 +78,6 @@ test('plans: versions, asks, answers per version, and the decision', () => {
   assert.deepEqual(v2?.asked, ['bob', 'cy']);
   assert.deepEqual(v2?.answers, [{ name: 'bob', answer: 'agree' }, { name: 'cy', answer: 'agree' }]);
   assert.deepEqual(v2?.decision, { agreed: ['bob', 'cy'], changes: [], at: 12 });
-});
-
-test('a kick is permanent, even of a name that never joined', () => {
-  const s = state([
-    { kind: 'kick', from: 'ann', by: 'system', name: 'eve' },
-    { kind: 'joined', from: 'eve' },
-  ]);
-  assert.deepEqual(s.members, [{ name: 'eve', machines: [], since: 1, kicked: true }]);
 });
 
 test('plan versions go up by one and keep the first version\'s scope', () => {

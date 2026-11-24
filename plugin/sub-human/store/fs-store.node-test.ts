@@ -104,7 +104,7 @@ test('an append fsyncs the log line before it answers; a document its temp file'
   assert.ok(synced.some(p => p.startsWith(`${docFile(room(h), 'presence', 'ann')}.`)));
 });
 
-test('writeAtomic never opens its target, and syncs the temp file before the rename', async t => {
+test('writeAtomic never opens its target, syncs the temp file before the rename, and the folder after it so the rename survives a power loss', async t => {
   const dir = await home();
   const file = path.join(dir, 'doc.json');
   await fs.writeFile(file, 'old');
@@ -123,26 +123,7 @@ test('writeAtomic never opens its target, and syncs the temp file before the ren
   assert.equal(await fs.readFile(file, 'utf8'), 'new');
   const tmp = ops[0]?.slice('open '.length) ?? '';
   assert.notEqual(tmp, file);
-  assert.deepEqual(ops.slice(0, 3), [`open ${tmp}`, `sync ${tmp}`, `rename ${tmp} ${file}`]);
-  assert.ok(!ops.some(o => o === `open ${file}` || o === `writeFile ${file}`));
-});
-
-test('writeAtomic syncs the folder after the rename, so the rename survives a power loss', async t => {
-  const dir = await home();
-  const file = path.join(dir, 'doc.json');
-  const ops: string[] = [];
-  const { open, rename } = { open: fs.open.bind(fs), rename: fs.rename.bind(fs) };
-  t.mock.method(fs, 'open', async (...a: Parameters<typeof fs.open>) => {
-    const fh = await open(...a);
-    if (a[0] === dir) {
-      const sync = fh.sync.bind(fh);
-      fh.sync = () => { ops.push('sync folder'); return sync(); };
-    }
-    return fh;
-  });
-  t.mock.method(fs, 'rename', (from: string, to: string) => { ops.push('rename'); return rename(from, to); });
-  await writeAtomic(file, 'new');
-  assert.deepEqual(ops, ['rename', 'sync folder']);
+  assert.deepEqual(ops, [`open ${tmp}`, `sync ${tmp}`, `rename ${tmp} ${file}`, `open ${dir}`, `sync ${dir}`]);
 });
 
 test('a write that fails before its rename leaves the old text and no temp file', async t => {

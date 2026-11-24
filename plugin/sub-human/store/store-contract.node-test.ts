@@ -8,6 +8,13 @@ import { FsStore } from './fs-store.js';
 import { MirrorStore } from './mirror-store.js';
 import { logFile, roomDir } from '../home.js';
 
+/** Rewrites line `seq` of the log file in `dir`, as a forked host would. */
+const fileForge = (dir: string) => async (seq: number, edit: (line: string) => string): Promise<void> => {
+  const lines = (await fs.readFile(logFile(dir), 'utf8')).split('\n');
+  lines[seq - 1] = edit(lines[seq - 1] ?? '');
+  await fs.writeFile(logFile(dir), lines.join('\n'));
+};
+
 storeContract('memory', {
   room: every => {
     const room = memoryRoom();
@@ -24,15 +31,7 @@ storeContract('fs', {
     const dir = roomDir(home, 'room');
     const lock = { waitMs: 600_000 }; // the contract checks the chain, not the speed
     const o = every === undefined ? { lock } : { every, lock };
-    const log = logFile(dir);
-    return {
-      open: () => new FsStore(dir, o),
-      forge: async (seq, edit) => {
-        const lines = (await fs.readFile(log, 'utf8')).split('\n');
-        lines[seq - 1] = edit(lines[seq - 1] ?? '');
-        await fs.writeFile(log, lines.join('\n'));
-      },
-    };
+    return { open: () => new FsStore(dir, o), forge: fileForge(dir) };
   },
 });
 
@@ -61,14 +60,6 @@ storeContract('mirror', {
       putBlob: () => Promise.resolve(),
     }, o);
     const copy = mirror();
-    const log = logFile(dir);
-    return {
-      open: mirror,
-      forge: async (seq, edit) => {
-        const lines = (await fs.readFile(log, 'utf8')).split('\n');
-        lines[seq - 1] = edit(lines[seq - 1] ?? '');
-        await fs.writeFile(log, lines.join('\n'));
-      },
-    };
+    return { open: mirror, forge: fileForge(dir) };
   },
 });

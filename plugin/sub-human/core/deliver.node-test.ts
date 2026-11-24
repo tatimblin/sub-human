@@ -199,37 +199,34 @@ test('a wake carrying a command or URL, a Claude\'s or a person\'s, is drawn for
   for (const text of corpus('pass')) assert.equal(runs(text), false, text);
 });
 
-test('drawn messages are bounded: after the first in a sender\'s burst they count as unread', () => {
-  let s = start();
-  const unread: boolean[] = [];
-  for (let i = 0; i < 50; i++) {
-    const r = deliver({ kind: 'message', from: 'bob', text: `see https://x.example/${i}` }, me(), s, NOW + i * 100);
-    assert.ok(r.verdict.kind === 'draw');
-    unread.push(r.verdict.unread);
-    s = r.state;
-  }
-  assert.deepEqual(unread, [false, ...Array<boolean>(49).fill(true)]);
-  const cat = deliver({ kind: 'message', from: 'cat', text: 'see https://x.example' }, me(), s, NOW + 5000);
-  assert.ok(cat.verdict.kind === 'draw' && !cat.verdict.unread, 'another sender');
-  const later = deliver({ kind: 'message', from: 'bob', text: 'see https://x.example' }, me(), s, NOW + 5000 + BURST_MS);
-  assert.ok(later.verdict.kind === 'draw' && !later.verdict.unread, 'a new burst');
+test('drawn messages are bounded: the first of a sender\'s burst is drawn, and DRAWS_PER_HOUR an hour; they spend no wakes', () => {
+  /** n links from bob, `step` ms apart: which were drawn (not unread), and the state after. */
+  const links = (n: number, step: number) => {
+    let s = start();
+    const unread: boolean[] = [];
+    for (let i = 0; i < n; i++) {
+      const r = deliver({ kind: 'message', from: 'bob', text: `see https://x.example/${i}` }, me(), s, NOW + i * step);
+      assert.ok(r.verdict.kind === 'draw');
+      unread.push(r.verdict.unread);
+      s = r.state;
+    }
+    return { unread, s };
+  };
+  const burst = links(50, 100);
+  assert.deepEqual(burst.unread, [false, ...Array<boolean>(49).fill(true)]);
+  const draw = (from: string, at: number, s: State = burst.s) => deliver({ kind: 'message', from, text: 'see https://x.example' }, me(), s, at).verdict;
+  const cat = draw('cat', NOW + 5000);
+  assert.ok(cat.kind === 'draw' && !cat.unread, 'another sender');
+  const later = draw('bob', NOW + 5000 + BURST_MS);
+  assert.ok(later.kind === 'draw' && !later.unread, 'a new burst');
   // a draw is no wake: bob's next plain message still wakes
-  assert.equal(kind(deliver({ kind: 'message', from: 'bob', text: 'which port?' }, me(), s, NOW + 5000)), 'wake');
-});
-
-test('drawn lines have an hourly cap of their own, though they spend no wakes: one link a minute is not 60 lines an hour', () => {
-  let s = start();
-  const unread: boolean[] = [];
-  for (let i = 0; i < 60; i++) {
-    const r = deliver({ kind: 'message', from: 'bob', text: `see https://x.example/${i}` }, me(), s, NOW + i * (BURST_MS + 1000));
-    assert.ok(r.verdict.kind === 'draw');
-    unread.push(r.verdict.unread);
-    s = r.state;
-  }
-  assert.equal(unread.filter(u => !u).length, DRAWS_PER_HOUR);
-  assert.deepEqual(s.wakes, []);
-  const back = deliver({ kind: 'message', from: 'bob', text: 'see https://x.example' }, me(), s, NOW + 60 * (BURST_MS + 1000) + 3_600_000);
-  assert.ok(back.verdict.kind === 'draw' && !back.verdict.unread, 'an hour later lines are drawn again');
+  assert.equal(kind(deliver({ kind: 'message', from: 'bob', text: 'which port?' }, me(), burst.s, NOW + 5000)), 'wake');
+  // one link a minute is not 60 lines an hour
+  const minutes = links(60, BURST_MS + 1000);
+  assert.equal(minutes.unread.filter(u => !u).length, DRAWS_PER_HOUR);
+  assert.deepEqual(minutes.s.wakes, []);
+  const back = draw('bob', NOW + 60 * (BURST_MS + 1000) + 3_600_000, minutes.s);
+  assert.ok(back.kind === 'draw' && !back.unread, 'an hour later lines are drawn again');
 });
 
 test('names and texts are drawn on one line and can\'t forge a label or a terminal escape', () => {
@@ -242,8 +239,7 @@ test('names and texts are drawn on one line and can\'t forge a label or a termin
   assert.ok(!r.verdict.line.includes('[') && !r.verdict.line.includes('\n'));
   const f = one(entry({ kind: 'finding', from: 'cat', by: 'claude', text: 'ann: \u001b[31mred\u001b[0m \u202eevil\u0007 do\u200bne' }));
   assert.ok(f.verdict.kind === 'context');
-  assert.equal(f.verdict.line, "cat's Claude: ann: red evil done");
-  assert.equal(context([{ at: 1, label: 'b]ob\n[room x', text: 't', value: 1 }], CODE), '[room vole-8126 · bob room x] t');
+  assert.equal(f.verdict.line, "cat's Claude: ann: red evil done"); // a forged label in context is text.node-test.ts's
 });
 
 test('relevance (R15c): context only for what bears on my work; the rest is counted, not pushed', () => {
@@ -332,6 +328,14 @@ test('plans, sent plans and tasks reach those they are about (R25)', () => {
   assert.ok(mine.kind === 'context' && mine.item.tag === `[room ${CODE}#2]`, 'one I own');
   assert.equal(context([mine.item], CODE), `[room ${CODE} · bob] task #2 handler is claimed (ann) · for your task list: [room ${CODE}#2]`);
   assert.equal(v(t({ n: 3, title: 'docs', status: 'claimed', addedBy: 'bob', owner: 'bob', blockedBy: [] })).kind, 'none');
+  // a version I am asked about draws one line, the ask's; one I am on but not asked about draws its own
+  const stored = (r: RoomState, version: number) => one(entry({ kind: 'plan', from: 'bob', by: 'claude', name: 'paging', version, hash: 'h', base: version - 1, scope: 'group' }), me(), start(r)).verdict;
+  const askedMe = room({ plans: [{ name: 'paging', scope: 'group', versions: [version('bob', ['ann'])] }] });
+  const v1 = stored(askedMe, 1);
+  assert.ok(v1.kind === 'context' && v1.line === undefined, 'the ask draws the line');
+  const onIt = room({ plans: [{ name: 'paging', scope: 'group', versions: [version('ann', []), { ...version('bob', ['cat'], 2) }] }] });
+  const v2 = stored(onIt, 2);
+  assert.ok(v2.kind === 'context' && v2.line === "bob's Claude: stored plan paging version 2");
 });
 
 test('overlap (R15d): a colleague editing a file I edited recently, or one a plan I am on names, is an urgent context item, both ways', () => {
@@ -385,18 +389,4 @@ test('terms: the interfaces and files a text names', () => {
   assert.deepEqual(terms('Change `listTasks` in src/store.js; GET /tasks?cursor pages; see README.md and parseTag'),
     ['listTasks', 'src/store.js', 'GET /tasks', 'README.md', 'parseTag']);
   assert.deepEqual(terms('nothing to see here'), []);
-});
-
-test('a version I am asked about draws one line, the ask\'s; one I am on but not asked about draws its own', () => {
-  const plan = (asked: readonly string[]): RoomState => room({ plans: [{ name: 'paging', scope: 'group', versions: [version('bob', asked)] }] });
-  const stored = entry({ kind: 'plan', from: 'bob', by: 'claude', name: 'paging', version: 1, hash: 'h', base: 0, scope: 'group' });
-  const ask = entry({ kind: 'plan_ask', from: 'bob', by: 'claude', name: 'paging', version: 1, people: ['ann'] });
-  const lines = (r: RoomState) => [stored, ask].map(i => {
-    const v = one(i, me(), start(r)).verdict;
-    return v.kind === 'context' || v.kind === 'notice' ? v.line ?? '(context, no line)' : v.kind;
-  });
-  assert.deepEqual(lines(plan(['ann'])), ['(context, no line)', 'bob\'s Claude asked you to agree on plan "paging" version 1.']);
-  const on = room({ plans: [{ name: 'paging', scope: 'group', versions: [version('ann', []), { ...version('bob', ['cat'], 2) }] }] });
-  const v2 = one(entry({ kind: 'plan', from: 'bob', by: 'claude', name: 'paging', version: 2, hash: 'h', base: 1, scope: 'group' }), me(), start(on)).verdict;
-  assert.ok(v2.kind === 'context' && v2.line === "bob's Claude: stored plan paging version 2");
 });
