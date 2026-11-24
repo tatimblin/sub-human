@@ -7,7 +7,7 @@
  *
  * Each finding prints `file:line  RULE  what — fix: how`.
  *
- *   MOD_PERMISSION_ANSWER_UNREAD  mod/**.ts (not mod/test): a classic.PreToolUse hook, a tool.call hook that answers
+ *   MOD_PERMISSION_ANSWER_UNREAD  module/**.ts (not its *.test.ts): a classic.PreToolUse hook, a tool.call hook that answers
  *       `{ deny` itself, and each one's .catch handler, may only `return next(e)` (or, in tool.call, a const bound to
  *       `await next(e)`, passed through, also as `{ ...r, key: value }` that adds members but no deny, ask or allow)
  *       or an object literal of plain `key: value` members with a fixed `deny` or
@@ -18,11 +18,13 @@
  *       `command`) and inline hooks/mcpServers in .claude-plugin/plugin.json names files only as
  *       `${CLAUDE_PLUGIN_ROOT}/<literal path to a file that exists>`: no other variable or expansion, no `$(`, no
  *       backticks, no glob or brace, no shell operator, no `-c`/`-e`/`--eval`/`-p`/`--print`.
- *   MOD_RUNS_PROCESS  mod/**.ts: a `$.process.run(` / `$.process.spawn(` whose arguments hold `-c`, `-e`, `--eval`,
+ *   MOD_RUNS_PROCESS  module/**.ts: a `$.process.run(` / `$.process.spawn(` whose arguments hold `-c`, `-e`, `--eval`,
  *       `-p` or `--print` as a string, or a string with a shell program in it (`;`, `|`, `&`, `>`, `<`, `$(`, a
  *       backtick).
  *   INVISIBLE_CHARACTER  any text file under the plugin: U+00AD, U+200B–U+200F, U+202A–U+202E, U+2060–U+2069, U+FEFF
  *       as characters (the escape written out in source is fine).
+ *   VENDOR_HIDDEN_CHARACTER  vendor/**, in place of INVISIBLE_CHARACTER: any non-ASCII format, control, private-use,
+ *       unassigned or separator character.
  *   LIMIT_*  the checklist: ≤ 512 files; every file but images and fonts < 256 KiB; no .DS_Store, Thumbs.db,
  *       desktop.ini or __MACOSX; README.md ≥ 40 words outside code blocks; a LICENSE file or `license` in
  *       .claude-plugin/plugin.json; no package.json beside a lockfile at the plugin root.
@@ -32,7 +34,7 @@
  * template literals and (by a heuristic on the previous token) regex literals blanked out. Every `return` in a body
  * counts, a nested function's too (stricter, never looser). A return's value ends at the first `;` or unmatched
  * closer at its depth; a ternary is split at its top-level `?`/`:`; any other expression (a call, `a || b`) is
- * refused. A process argv built elsewhere (mod/core/shim.ts shimArgv) is not followed. The file list is
+ * refused. A process argv built elsewhere is not followed. The file list is
  * `git ls-files` under the plugin inside a repository, else a walk of it.
  */
 import fs from 'node:fs';
@@ -406,6 +408,20 @@ export function checkInvisible(text: string, file: string): Finding[] {
   return out;
 }
 
+// A vendored file (vendor/**) is a package's build, where rule 4's fix, an escape, can't be written; it is exempt
+// from rule 4 once every non-ASCII character in it is a visible one: no format, control, private-use, unassigned or
+// separator character (which takes in rule 4's set).
+const R4V = 'VENDOR_HIDDEN_CHARACTER';
+const HIDDEN = /(?![\0-\x7f])[\p{C}\p{Z}]/gu;
+
+/** The vendored file's hidden non-ASCII characters. */
+export function checkVendorCharacters(text: string, file: string): Finding[] {
+  return [...text.matchAll(HIDDEN)].map(hit => {
+    const code = (hit[0].codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0');
+    return { file, line: lineAt(text, hit.index), rule: R4V, message: `U+${code}, a hidden character in a vendored file`, fix: 'vendor another version, or ask upstream to escape it' };
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // rule 5: the checklist limits
 
@@ -469,6 +485,18 @@ export function checkLimits(root: string, files: readonly string[]): Finding[] {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// rule 6: plugin code imports its own files as `./x.js`; `claude plugin validate` refuses a `.ts` import path
+// (TS5097), and plugin/sub-human/resolve-ts.ts maps `.js` to `.ts` for node.
+
+const R6 = 'TS_IMPORT_PATH';
+const TS_IMPORT = /\b(?:from|import)\s*\(?\s*['"](\.\.?\/[^'"]*\.ts)['"]/g;
+
+/** Rule 6 over one plugin .ts file's text. */
+export function checkImportPaths(text: string, file: string): Finding[] {
+  return [...text.matchAll(TS_IMPORT)].map(hit => ({ file, line: lineAt(text, hit.index), rule: R6, message: `imports ${hit[1] ?? ''}`, fix: 'import it as .js (resolve-ts.ts finds the .ts for node)' }));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 
 const BINARY = /\.(?:png|jpe?g|gif|webp|ico|bmp|avif|woff2?|ttf|otf|eot|pdf|zip|gz|lockb)$/i;
 
@@ -481,8 +509,9 @@ export function lint(root: string): Finding[] {
     let text: string;
     try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { continue; }
     if (text.includes('\0')) continue;
-    out.push(...checkInvisible(text, rel));
-    if (/^mod\/.*\.ts$/.test(rel) && !rel.startsWith('mod/test/')) out.push(...checkPermissionAnswers(text, rel), ...checkProcessRuns(text, rel));
+    out.push(...(rel.startsWith('vendor/') ? checkVendorCharacters(text, rel) : checkInvisible(text, rel)));
+    if (/\.ts$/.test(rel) && !rel.startsWith('vendor/')) out.push(...checkImportPaths(text, rel));
+    if (/^module\/.*\.ts$/.test(rel) && !/\.test\.tsx?$/.test(rel)) out.push(...checkPermissionAnswers(text, rel), ...checkProcessRuns(text, rel));
   }
   out.push(...checkCommands(root), ...checkLimits(root, files));
   return out;

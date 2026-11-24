@@ -1,0 +1,6 @@
+{
+  "name": "rec",
+  "version": "0.0.0",
+  "description": "Throwaway logging plugin for scripts/record-fixtures.ts: it writes every event it sees to ../log beside its copy.",
+  "author": { "name": "sub-human" }
+}

@@ -1,5 +1,5 @@
 name: Feedback
-description: What worked, what didn't, what you wish it did. (/sub-human leave's card opens this filled in.)
+description: What worked, what didn't, what you wish it did. (/room leave's card opens this filled in.)
 labels: [feedback]
 body:
   - type: textarea

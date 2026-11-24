@@ -1,0 +1,3 @@
+#!/bin/sh
+# A stand-in for the tailscale CLI in the network tests: it records each command and keeps a serve config in a file.
+exec node "$(dirname "$0")/fake-tailscale.mjs" "$@"

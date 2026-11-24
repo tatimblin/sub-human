@@ -1,0 +1,22 @@
+{
+  "name": "tool-task-create",
+  "event": "tool.call",
+  "session": "steps",
+  "input": {
+    "subject": "demo task",
+    "description": "a recorded task",
+    "tool": "TaskCreate",
+    "tool_use_id": "toolu_fake0009"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "task": {
+        "id": "1",
+        "subject": "demo task",
+        "description": "a recorded task"
+      }
+    },
+    "text": "Task #1 created successfully: demo task"
+  }
+}

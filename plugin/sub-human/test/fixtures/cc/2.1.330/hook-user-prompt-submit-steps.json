@@ -1,0 +1,15 @@
+{
+  "name": "hook-user-prompt-submit-steps",
+  "event": "hook",
+  "session": "steps",
+  "hook": "UserPromptSubmit",
+  "input": {
+    "session_id": "00000000-0000-4000-8000-000000000001",
+    "transcript_path": "/home/user/.claude/projects/-work-project/00000000-0000-4000-8000-000000000001.jsonl",
+    "cwd": "/work/project",
+    "prompt_id": "00000000-0000-4000-8000-000000000002",
+    "permission_mode": "default",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "/rec:steps"
+  }
+}

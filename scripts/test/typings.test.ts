@@ -1,5 +1,5 @@
-// scripts/typings.ts copies Claude Code's generated declarations into typings/; scripts/probe-cc.ts fails while the
-// snapshot was written by another version than contract.json `probed`.
+// scripts/typings.ts copies Claude Code's generated declarations into typings/; scripts/probe-cc.ts typingsCheck
+// says whether the snapshot was written by the version contract.json `probed` names.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -30,12 +30,12 @@ test('copyTypings: every type root copied, or an error naming the missing ones',
   assert.equal(fs.readFileSync(path.join(to, 'claude-code-mcp', 'index.d.ts'), 'utf8'), '// claude-code-mcp\n');
 });
 
-test('typingsCheck: the committed snapshot matches contract.json probed; another version fails', t => {
-  assert.deepEqual(typingsCheck().ok, true, `typings/claude-code was written by ${typingsCheck().version}, contract.json probed ${typingsCheck().probed}: npm run typings`);
+test('typingsCheck: the snapshot writer against probed; another version or a missing file fails', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-typings-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const f = path.join(dir, 'index.d.ts');
   fs.writeFileSync(f, fs.readFileSync(TYPINGS, 'utf8').replace(/^\/\/ Written by Claude Code [^\n]*/, '// Written by Claude Code 0.0.1.'));
+  assert.deepEqual(typingsCheck(f, '0.0.1'), { ok: true, version: '0.0.1', probed: '0.0.1' });
   assert.deepEqual(typingsCheck(f, '2.1.296'), { ok: false, version: '0.0.1', probed: '2.1.296' });
-  assert.equal(typingsCheck(path.join(dir, 'none.d.ts')).ok, false, 'a missing snapshot fails');
+  assert.equal(typingsCheck(path.join(dir, 'none.d.ts'), '2.1.296').ok, false, 'a missing snapshot fails');
 });

@@ -1,0 +1,230 @@
+// follow: watches my room (ARCHITECTURE §7 "Live update" step 3). It finds the room through this session's pointer,
+// reads the room as it stands, then each poll reads the small tail file and, only when it moved, the log by byte ranges
+// and (when its documents stamp moved) the document folders; follow-lines.ts absorb() says what that is for me. The
+// pointer is read again after a /room command, a /clear or resume (the id changes and no session.start fires) and
+// every PING_MS, when the session pings the daemon: a pointer gone is a leave, and following stops quietly. A session
+// in no room pings too, every poll until one gets through under its id, then each PING_MS, so /room knows the
+// module runs here (C1). After /room join,
+// the daemon writes the pointer once the host lets this machine in (R30): its appearing is drawn as one line. The link
+// to a room hosted elsewhere is asked at each ping, so the status line says when its host is away (R34).
+import type { On } from 'claude-code';
+import { why } from '../core/text.js';
+import type { DocKind, DocKinds, LogLine, RoomState } from '../core/entries.js';
+import { fold, takeSnapshot } from '../core/fold.js';
+import type { Me } from '../core/deliver.js';
+import { askerTag, enqueue, terms, waitsFrom } from '../core/deliver.js';
+import { parseDoc } from '../core/schema.js';
+import { PING_MS, decodePointer, hostAway, readAnswer, sessionFile } from '../core/api.js';
+import { readConfig } from '../config.js';
+import type { Result } from '../core/result.js';
+import { err, ok } from '../core/result.js';
+import { blobFile, docDir, fileKey, homeDir, logFile, roomDir, tailFile } from '../home.js';
+import { parseTail } from '../store/store.js';
+import type { Absorbed } from './follow-lines.js';
+import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, planTerms, unreadPlans } from './follow-lines.js';
+import { request } from './bridge.js';
+import type { InRoom } from './session.js';
+import { feed, forget, fresh, joined, off, once, session } from './session.js';
+import { statusLine } from './status.js';
+import { TOOLS } from './tools.js';
+
+export const POLL_MS = 1000;
+/** `$.fs.read` answers at most 4 MiB. */
+const READ_MAX = 4 * 1024 * 1024;
+/** The debug line each finished poll leaves: what a test waits on. */
+export const POLLED = 'sub-human: polled';
+
+export function registerFollow(on: On): void {
+  let timer: { cancel(): void } | null = null;
+  on('session.start', async ($, e, next) => {
+    const out = await next(e);
+    timer?.cancel();
+    Object.assign(session, fresh());
+    const home = homeDir({ SUB_HUMAN_HOME: await $.env.get('SUB_HUMAN_HOME') }, (await $.env.get('HOME')) ?? '');
+    session.off = readConfig({ SUB_HUMAN_CC_OFF: (await $.env.get('SUB_HUMAN_CC_OFF')) ?? undefined }, '').off;
+    let c = freshCursor();
+    let busy = false;
+    let beat = 0;
+    let registered = false;
+    let cc: string | undefined; // the Claude Code version, told to the daemon with each ping for doctor
+    let stopped = false; // set by a fork (readLog)
+    let pinged = { id: '', at: 0 }; // the id that last got a ping through, and when: in no room, one each PING_MS
+    let id = '';
+    const say = (line: string, key = line): void => { if (once(session, key)) $.ui.log(line); };
+
+    // the documents of a kind whose file changed since the last look, each with the one it replaced
+    const readDocs = async <K extends DocKind>(room: InRoom, kind: K): Promise<{ before?: DocKinds[K]; doc: DocKinds[K] }[]> => {
+      const changed = [];
+      for (const f of await $.fs.list(docDir(room.dir, kind)).catch(() => [])) {
+        const old = c.held[kind].get(f.name);
+        if (f.kind !== 'file' || !f.name.endsWith('.json') || old?.mtime === f.mtimeMs) continue;
+        const text = await $.fs.read(`${docDir(room.dir, kind)}/${f.name}`).catch(() => null);
+        const d = text === null ? null : parseDoc(kind, text);
+        if (!d?.ok) continue;
+        c.held[kind].set(f.name, { mtime: f.mtimeMs, doc: d.value });
+        changed.push({ doc: d.value, ...(old && { before: old.doc }) });
+      }
+      return changed;
+    };
+    const readLog = async (room: InRoom, to: number): Promise<Result<readonly LogLine[]>> => {
+      const out: LogLine[] = [];
+      while (c.head.seq < to) {
+        const text = await $.fs.read(logFile(room.dir), { offset: c.offset, length: READ_MAX }).catch(() => null);
+        if (text === null) return err(`sub-human can't read room ${room.code}'s log; its updates wait until it can.`);
+        const r = await linesAfter(text, c.head);
+        if (!r.ok) {
+          stopped = true; // a fork: this session follows the room no more
+          return err(`sub-human stopped following room ${room.code}: its log no longer matches what this session read (${r.error.replace(/^fork: /, '')}).`);
+        }
+        if (r.value.bytes === 0) break; // the tail is ahead of a line still being written
+        out.push(...r.value.lines);
+        c.head = r.value.head;
+        c.offset += r.value.bytes;
+      }
+      return ok(out);
+    };
+    const step = async (room: InRoom): Promise<void> => {
+      const text = await $.fs.read(tailFile(room.dir)).catch(() => null);
+      if (text === null || text === c.tail) return; // an idle poll is this one small read
+      const tail = parseTail(text);
+      const lines = await readLog(room, tail.ok ? tail.value.seq : 0);
+      if (!lines.ok) {
+        if (stopped) timer?.cancel();
+        say(lines.error);
+        return;
+      }
+      c.tail = text;
+      const docs = c.state === null || docsStamp(text) !== c.stamp;
+      c.stamp = docsStamp(text);
+      const activity = docs ? await readDocs(room, 'activity') : [];
+      if (docs) { await readDocs(room, 'presence'); await readDocs(room, 'focus'); }
+      session.mine = activity.find(d => d.doc.name === room.name)?.doc ?? session.mine;
+      const first = c.state === null;
+      const folded = { ...(c.state ?? { wakes: [], draws: [], bursts: {} }), room: fold(c.state && takeSnapshot(c.state.room), lines.value, docsOf(c.held)) };
+      c.state = folded;
+      if (first) { // the waits this session's asks left open, after a restart or resume (R21a)
+        const tag = await askerTag(await $.session.id());
+        session.waiting = waitsFrom(folded.room, lines.value.map(l => l.entry), room.name, tag);
+      } else {
+        for (const h of unreadPlans(folded.room, room.name, c.terms)) c.terms.set(h, terms((await $.fs.read(blobFile(room.dir, h)).catch(() => null)) ?? ''));
+        const now = await $.clock.now();
+        const a = absorb({ ...folded, waiting: session.waiting }, lines.value, activity, me(room, folded.room), now);
+        session.waiting = a.state.waiting ?? [];
+        take(a, !a.wakeLines.length || await woken());
+      }
+      session.state = c.state.room;
+      shown(room);
+    };
+    const me = (room: InRoom, r: RoomState): Me => ({ name: room.name, code: room.code, touched: session.touched, terms: planTerms(r, c.terms) });
+    // a wake's own line is drawn only where wake.ts submits none: a session nobody watches, or wakes turned off
+    const woken = async (): Promise<boolean> =>
+      e.isInteractive && !off(session, 'wake') && (await $.session.surfaces().catch(() => [])).length > 0;
+    const take = (a: Absorbed, submitted: boolean): void => {
+      c.state = a.state;
+      for (const item of a.items) session.queue = enqueue(session.queue, item);
+      const drawn = toDraw(submitted ? a.drawn : [...a.drawn, ...a.wakeLines], session.drawn);
+      session.drawn = drawn.shown;
+      for (const line of drawn.draw) $.ui.log(line);
+      session.wakes = [...session.wakes, ...a.wakes];
+      feed(session, a.feed);
+      session.held += a.held;
+    };
+    const shown = (room: InRoom): void => {
+      const line = c.state ? statusLine(c.state.room, room, session.held, session.away) : session.shown;
+      if (line === session.shown) return;
+      session.shown = line;
+      $.ui.invalidate('ui.render'); // status.ts draws it at the end of the prompt's hint
+    };
+    // colleagues' Claudes' direct messages (R6), which the daemon keeps for this session until taken; a daemon that
+    // doesn't answer is the ping's to say
+    const inbox = async (room: InRoom): Promise<void> => {
+      if (!c.state) return; // the room isn't read yet: the messages wait in the daemon
+      const q = request({ op: 'inbox', session: id }, home);
+      const r = await $.http.fetch(q.url, q).then(x => readAnswer('inbox', x), () => null);
+      const messages = r?.ok ? r.value.messages.filter(m => m.code === room.code) : [];
+      const st = c.state; // read again: the room may have changed during the fetch
+      if (!messages.length || !st) return;
+      const a = absorb(st, [], [], me(room, st.room), await $.clock.now(), messages);
+      take(a, !a.wakeLines.length || await woken());
+      shown(room);
+    };
+    // the repo my work is in (R1, R12), and what it ignores, which is never shared (R14a)
+    const where = async (): Promise<Pick<InRoom, 'root' | 'repo' | 'branch' | 'ignore'>> => {
+      const copy = await $.vcs.detect({ path: e.cwd }).catch(() => null);
+      const root = copy?.root ?? e.cwd;
+      const ignore = await $.fs.read(`${root}/.gitignore`).catch(() => null);
+      return { root, ...(copy && { repo: copy.root.split('/').at(-1) ?? copy.root }), ...(copy?.branch && { branch: copy.branch }), ...(ignore && { ignore }) };
+    };
+    // where this session's pointer says it is: the same room, another (joined elsewhere), or none (it left); then a
+    // ping, which keeps a session in a room live even while idle at the prompt, and the room's link
+    const locate = async (): Promise<void> => {
+      const first = id === '';
+      session.recheck = false;
+      id = await $.session.id();
+      const p = decodePointer((await $.fs.read(sessionFile(home, id)).catch(() => null)) ?? '');
+      const was = session.room;
+      if (p && was && p.code === was.code && p.name === was.name) session.room = { ...was, title: p.title };
+      else {
+        if (was) {
+          c = freshCursor();
+          forget(session);
+          $.ui.invalidate('ui.render');
+        }
+        session.room = p && { home, code: p.code, name: p.name, title: p.title, dir: roomDir(home, await fileKey(p.code)), ...await where() };
+        // a room this session was in as it started (a compact, a resume, a /clear's handoff): the SessionStart hook gave
+        // it its title, so no prompt sets it again over one the person chose
+        if (p && first) session.titled = p.title;
+      }
+      cc ??= (await $.session.version().catch(() => null))?.version ?? '';
+      const now = await $.clock.now();
+      if (p || pinged.id !== id || now - pinged.at >= PING_MS) {
+        const q = request({ op: 'ping', session: id, ...(p && { code: p.code, name: p.name }), ...(cc && { cc }) }, home);
+        const r = await $.http.fetch(q.url, q).then(x => readAnswer('ping', x), (x: unknown) => err(why(x)));
+        if (r.ok) pinged = { id, at: now };
+        for (const n of r.ok ? r.value?.notes ?? [] : []) $.ui.log(n, { to: 'debug' }); // the daemon's (a room swept)
+        if (!r.ok && p) say(`sub-human didn't answer, so ${p.code} may show you away: ${r.error}. /room doctor says why.`, 'ping');
+      }
+      const code = p?.code ?? session.joining;
+      const q = code === null ? null : request({ op: 'link', code }, home);
+      const got = q && (await $.http.fetch(q.url, q).then(x => readAnswer('link', x), () => null));
+      const l = got?.ok ? got.value : null;
+      const line = joined(session, p, l);
+      if (line !== null) $.ui.log(line);
+      if (!p) return;
+      session.hosted = got?.ok === true && got.value === null;
+      const away = hostAway(l?.phase);
+      if (away !== session.away && session.room) { session.away = away; shown(session.room); }
+      if (!registered) { // Claude's tools, from the next prompt on, once this session is in a room
+        registered = true;
+        const failed = await Promise.all(TOOLS.map(t => $.tool.register(t).then(() => null, (x: unknown) => why(x))));
+        const no = failed.find(f => f !== null);
+        if (no) say(`sub-human's tools aren't available in this session: ${no}`); // C3: one line, no fallback
+      }
+    };
+    const poll = async (): Promise<void> => {
+      if (busy) return;
+      busy = true;
+      try {
+        if (!session.room || session.recheck || ++beat % (PING_MS / POLL_MS) === 0) await locate();
+        if (session.room && !stopped) { await step(session.room); await inbox(session.room); }
+      } catch (x) {
+        say(`sub-human can't follow the room: ${why(x)}`);
+      } finally {
+        busy = false;
+        $.ui.log(POLLED, { to: 'debug' });
+      }
+    };
+    timer = $.clock.every(POLL_MS, () => { void poll(); });
+    void poll(); // a big room's first read never holds up the session's start
+    return out;
+  });
+  on('session.end', (_, e, next) => {
+    if (e.reason === 'clear' || e.reason === 'resume') { // the process goes on as another session: keep following
+      Object.assign(session, { recheck: true, told: false, queue: [] });
+      return next(e);
+    }
+    timer?.cancel();
+    timer = null;
+    return next(e);
+  });
+}

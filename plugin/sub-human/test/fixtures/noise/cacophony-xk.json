@@ -1,0 +1,43 @@
+{
+  "source": "https://raw.githubusercontent.com/haskell-cryptography/cacophony/master/vectors/cacophony.txt",
+  "fetched": "2026-11-22",
+  "vectors": [
+    {
+      "protocol_name": "Noise_XK_25519_ChaChaPoly_SHA256",
+      "init_prologue": "4a6f686e2047616c74",
+      "init_static": "e61ef9919cde45dd5f82166404bd08e38bceb5dfdfded0a34c8df7ed542214d1",
+      "init_ephemeral": "893e28b9dc6ca8d611ab664754b8ceb7bac5117349a4439a6b0569da977c464a",
+      "init_remote_static": "31e0303fd6418d2f8c0e78b91f22e8caed0fbe48656dcf4767e4834f701b8f62",
+      "resp_prologue": "4a6f686e2047616c74",
+      "resp_static": "4a3acbfdb163dec651dfa3194dece676d437029c62a408b4c5ea9114246e4893",
+      "resp_ephemeral": "bbdb4cdbd309f1a1f2e1456967fe288cadd6f712d65dc7b7793d5e63da6b375b",
+      "handshake_hash": "cefffc5d1074126cc980ebfe902587ff36ba61dc77d4447ebe0f96dc22ae59d7",
+      "messages": [
+        {
+          "payload": "4c756477696720766f6e204d69736573",
+          "ciphertext": "ca35def5ae56cec33dc2036731ab14896bc4c75dbb07a61f879f8e3afa4c7944a3785af283c991bab613473804356ef6931f83acf64f99c274b93570857cfc5e"
+        },
+        {
+          "payload": "4d757272617920526f746862617264",
+          "ciphertext": "95ebc60d2b1fa672c1f46a8aa265ef51bfe38e7ccb39ec5be34069f1448088433a4534805fa9fe4eb8343ace6609160c767ad9b832e8eea1d9b7a2111818dd"
+        },
+        {
+          "payload": "462e20412e20486179656b",
+          "ciphertext": "5d8e67b9c1b8e36f5dc674bc5cd2ce243fb5d1710fa57de0370da7cc979015398eaad94603b05498ba9a613d2fd923dcaa6fd4288dfd8d70f419bf737efb4cd37f5da37ebb728849318c82"
+        },
+        {
+          "payload": "4361726c204d656e676572",
+          "ciphertext": "3205e1265f809505e6edc092839d3156745d2abafbfd946b261e41"
+        },
+        {
+          "payload": "4a65616e2d426170746973746520536179",
+          "ciphertext": "470bcb1ae099555ff0d729500df550418d6ee5149d9e40bd2f4c6b3d263cc818d5"
+        },
+        {
+          "payload": "457567656e2042f6686d20766f6e2042617765726b",
+          "ciphertext": "d7187ed9d217ba6e91cf596e4871012ccedf7b5bed0d4cb8f7affb020fa17a95a23371e0f6"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+# Ordinary engineering prose the command/URL rule must pass, one per line.
+git history shows the bug came in with the paging change
+curl returned 404 for /tasks?cursor=abc
+node 22 strips types, so there is no build step
+listTasks now returns {items, next}; update your side
+`listTasks` returns {items, next} now
+the store half is pushed to the paging branch
+make sure the handler reads next from the query
+I ran the tests and they pass
+run the tests
+see the README
+see src/store.js for the cursor format
+git is fine here
+node is slow on this
+npm test is green on my side
+the python client still sends offset
+docker compose is not needed for this
+yarn workspaces aren't used here
+pip resolves the old version of the client
+sudo is not needed for the dev server
+bash completion is unrelated
+go ahead and merge when your side is green
+the shell script in scripts/ is unchanged
+it makes sense to page by cursor
+git blame says the cursor code is mine
+node 22 strips types
+curl returned 404
+Then git rebased cleanly
+python3 support was dropped
+Done; node --test passes
+First git fetch, then look
+bash completion is broken
+Sure, git worktrees work
+pip resolver changed
+sudo is not needed
+ssh to the devbox works now
+the eval results look fine
+terraform plan is clean
+the source of the bug is in store.js
+find the delete handler in src/server.js
+kubectl is not installed here
+deno is not used here

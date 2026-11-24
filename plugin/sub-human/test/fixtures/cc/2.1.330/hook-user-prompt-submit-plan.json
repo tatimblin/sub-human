@@ -1,0 +1,15 @@
+{
+  "name": "hook-user-prompt-submit-plan",
+  "event": "hook",
+  "session": "plan",
+  "hook": "UserPromptSubmit",
+  "input": {
+    "session_id": "00000000-0000-4000-8000-000000000015",
+    "transcript_path": "/home/user/.claude/projects/-work-project/00000000-0000-4000-8000-000000000015.jsonl",
+    "cwd": "/work/project",
+    "prompt_id": "00000000-0000-4000-8000-000000000016",
+    "permission_mode": "plan",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "Without reading any file, make a two-line plan to append a line `three` to notes.txt, then present it with ExitPlanMode. Once it is approved, reply \"ok\" and stop without changing anything."
+  }
+}

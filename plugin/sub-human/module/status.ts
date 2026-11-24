@@ -1,0 +1,130 @@
+// status: what the person sees of the room without asking (R15b). The room's line, at the end of the dim hint under the
+// prompt (PromptHint's tail, the terminal's only), names who else is here and what needs me; `/room news` opens a
+// pane with the updates since I last looked, drawn here with no model call, and clears the held messages. follow.ts
+// fills the session's feed and asks for a redraw when the line changes; this file draws it and the pane. Where no
+// terminal draws the hint, there is no line: `$.ui.status` is drawn as a warning (docs/internals/v2-status-line.md).
+import type { On } from 'claude-code';
+import type { Input } from '../core/deliver.js';
+import type { Member, RoomState } from '../core/entries.js';
+import { oneLine, why } from '../core/text.js';
+import { COMMAND, session, unread } from './session.js';
+import { isHere } from '../core/entries.js';
+import { pending } from './plans-pending.js';
+
+/** The pane's id; one news pane at a time. */
+export const NEWS_PANE = 'sub-human-news';
+const LINE_MAX = 300;
+
+/** How wide the terminal is where nothing says. */
+export const LINE_COLUMNS = 80;
+/** What Claude Code draws between its hint and a tail, and what goes between two plugins' tails. */
+const SEP = ' · ';
+const LABEL = 'Room';
+const DOT = { working: '●', idle: '○', waiting: '◐', away: '◌' } as const;
+
+/**
+ * `Room ● bob ○ carol · plan "paging" needs your review (+2)` (R15b): `Room`, each other member (`Room empty` for none) with a dot (● working, ○ idle, ◐ waiting on a permission prompt, ◌ away), or
+ * that the host is away (R34) when nobody's presence can be known; then the one most urgent thing that needs me, with
+ * how many more do. Single spaces: Claude Code folds runs of them. Within `width`, names fold into `+N` first: `Room` and
+ * what needs me are kept whole.
+ */
+export function statusLine(room: RoomState, me: { readonly name: string }, held: number, away = false, width: number = LINE_COLUMNS): string {
+  const needs = needsMe(room, me.name, held);
+  const right = needs[0] === undefined ? '' : ` · ${needs[0]}${needs.length > 1 ? ` (+${needs.length - 1})` : ''}`;
+  if (away) return `${LABEL} host away${right}`;
+  const names = others(room, me.name).map(m => `${dot(m)} ${m.name}`);
+  if (!names.length) return `${LABEL} empty${right}`;
+  for (let k = names.length; ; k--) {
+    const rest = names.length - k;
+    const line = [LABEL, ...names.slice(0, k), ...(rest ? [`+${rest}`] : [])].join(' ') + right;
+    if (k === 0 || line.length <= width) return line;
+  }
+}
+
+/**
+ * The other members the line names: everyone who hasn't left or been removed, even while away, since they are still
+ * in the room and a message still reaches them. The invite row (band.ts) shows only while there are none.
+ */
+export function others(room: RoomState, me: string): Member[] {
+  return room.members.filter(m => m.name !== me && !m.kicked && m.machine !== undefined);
+}
+
+function dot(m: Member): string {
+  if (!isHere(m)) return DOT.away;
+  return m.presence?.waiting ? DOT.waiting : m.presence?.state === 'working' ? DOT.working : DOT.idle;
+}
+
+/**
+ * What needs me, most urgent first: a plan version waiting on my review, a plan sent to me, messages held for me
+ * (a command or URL in them, R10), and a task I added, not yet claimed, whose blockers are all done.
+ */
+export function needsMe(room: RoomState, me: string, held: number): string[] {
+  const plans = pending(room, me);
+  const done = new Set(room.tasks.filter(t => t.status === 'done').map(t => t.n));
+  return [
+    ...plans.filter(p => p.kind === 'review').map(p => `plan "${oneLine(p.name, 40)}" needs your review`),
+    ...plans.filter(p => p.kind === 'sent').map(p => `${p.from} sent you plan "${oneLine(p.name, 40)}"`),
+    ...(held ? [`${held} held message${held === 1 ? '' : 's'}: /room news`] : []),
+    // until someone claims it: a claimed task is started
+    ...room.tasks.filter(t => t.addedBy === me && t.status === 'open' && t.blockedBy.length && t.blockedBy.every(n => done.has(n)))
+      .map(t => `task #${t.n} is free to start`),
+  ];
+}
+
+/**
+ * The news pane's lines: what each colleague changed and found since I last looked, by member in the order they
+ * first acted. A `left` is shown only when no machine of the member's is still present (a leave on one machine).
+ */
+export function newsLines(unseen: readonly Input[], room: RoomState, code: string): string[] {
+  const by = new Map<string, string[]>();
+  const add = (who: string, line: string): void => { by.set(who, [...(by.get(who) ?? []), oneLine(line, LINE_MAX)]); };
+  for (const u of unseen) {
+    if (u.kind === 'edits') { add(u.from, `edited ${u.files.join(', ')}`); continue; }
+    if (u.kind === 'message') { add(u.from, `their Claude, held for you: ${u.text}`); continue; }
+    const e = u.entry;
+    const claude = e.by === 'claude' ? 'their Claude: ' : '';
+    switch (e.kind) {
+      case 'joined': add(e.from, 'joined'); break;
+      case 'left': if (!room.members.some(m => m.name === e.from && m.presence && m.presence.state !== 'away')) add(e.from, 'left'); break;
+      case 'finding': case 'post': add(e.from, `${claude}${e.kind === 'post' && e.to ? `(to ${e.to}) ` : ''}${e.text}`); break;
+      case 'activity': add(e.from, `${e.text}${e.ok === undefined ? '' : e.ok ? ' (passed)' : ' (failed)'}`); break;
+      case 'plan': add(e.from, `stored plan ${e.name} version ${e.version}`); break;
+      case 'decision': add(e.from, `plan ${e.name} version ${e.version} was decided`); break;
+      case 'plan_sent': add(e.from, `sent plan ${e.name} version ${e.version} to ${e.to ?? 'the room'}`); break;
+      case 'task': add(e.from, `task #${e.task.n} ${e.task.title} is ${e.task.status}`); break;
+      case 'plan_ask': case 'plan_answer': case 'plan_accept': case 'invite': case 'admit': case 'kick': break; // a card, a wake or the host's
+    }
+  }
+  if (!by.size) return [`Nothing new in ${code} since you last looked.`];
+  return [`News in ${code} since you last looked:`, ...[...by].flatMap(([who, lines]) => ['', oneLine(who, 64), ...lines.map(l => `  ${l}`)])];
+}
+
+export function registerStatus(on: On): void {
+  let shown: readonly string[] = [];
+  on('command.run', { command: COMMAND, args: /^\s*news\s*$/ }, async ($, e, next) => {
+    const room = session.room;
+    if (!room || !session.state) return next(e); // the command answers that this session is in no room
+    shown = newsLines(unread(session, 'news'), session.state, room.code);
+    const opened = await $.ui.open({ id: NEWS_PANE, title: `${room.code} news`, focus: true, closeOnEscape: true })
+      .catch((x: unknown) => ({ isPlaced: false as const, reason: why(x) }));
+    if (!opened.isPlaced) { $.ui.log(`news isn't shown here (${opened.reason}); /room who says what each member is doing.`); return {}; }
+    session.read.news = session.fed;
+    session.held = 0;
+    session.shown = statusLine(session.state, room, 0, session.away);
+    $.ui.invalidate('ui.render');
+    $.ui.log('news is open; Esc closes it.');
+    return {};
+  });
+  on('ui.render', { component: 'Pane', requestId: NEWS_PANE }, () => ({
+    type: 'Box', props: { flexDirection: 'column' },
+    children: shown.map(line => ({ type: 'Text', ...(line === shown[0] && { props: { bold: true } }), children: [line] })),
+  }));
+  on('ui.render', { component: 'PromptHint', plugin: '*' }, (_, e, next) => { // the engine's line, no plugin's
+    const room = session.room;
+    if (e.surface !== 'terminal' || !room || !session.state) return next(e);
+    const had = e.props.tail ?? '';
+    const width = (e.viewport?.columns ?? LINE_COLUMNS) - e.props.hint.length - SEP.length - (had ? had.length + SEP.length : 0);
+    const line = statusLine(session.state, room, session.held, session.away, width);
+    return next({ ...e, props: { ...e.props, tail: had ? `${had}${SEP}${line}` : line } });
+  });
+}

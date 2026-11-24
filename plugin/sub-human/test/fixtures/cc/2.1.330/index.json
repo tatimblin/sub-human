@@ -1,0 +1,221 @@
+{
+  "version": "2.1.330",
+  "costUsd": 0.568,
+  "runs": [
+    {
+      "date": "2026-11-22",
+      "sessions": [
+        "steps",
+        "plan"
+      ],
+      "costUsd": 0.202
+    },
+    {
+      "date": "2026-11-22",
+      "sessions": [
+        "plan"
+      ],
+      "costUsd": 0.0676
+    },
+    {
+      "date": "2026-11-22",
+      "sessions": [
+        "steps",
+        "plan"
+      ],
+      "costUsd": 0.2304
+    },
+    {
+      "date": "2026-11-23",
+      "sessions": [
+        "extra"
+      ],
+      "costUsd": 0.068
+    }
+  ],
+  "gaps": [
+    "Notification: no notification fires under -p, so there is no hook-notification fixture.",
+    "A delivered session.send: both sends here go to `nobody` and are refused (isDelivered false); delivery to another session needs two live sessions (U6)."
+  ],
+  "fixtures": {
+    "hook-session-end-steps": {
+      "event": "hook",
+      "session": "steps",
+      "hook": "SessionEnd"
+    },
+    "hook-session-start-steps": {
+      "event": "hook",
+      "session": "steps",
+      "hook": "SessionStart"
+    },
+    "hook-user-prompt-expansion-steps": {
+      "event": "hook",
+      "session": "steps",
+      "hook": "UserPromptExpansion"
+    },
+    "hook-user-prompt-submit-steps": {
+      "event": "hook",
+      "session": "steps",
+      "hook": "UserPromptSubmit"
+    },
+    "prompt-submit-steps": {
+      "event": "prompt.submit",
+      "session": "steps"
+    },
+    "tool-list-steps": {
+      "event": "tool.list",
+      "session": "steps"
+    },
+    "session-send-plugin": {
+      "event": "session.send",
+      "session": "steps"
+    },
+    "tool-send-message-plugin": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "SendMessage"
+    },
+    "tool-write": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "Write"
+    },
+    "tool-edit": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "Edit"
+    },
+    "tool-bash-git-commit": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "Bash"
+    },
+    "tool-bash-error": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "Bash"
+    },
+    "tool-bash-test": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "Bash"
+    },
+    "tool-task-create": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "TaskCreate"
+    },
+    "tool-task-update-in-progress": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "TaskUpdate"
+    },
+    "tool-task-update-completed": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "TaskUpdate"
+    },
+    "session-send-model": {
+      "event": "session.send",
+      "session": "steps"
+    },
+    "tool-send-message": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "SendMessage"
+    },
+    "tool-ask-user-question": {
+      "event": "tool.call",
+      "session": "steps",
+      "tool": "AskUserQuestion"
+    },
+    "turn-complete-steps": {
+      "event": "turn.complete",
+      "session": "steps"
+    },
+    "hook-session-end-plan": {
+      "event": "hook",
+      "session": "plan",
+      "hook": "SessionEnd"
+    },
+    "hook-session-start-plan": {
+      "event": "hook",
+      "session": "plan",
+      "hook": "SessionStart"
+    },
+    "hook-user-prompt-submit-plan": {
+      "event": "hook",
+      "session": "plan",
+      "hook": "UserPromptSubmit"
+    },
+    "prompt-submit-plan": {
+      "event": "prompt.submit",
+      "session": "plan"
+    },
+    "tool-list-plan": {
+      "event": "tool.list",
+      "session": "plan"
+    },
+    "tool-write-2": {
+      "event": "tool.call",
+      "session": "plan",
+      "tool": "Write"
+    },
+    "tool-exit-plan-mode": {
+      "event": "tool.call",
+      "session": "plan",
+      "tool": "ExitPlanMode"
+    },
+    "turn-complete-plan": {
+      "event": "turn.complete",
+      "session": "plan"
+    },
+    "hook-session-end-extra": {
+      "event": "hook",
+      "session": "extra",
+      "hook": "SessionEnd"
+    },
+    "hook-session-start-extra": {
+      "event": "hook",
+      "session": "extra",
+      "hook": "SessionStart"
+    },
+    "hook-user-prompt-expansion-extra": {
+      "event": "hook",
+      "session": "extra",
+      "hook": "UserPromptExpansion"
+    },
+    "hook-user-prompt-submit-extra": {
+      "event": "hook",
+      "session": "extra",
+      "hook": "UserPromptSubmit"
+    },
+    "prompt-submit-extra": {
+      "event": "prompt.submit",
+      "session": "extra"
+    },
+    "tool-list-extra": {
+      "event": "tool.list",
+      "session": "extra"
+    },
+    "tool-bash-git-push": {
+      "event": "tool.call",
+      "session": "extra",
+      "tool": "Bash"
+    },
+    "tool-task-create-2": {
+      "event": "tool.call",
+      "session": "extra",
+      "tool": "TaskCreate"
+    },
+    "tool-task-update-deleted": {
+      "event": "tool.call",
+      "session": "extra",
+      "tool": "TaskUpdate"
+    },
+    "turn-complete-extra": {
+      "event": "turn.complete",
+      "session": "extra"
+    }
+  }
+}

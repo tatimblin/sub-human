@@ -1,11 +1,9 @@
 {
-  // npm run typecheck. Nothing is emitted: node strips the types of each .ts it
-  // loads (Node 22.18+) and Claude Code transpiles the hooks module (mod/); only this checks them.
-  // This is the whole plugin: the runtime, its node tests (test/), the module's wiring tests (mod/test) and its two
-  // plain JavaScript files (hooks/compile-cache.js, lib/cache-dir.js: // @ts-check), as one project, which is what an
-  // editor and the type-aware linter (npm run lint) read. tsconfig.runtime.json checks the runtime again on its own, so
-  // it never leans on a test's declarations; scripts/typecheck-shim.ts checks scripts/sub-human (no extension); the repo
-  // scripts are their own project, scripts/tsconfig.json.
+  // npm run typecheck. Nothing is emitted: node strips the types of each .ts it loads (Node 22.18+) and Claude Code
+  // transpiles the hooks module (module/); only this checks them. This is the whole plugin: the runtime and its tests
+  // (*.node-test.ts for node, *.test.ts for Claude Code's test kit), as one project, which is what an editor and the
+  // type-aware linter (npm run lint) read. tsconfig.runtime.json checks the runtime again on its own, so it never leans
+  // on a test's declarations; the repo scripts are their own project, scripts/tsconfig.json.
   "compilerOptions": {
     "strict": true,
     "exactOptionalPropertyTypes": true,
@@ -24,13 +22,10 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "allowJs": true,
-    "checkJs": true,
     "types": ["node"],
     // import type { ... } from 'claude-code': the committed snapshot of the declarations Claude Code writes beside a
-    // hooks module (.claude-plugin/types/, gitignored); refresh it from there with npm run typings after a Claude Code
-    // update (npm run probe fails while it names another version than lib/cc/contract.json probed). The same file
-    // declares 'claude-code/testing', the kit mod/test imports under `claude plugin test`.
+    // hooks module (.claude-plugin/types/, gitignored); refresh it with npm run typings after a Claude Code update.
+    // The same file declares 'claude-code/testing', the kit the *.test.ts files import under `claude plugin test`.
     "paths": {
       "claude-code": ["./typings/claude-code/index.d.ts"],
       "claude-code/testing": ["./typings/claude-code/index.d.ts"]
@@ -42,6 +37,7 @@
     "typings/claude-code-mcp"
   ],
   "exclude": [
+    "plugin/sub-human/vendor",
     "plugin/sub-human/test/fixtures",
     "plugin/sub-human/.claude-plugin"
   ]

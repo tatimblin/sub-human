@@ -1,0 +1,19 @@
+{
+  "name": "hook-user-prompt-expansion-extra",
+  "event": "hook",
+  "session": "extra",
+  "hook": "UserPromptExpansion",
+  "input": {
+    "session_id": "00000000-0000-4000-8000-000000000020",
+    "transcript_path": "/home/user/.claude/projects/-work-project/00000000-0000-4000-8000-000000000020.jsonl",
+    "cwd": "/work/project",
+    "prompt_id": "00000000-0000-4000-8000-000000000021",
+    "permission_mode": "default",
+    "hook_event_name": "UserPromptExpansion",
+    "expansion_type": "slash_command",
+    "command_name": "rec:extra",
+    "command_args": "",
+    "command_source": "plugin",
+    "prompt": "/rec:extra"
+  }
+}

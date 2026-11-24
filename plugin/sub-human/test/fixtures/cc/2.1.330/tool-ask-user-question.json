@@ -1,0 +1,53 @@
+{
+  "name": "tool-ask-user-question",
+  "event": "tool.call",
+  "session": "steps",
+  "input": {
+    "questions": [
+      {
+        "question": "Which one?",
+        "header": "Pick",
+        "options": [
+          {
+            "label": "A",
+            "description": "Option A"
+          },
+          {
+            "label": "B",
+            "description": "Option B"
+          }
+        ],
+        "multiSelect": false
+      }
+    ],
+    "tool": "AskUserQuestion",
+    "tool_use_id": "toolu_fake0013"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "questions": [
+        {
+          "question": "Which one?",
+          "header": "Pick",
+          "options": [
+            {
+              "label": "A",
+              "description": "Option A"
+            },
+            {
+              "label": "B",
+              "description": "Option B"
+            }
+          ],
+          "multiSelect": false
+        }
+      ],
+      "answers": {
+        "Which one?": "A"
+      }
+    },
+    "text": "Your questions have been answered: \"Which one?\"=\"A\". You can now continue with these answers in mind.",
+    "isReadOnly": true
+  }
+}

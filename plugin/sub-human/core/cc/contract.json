@@ -1,0 +1,457 @@
+{
+ "note": "Every Claude Code fact v2 relies on (ARCHITECTURE §9). kind api: each `typings` fragment is in the typings snapshot (comments and whitespace aside), or, as {in, has}, each member is inside the declaration that starts at `in`. kind internal: undocumented, the binary holds each `search` string (ASCII: the binary keeps other text as UTF-16); at most 10 (PRD C2), each with its reason, its one fallback and the feature request it needs. feature: the SUB_HUMAN_CC_OFF value that turns its part off. checked: the versions the entry was checked on. Not an entry: §9's 'Managed machines' row, since v2 uses none of the hooks the guard skips, and the command hooks it leaves alone are command-hooks. npm run probe checks them all.",
+ "probed": "2.1.330",
+ "entries": [
+  {
+   "id": "tool-call-capture",
+   "kind": "api",
+   "feature": "capture",
+   "surface": "tool.call middleware after next(e); Edit and Write results carry filePath, Bash carries gitOperation; isError on a failed call",
+   "typings": [
+    "'tool.call': ToolCallInput;",
+    "'tool.call': ToolCallResult;",
+    "Edit: { filePath: string",
+    "Write: { type: \"create\" | \"update\" filePath: string",
+    "gitOperation?: { commit?: { sha: string",
+    "isError: true;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Activity updates (R12) come from the results; bashEditDiff is @internal and not used."
+  },
+  {
+   "id": "task-tool-results",
+   "kind": "api",
+   "feature": "tasks-bridge",
+   "surface": "TaskCreate result {task:{id,subject,description?}}, TaskUpdate result statusChange",
+   "typings": [
+    "TaskCreate: { task: { id: string subject: string description?: string }",
+    "statusChange?: { from: string to: string }"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "The native task mirror (R23) reads the results, never the task files."
+  },
+  {
+   "id": "tool-list",
+   "kind": "api",
+   "feature": "tasks-bridge",
+   "surface": "$.tool.list: whether this session has the Task tools",
+   "typings": [
+    "list: () => Promise<ToolInfo[]>;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Whether they are on is typed; why they are off is task-tool-gate."
+  },
+  {
+   "id": "tool-call-tasklist",
+   "kind": "api",
+   "feature": "tasks-bridge",
+   "surface": "$.tool.call({tool: 'TaskList'}) from the module: the bridge re-derives its id map from tagged subjects (result tasks[{id, subject}])",
+   "typings": [
+    "call: EventCalls['tool']['call'];",
+    "TaskList: {",
+    "tasks: Array<{"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "A module's own call runs with the mod_own_call layer and opens no dialog; Claude Code's task files are never read."
+  },
+  {
+   "id": "prompt-context",
+   "kind": "api",
+   "feature": "context",
+   "surface": "prompt.submit hook context (100k characters an entry, 200k in all)",
+   "typings": [
+    "'prompt.submit': PromptSubmitInput;",
+    {
+     "in": "export type PromptSubmitResult =",
+     "has": [
+      "context?: readonly string[];"
+     ]
+    }
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Per-turn context (R15a). Not prompt.context, which fires once per conversation. It also fires for peer and plugin prompts."
+  },
+  {
+   "id": "mid-loop-notes",
+   "kind": "api",
+   "feature": "context",
+   "surface": "$.session.append notes and tool.call result context, read inside a long tool loop",
+   "typings": [
+    "append: (args: SessionAppendArgs) => Promise<SessionAppendResult>;",
+    {
+     "in": "export type ToolCallResult<",
+     "has": [
+      "context?: readonly string[];"
+     ]
+    }
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "The overlap heads-up (R15d) without starting a turn."
+  },
+  {
+   "id": "status-line",
+   "kind": "api",
+   "feature": "status",
+   "surface": "the PromptHint line's tail (the terminal's only), and $.ui.log (2,000 characters drawn)",
+   "typings": [
+    {
+     "in": "PromptHint: {",
+     "has": [
+      "tail?: string;",
+      "hint: string;"
+     ]
+    },
+    "log: (text: string, options?: UiLogOptions) => void;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "The room's line (R15b) at the end of the dim hint under the prompt (PromptHint's tail), not $.ui.status, which Claude Code draws as '⚠ sub-human: …' (docs/internals/v2-status-line.md); no line where no terminal draws the hint. $.ui.log for one-line notices and debug lines."
+  },
+  {
+   "id": "ask-card",
+   "kind": "api",
+   "feature": "cards",
+   "surface": "$.ui.ask answered with a label or Other text; rejects when dismissed or in -p",
+   "typings": [
+    "ask: (question: string, options?: readonly string[] | AskOptions) => Promise<string>;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Let in / Refuse, keep / room / send, and the plan review card."
+  },
+  {
+   "id": "plan-pane",
+   "kind": "api",
+   "feature": "pane",
+   "surface": "$.ui.open pane; pane bodies scroll (ui.scroll)",
+   "typings": [
+    "open: (pane: PaneOpenArgs) => Promise<UiOpenResult>;",
+    "'ui.scroll': UiScrollInput;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "The full plan, scrollable. An unasked pane only places from 144 columns, so it opens from the card."
+  },
+  {
+   "id": "invite-band",
+   "kind": "api",
+   "feature": "invite-band",
+   "surface": "ui.render on AbovePrompt (yields to a survey, redrawn by $.ui.invalidate); Button onPress with a letter hotkey; $.ui.copy to the pressing surface",
+   "typings": [
+    "'ui.render': RenderInput;",
+    {
+     "in": "AbovePrompt: {",
+     "has": [
+      "hasSurvey: boolean;",
+      "bodyColumns: number;"
+     ]
+    },
+    "invalidate: (event: InvalidatableEventName",
+    "export type InvalidatableEventName = RenderEventName |",
+    {
+     "in": "export type ButtonProps = {",
+     "has": [
+      "hotkey?: string;",
+      "onPress: ((e: UiPressArgument) => void) | ((e: UiPressArgument) => Promise<unknown>);"
+     ]
+    },
+    "copy: (args: UiCopyArgs) => Promise<UiCopyResult>;",
+    {
+     "in": "export type UiPressArgument = {",
+     "has": [
+      "surface: RenderSurface;"
+     ]
+    }
+   ],
+   "checked": [
+    "2.1.330",
+    "2.1.331"
+   ],
+   "note": "The row shown while the person is alone in their room (R30): a button per way in, then the line with copy and cancel. Early access: clicks land only in fullscreen; elsewhere ctrl+x tab focuses the band. No digit hotkeys: a bare digit in an empty prompt presses a band Button."
+  },
+  {
+   "id": "exit-plan-mode",
+   "kind": "api",
+   "feature": "plan-review",
+   "surface": "tool.call on ExitPlanMode: result {plan, filePath?}",
+   "typings": [
+    "ExitPlanMode: { plan: string | null isAgent: boolean filePath?: string"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Plan approval asks keep / room / send (R18); the rejection shape is not needed."
+  },
+  {
+   "id": "wake-submit",
+   "kind": "api",
+   "feature": "wake",
+   "surface": "$.prompt.submit (runs once the session is idle), turn.complete isAborted to retry, session.stop, $.session.surfaces",
+   "typings": [
+    "submit: (input: PromptSubmitArgs) => Promise<PromptSubmitResult>;",
+    {
+     "in": "type TurnCompleteFields =",
+     "has": [
+      "isAborted: boolean;"
+     ]
+    },
+    "'session.stop': SessionStopInput;",
+    "surfaces: () => Promise<readonly RenderSurface[]>;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "A wake (R10) is skipped when surfaces() is empty."
+  },
+  {
+   "id": "presence",
+   "kind": "api",
+   "feature": "presence",
+   "surface": "turn.start and turn.complete; the Notification command hook's notification_type",
+   "typings": [
+    "'turn.start': TurnStartInput;",
+    "'turn.complete': TurnCompleteInput;",
+    "hook_event_name: 'Notification'; message: string; title?: string; notification_type: string;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Working or idle; waiting on a permission prompt is best-effort, about 6 s late."
+  },
+  {
+   "id": "repo-branch",
+   "kind": "api",
+   "feature": "repo",
+   "surface": "$.vcs.detect {root, branch} for the repo and branch",
+   "typings": [
+    "detect: EventCalls['vcs']['detect'];"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "$.vcs is marked experimental; a detect that rejects or answers null leaves the repo and branch unset."
+  },
+  {
+   "id": "session-send-hook",
+   "kind": "api",
+   "feature": "messages",
+   "surface": "session.send hook at the sender, answered {isDelivered}",
+   "typings": [
+    "'session.send': SessionSendInput;",
+    {
+     "in": "export type SessionSendResult =",
+     "has": [
+      "isDelivered: true;",
+      "isDelivered: false;"
+     ]
+    }
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Claude-to-Claude routing (R6) at the sender, because session.receive carries no sender."
+  },
+  {
+   "id": "session-title",
+   "kind": "api",
+   "feature": "messages",
+   "surface": "sessionTitle from a SessionStart command hook",
+   "typings": [
+    "sessionTitle?: string;",
+    "SessionStart: 'additionalContext' | 'initialUserMessage' | 'sessionTitle'",
+    {
+     "in": "type UserPromptSubmitHookInput =",
+     "has": [
+      "session_title?: string;"
+     ]
+    },
+    {
+     "in": "type SessionStartHookInput =",
+     "has": [
+      "session_title?: string;"
+     ]
+    }
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "NAME.CODE addressing; uniqueness is session-title-unique. The title a prompt or a start arrives with is read, so NAME.CODE is set on a join and never over a title the person chose (module/session.ts retitle)."
+  },
+  {
+   "id": "follow-poll",
+   "kind": "api",
+   "feature": "core",
+   "surface": "$.clock.every + $.fs.stat + $.fs.read of the room's tail file; crypto.subtle.digest",
+   "typings": [
+    "every: TimerCall;",
+    {
+     "in": "fs: {",
+     "has": [
+      "read: FsReadCall;",
+      "stat: (path: string, options?: FsStatOptions) => Promise<FsStat>;"
+     ]
+    },
+    {
+     "in": "export type FsReadTextOptions =",
+     "has": [
+      "offset?: number;"
+     ]
+    },
+    "readonly subtle: { digest("
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "There is no watch: polled every 0.5 to 1 s, 4 MiB a read; the hash chain is checked in the module."
+  },
+  {
+   "id": "tool-register",
+   "kind": "api",
+   "feature": "core",
+   "surface": "$.tool.register + tool.run",
+   "typings": [
+    "register: (tool: ToolSpec) => Promise<OpValueOf['tool.register']>;",
+    "'tool.run': ToolCallInput;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Claude's tools (share, read, plan, task) are the module's; there is no MCP server."
+  },
+  {
+   "id": "node-children",
+   "kind": "api",
+   "feature": "core",
+   "surface": "$.process.spawn and $.http.fetch to loopback",
+   "typings": [
+    "spawn: (request: ProcessSpawnRequest) => HookStream<ProcessSpawnChunk, ProcessSpawnResult>;",
+    "fetch: (url: string, init?: HttpInit) => Promise<HttpResponse>;"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "The module has no Node and no import(); spawned children die with it, so a daemon detaches itself."
+  },
+  {
+   "id": "command-hooks",
+   "kind": "api",
+   "feature": "core",
+   "surface": "command hooks in hooks.json: UserPromptExpansion (the /room command), SessionEnd; the module declares /room immediate ($.command.register)",
+   "typings": [
+    "hook_event_name: 'UserPromptExpansion';",
+    "hook_event_name: 'SessionEnd';",
+    "register: (command: CommandSpec) => Promise<OpValueOf['command.register']>;",
+    {
+     "in": "export type CommandSpec = {",
+     "has": [
+      "immediate?: true;"
+     ]
+    }
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "Documented; they survive managed-machine policy, which can refuse the module. Declared immediate, a /room typed mid-turn runs at once instead of queueing behind the turn (no verb needs the model)."
+  },
+  {
+   "id": "command-run-empty-answer",
+   "kind": "internal",
+   "feature": "core",
+   "surface": "a module's command.run answer {} to a prompt the person typed adds no row: no echo of the command line, no expansion hook, no model turn",
+   "search": [
+    "but no command.run hook answered it",
+    ")return{messages:[],shouldQuery:!1,command:"
+   ],
+   "checked": [
+    "2.1.330",
+    "2.1.331"
+   ],
+   "reason": "A /room answer must be one plain line: a {text} answer echoes the typed command (a join line's secret) into the transcript, and the classic UserPromptExpansion block draws 'UserPromptExpansion operation blocked by hook:'.",
+   "fallback": "The classic hook answers, inside Claude Code's 'blocked by hook' frame.",
+   "request": "Document that an empty command.run answer adds no row (not yet filed).",
+   "note": "Only for origin composer with no pasted blocks before it; the SDK, the bridge and -p echo the line. module/command.ts; docs/internals/v2-command-answer.md."
+  },
+  {
+   "id": "task-tool-gate",
+   "kind": "internal",
+   "feature": "tasks-bridge",
+   "surface": "the Task tools are off when CLAUDE_CODE_ENABLE_TASKS is false, and otherwise on only for some models and providers unless CLAUDE_CODE_ENABLE_TODO_TOOLS is set",
+   "search": [
+    ".CLAUDE_CODE_ENABLE_TASKS===!1)return!1;return!0}",
+    ".CLAUDE_CODE_ENABLE_TODO_TOOLS===!0}"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "reason": "To tell the person in one line why their session has no Task tools and which launch env var turns them on (R23a).",
+   "fallback": "Say only that the native task tools are off here, without the why.",
+   "request": "Q12: a plugin-declared opt-in for the Task tools (not yet filed).",
+   "note": "$.tool.list says whether they are on (tool-list)."
+  },
+  {
+   "id": "wake-frame",
+   "kind": "internal",
+   "feature": "wake",
+   "surface": "a plugin's $.prompt.submit between turns enters framed as '<plugin> plugin sent a message:'",
+   "search": [
+    " plugin sent a message:\n",
+    "This is how Claude Code surfaces a prompt a plugin submits between "
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "reason": "The wake's own text (bob's Claude asks: ...) is written to read right inside that frame.",
+   "fallback": "No wakes: the message waits in the status line and the next turn's context.",
+   "request": "Document the frame a plugin prompt gets (not yet filed).",
+   "note": "It shows as a prompt from the plugin."
+  },
+  {
+   "id": "session-send-answer",
+   "kind": "internal",
+   "feature": "messages",
+   "surface": "a session.send hook's {isDelivered: true} without next is honoured: the message is not sent on, and the sender's tool reports it delivered",
+   "search": [
+    "Delivered by a plugin hook; nothing else was sent."
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "reason": "Claude-to-Claude messages to NAME.CODE go over the room channel, not Claude Code's own delivery.",
+   "fallback": "No Claude-to-Claude messages to members on other machines.",
+   "request": "Type {isDelivered: true} without next as the hook's own delivery (not yet filed).",
+   "note": "The engine's tool result when a hook delivered it; U6 showed it honoured on 2.1.330. ARCHITECTURE §9: possibly internal."
+  },
+  {
+   "id": "session-title-unique",
+   "kind": "internal",
+   "feature": "messages",
+   "surface": "a sessionTitle already held by a live session is not given to a second one (tengu_session_name_uniqueness, on by default)",
+   "search": [
+    "\"tengu_session_name_uniqueness\",!0)",
+    "\" is held by live pid "
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "reason": "NAME.CODE must name one session, or a message could reach the wrong one.",
+   "fallback": "No Claude-to-Claude messages by NAME.CODE.",
+   "request": "Document sessionTitle uniqueness (not yet filed).",
+   "note": "The second session yields and keeps a suffixed name."
+  }
+ ]
+}

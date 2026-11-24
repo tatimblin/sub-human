@@ -1,0 +1,23 @@
+{
+  "name": "tool-write-2",
+  "event": "tool.call",
+  "session": "plan",
+  "input": {
+    "file_path": "/work/project/.plans/without-reading-any-file-staged-firefly-of-00000000-0000-4000-8000-000000000015.md",
+    "content": "1. Append the line `three` to the end of `notes.txt` (e.g. `echo three >> notes.txt`).\n2. Verify with `tail -n 1 notes.txt` that the last line is `three`.\n",
+    "tool": "Write",
+    "tool_use_id": "toolu_fake0017"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "type": "create",
+      "filePath": "/work/project/.plans/without-reading-any-file-staged-firefly-of-00000000-0000-4000-8000-000000000015.md",
+      "content": "1. Append the line `three` to the end of `notes.txt` (e.g. `echo three >> notes.txt`).\n2. Verify with `tail -n 1 notes.txt` that the last line is `three`.\n",
+      "structuredPatch": [],
+      "originalFile": null,
+      "userModified": false
+    },
+    "text": "File created successfully at: /work/project/.plans/without-reading-any-file-staged-firefly-of-00000000-0000-4000-8000-000000000015.md (file state is current in your context — no need to Read it back)"
+  }
+}

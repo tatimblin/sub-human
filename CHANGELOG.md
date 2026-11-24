@@ -2,6 +2,48 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 1.0.0: a rebuild around sharing the work itself
+
+sub-human 1.0.0 rebuilds the 0.8 proof of concept on Claude Code's hooks module. Your work keeps your colleagues and
+their Claudes up to date as you do it, with nothing to type to share. Tested on Claude Code 2.1.330: the node, script
+and hooks-module tests, `npm run probe`, `claude plugin validate --strict`, and the owner's live run in auto mode.
+
+**Upgrading from 0.8:** rooms and homes from 0.8 aren't migrated. Everyone starts with a fresh room.
+
+### Removed
+- **The room row** in the agent panel (the chat row, its keeper, the hold row).
+- **The room Claude**, the headless `claude --bg` room session, and the task files it held.
+- **The MCP server and its tools.** Claude's tools (`share`, `read`, `plan`, `task`) are registered by the module.
+- **The PIN** and its throttling, along with the ssh shim, login as the host, `--forward` and the old protocol.
+
+### Added
+- **One daemon per home** makes every write; the module only reads.
+- **The hooks module** shares what each session does with no model call (files edited, branch, commits and pushes,
+  test and build runs, working or idle) and gives your Claude, beside your next prompt, only what bears on your work.
+  A Claude may ask another directly with `SendMessage` to `NAME.CODE`, which wakes the recipient after its turn ends.
+- **Invites over Tailscale** (a public Funnel line, or a tailnet-only Serve line) **or ssh** (the joiner's own
+  login): one name-bound, single-use line, and the host's Let in card with a check string.
+- **Plans that wait for agreement.** At approval: Share this plan? No, Get agreement, or Send to the room. With
+  people asked, your Claude waits until the plan is decided, then builds its part or revises from the note.
+- **The `/room` command** (`/room`, `invite`, `join`, `who`, `tasks`, `leave`, `news`, `kick`, `doctor`, `help`).
+- **The status line on the prompt hint**: `Room ● bob ○ carol · plan "x" needs your review (+2)`, or `Room empty`.
+- **The invite band** while you're alone in a room you host: `Room CODE created. Invite: [ public ] [ tailnet ] [ ssh ]`.
+- **`@room TEXT`** posts your exact words, with no model turn; a line naming someone can wake their Claude.
+- **The native task bridge**: with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, a room task you claim goes onto your native
+  list, and native task changes are shared.
+- **The review card plus pane**: Agree, Ask for changes or Read the full plan, which opens the whole text and the
+  diff in a scrollable pane.
+
+### Known items
+- **The live gate** across all permission modes is run by the owner before release; auto mode has been run live.
+- **A real Funnel join** from a machine without Tailscale is a manual check.
+- **Lint override:** `.oxlintrc.json` keeps a `no-misused-promises` `checksVoidReturn.arguments` override until
+  oxlint-tsgolint 7.0.2007 or later can be taken, on or after 2026-11-26.
+- **Merging two sent plans** (R22e) is not built.
+- **Nested `.gitignore` files** are not read; only the repo's top-level one is applied.
+- **A plan's wait after `--resume`** is rebuilt on the assumption that the session id is kept; if a resume gives a
+  new id, the wait is not rebuilt.
+
 ## 0.8.1: quieter start in auto mode, a one-line invite
 
 Tested on Claude Code 2.1.296: the unit, script and hooks-module wiring tests, and the release gate in auto mode. The wire protocol is still 5.

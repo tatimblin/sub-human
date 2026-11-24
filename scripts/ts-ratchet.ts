@@ -33,9 +33,9 @@ export type Counts = Record<Kind, number>;
 const REPO = path.resolve(import.meta.dirname, '..');
 const FILE = path.join(import.meta.dirname, 'ts-ratchet.json');
 export const KINDS: readonly Kind[] = ['any', 'as', 'nonNull'];
-// the most specific first: mod/core and mod/test are not counted in mod
-export const DIRS = ['hooks', 'lib', 'mcp', 'mod/core', 'mod/test', 'mod', 'statusline', 'test'];
-const SKIP = new Set(['node_modules', 'fixtures', '.claude-plugin']);
+// the plugin's directories; its top-level files (keys.ts, home.ts, config.ts) and any other directory count as 'plugin'
+export const DIRS = ['core', 'store', 'module', 'commands', 'net', 'test', 'plugin'];
+const SKIP = new Set(['node_modules', 'fixtures', '.claude-plugin', 'vendor']);
 
 const ID = /[\w$]/;
 // after one of these (or a keyword below), a `/` starts a regex; after anything else it divides
@@ -147,7 +147,7 @@ export function bucketOf(rel: string): string | null {
   const m = /^plugin\/sub-human\/(.+)$/.exec(p);
   if (!m || !/\.[cm]?[jt]s$/.test(p) || p.endsWith('.d.ts')) return null;
   const inPlugin = m[1] ?? '';
-  return DIRS.find(d => inPlugin.startsWith(`${d}/`)) ?? null;
+  return DIRS.find(d => inPlugin.startsWith(`${d}/`)) ?? 'plugin';
 }
 
 function walk(dir: string, files: string[]): string[] {

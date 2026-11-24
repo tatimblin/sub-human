@@ -1,0 +1,22 @@
+{
+  "name": "tool-send-message",
+  "event": "tool.call",
+  "session": "steps",
+  "input": {
+    "to": "nobody",
+    "message": "hi",
+    "summary": "hi",
+    "tool": "SendMessage",
+    "tool_use_id": "toolu_fake0012"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "success": false,
+      "message": "No agent named 'nobody' is reachable.\nCheck the spelling, or use the agent ID from a background agent's spawn result.",
+      "display": "Not sent — no agent named 'nobody' is reachable."
+    },
+    "text": "{\"success\":false,\"message\":\"No agent named 'nobody' is reachable.\\nCheck the spelling, or use the agent ID from a background agent's spawn result.\"}",
+    "isReadOnly": true
+  }
+}

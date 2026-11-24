@@ -1,0 +1,22 @@
+{
+  "name": "tool-task-create-2",
+  "event": "tool.call",
+  "session": "extra",
+  "input": {
+    "subject": "gone task",
+    "description": "a task to delete",
+    "tool": "TaskCreate",
+    "tool_use_id": "toolu_fake0023"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "task": {
+        "id": "1",
+        "subject": "gone task",
+        "description": "a task to delete"
+      }
+    },
+    "text": "Task #1 created successfully: gone task"
+  }
+}

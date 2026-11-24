@@ -1,36 +1,40 @@
 #!/usr/bin/env node
 /**
- * test-mods: the hooks module's wiring tests (plugin/sub-human/mod/test/*.test.ts) under `claude plugin test`.
- * npm run test:mods; npm test runs it last.
+ * test-mods: the hooks module's kit tests (every *.test.ts under plugin/sub-human) under `claude plugin test`.
+ * npm run test:module; npm test runs it last.
  *
- * Skips (exit 0, one line on stdout) when no `claude` binary is found, when it is older than 2.1.292 (no function
- * hooks), or when it says hooks modules are turned off here (cc CONTRACT plugin-test-off). Otherwise exits as
- * `claude plugin test` does. That command collects every *.test.ts(x) under the plugin (cc CONTRACT
- * plugin-test-discovery), so the node tests in plugin/sub-human/test are named *.node-test.ts and only mod/test runs
- * here; and the wiring tests live under mod/test/, never where `npm run test:plugin`'s *.node-test.ts glob looks.
+ * It runs the pinned Claude Code (scripts/lib/claude-bin.ts: core/cc/contract.json `probed`, installed on first use,
+ * or SUB_HUMAN_CLAUDE_BIN), never the global one, with a fresh CLAUDE_CONFIG_DIR under its prefix (a fresh config has
+ * hooks modules on), or the caller's when it names its own binary (claude-bin.ts claudeEnv). `claude plugin test` collects every *.test.ts(x) under the plugin, so node tests are named
+ * *.node-test.ts. No binary, or modules off, is a failure, never a skip (docs/TESTING.md §4).
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { PLUGIN } from './lib/paths.ts';
+import { claudeBin, claudeEnv } from './lib/claude-bin.ts';
 
-const MIN = [2, 1, 292];
-const skip = (why: string | undefined): number => { process.stdout.write(`test:mods skipped: ${why}\n`); return 0; };
+const SKIP_DIRS = new Set(['node_modules', 'vendor', '.claude-plugin']);
+const fail = (why: string): number => { process.stderr.write(`test:module: ${why}\n`); return 1; };
+
+/** The kit tests under dir: *.test.ts or *.test.tsx, outside vendor/ and node_modules/. */
+export function kitTests(dir: string): string[] {
+  const out: string[] = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const f = path.join(dir, e.name);
+    if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) out.push(...kitTests(f)); } else if (/\.test\.tsx?$/.test(e.name)) out.push(f);
+  }
+  return out;
+}
 
 function main(): number {
-  const v = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 30_000 });
-  if (v.error || v.status !== 0) return skip('no claude binary on PATH');
-  const m = /(\d+)\.(\d+)\.(\d+)/.exec(v.stdout || '');
-  if (!m) return skip(`unreadable version: ${String(v.stdout).trim()}`);
-  const have = m.slice(1, 4).map(Number);
-  const older = have.findIndex((x, i) => x !== MIN[i]);
-  const at = have[older], min = MIN[older]; // both undefined when older is -1
-  if (at !== undefined && min !== undefined && at < min) return skip(`claude ${have.join('.')} has no function hooks (needs ${MIN.join('.')}+)`);
-  const r = spawnSync('claude', ['plugin', 'test', path.relative(process.cwd(), PLUGIN) || PLUGIN], { encoding: 'utf8', timeout: 300_000 });
-  const out = `${r.stdout || ''}${r.stderr || ''}`;
-  if (/hooks modules are turned off/.test(out)) return skip(out.trim().split('\n').find(l => /turned off/.test(l)));
-  process.stdout.write(out);
-  if (r.error) { process.stderr.write(`test:mods: ${r.error.message}\n`); return 1; }
+  if (kitTests(PLUGIN).length === 0) { process.stdout.write('test:module: nothing to run (no *.test.ts under plugin/sub-human)\n'); return 0; }
+  const found = claudeBin();
+  if ('error' in found) return fail(found.error);
+  const r = spawnSync(found.bin, ['plugin', 'test', path.relative(process.cwd(), PLUGIN) || PLUGIN], { encoding: 'utf8', timeout: 300_000, env: claudeEnv(found.prefix) });
+  process.stdout.write(`${r.stdout || ''}${r.stderr || ''}`);
+  if (r.error) return fail(r.error.message);
   return r.status === 0 ? 0 : 1;
 }
 
-process.exitCode = main();
+if (import.meta.main) process.exitCode = main();

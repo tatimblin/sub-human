@@ -1,0 +1,17 @@
+{
+  "name": "session-send-plugin",
+  "event": "session.send",
+  "session": "steps",
+  "input": {
+    "to": "nobody",
+    "text": "recorder ping",
+    "origin": {
+      "kind": "plugin",
+      "name": "rec"
+    }
+  },
+  "result": {
+    "isDelivered": false,
+    "reason": "No agent named 'nobody' is reachable.\nCheck the spelling, or use the agent ID from a background agent's spawn result."
+  }
+}

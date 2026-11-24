@@ -1,0 +1,27 @@
+{
+  "name": "tool-bash-git-push",
+  "event": "tool.call",
+  "session": "extra",
+  "input": {
+    "command": "git push origin master",
+    "description": "Push master branch to origin",
+    "tool": "Bash",
+    "tool_use_id": "toolu_fake0022"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "stdout": "To ../remote.git\n * [new branch]      master -> master",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false,
+      "gitOperation": {
+        "push": {
+          "branch": "master"
+        }
+      }
+    },
+    "text": "To ../remote.git\n * [new branch]      master -> master"
+  }
+}

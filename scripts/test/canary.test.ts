@@ -1,9 +1,13 @@
-// scripts/canary.ts: its pure parts (arguments, the binary in an npm install, the probe's summary, the verdict), no network.
+// scripts/canary.ts: its pure parts (arguments, the typings diff, the verdict and its summary), and the binary in an npm
+// install (scripts/lib/claude-bin.ts), no network.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { parseArgs, platformKey, binaryFor, summarizeProbe, judgeMods, verdict } from '../canary.ts';
-import type { ProbeJson } from '../canary.ts';
+import { parseArgs, typingsDiff, verdict, summary } from '../canary.ts';
+import { platformKey, binaryFor } from '../lib/claude-bin.ts';
+import type { Steps } from '../canary.ts';
+import { report } from '../probe-cc.ts';
+import { parseContract } from '../../plugin/sub-human/core/cc/contract.js';
 
 test('parseArgs: latest by default, a tag or a version, --config-dir; anything else is an error', () => {
   assert.deepEqual(parseArgs([]), { tag: 'latest' });
@@ -38,47 +42,48 @@ test('binaryFor: the platform package binary, else bin/claude.exe once it is no 
     path.join(p, 'node_modules', '@anthropic-ai/claude-code-win32-x64', 'claude.exe'));
 });
 
-test('summarizeProbe: failures grouped by feature, else by section, else other', () => {
-  const entries = [{ id: 'a', section: 1, feature: 'core' }, { id: 'b', section: 1 }, { id: 'c', section: 2, feature: 'core' }, { id: 'd' }];
-  const p: ProbeJson = {
-    ok: false, version: '2.1.400',
-    results: [{ id: 'a', ok: true, missing: [] }, { id: 'b', ok: false, missing: ['x'] }, { id: 'c', ok: false, missing: ['y'] }, { id: 'd', ok: true, missing: [] }],
-    degraded: [{ id: 'a', issue: 8, note: 'n' }, { id: 'c', note: 'n' }],
-  };
-  const s = summarizeProbe(p, entries);
-  assert.equal(s.ok, false);
-  assert.equal(s.version, '2.1.400');
-  assert.deepEqual([s.total, s.failed], [4, 2]);
-  assert.deepEqual(s.groups, { core: { total: 2, failed: ['c'] }, '§1': { total: 1, failed: ['b'] }, other: { total: 1, failed: [] } });
-  assert.deepEqual(s.degraded, ['a (#8)', 'c']);
-  const pass = summarizeProbe({ ok: true, version: '2.1.400', results: [{ id: 'a', ok: true, missing: [] }] }, entries);
-  assert.equal(pass.ok, true);
+test('typingsDiff: the lines only one side has, the version line aside', () => {
+  const before = { 'claude-code': '// Written by Claude Code 2.1.330.\na\nb\n', 'claude-code-mcp': null };
+  const after = { 'claude-code': '// Written by Claude Code 2.1.400.\na\nc\nd\n', 'claude-code-mcp': 'x\n' };
+  assert.deepEqual(typingsDiff(before, after), [
+    { root: 'claude-code', same: false, added: 2, removed: 1 },
+    { root: 'claude-code-mcp', same: false, added: 1, removed: 0 },
+  ]);
+  assert.deepEqual(typingsDiff({ r: '// Written by Claude Code 1.0.0.\na\n' }, { r: '// Written by Claude Code 2.0.0.\na\n' }),
+    [{ root: 'r', same: true, added: 0, removed: 0 }]);
 });
 
-test('summarizeProbe: no binary, or no results, is a failure', () => {
-  const s = summarizeProbe({ ok: false, error: 'probe-cc: no Claude Code binary found (set CLAUDE_BIN)' }, []);
-  assert.equal(s.ok, false);
-  assert.match(s.error ?? '', /no Claude Code binary/);
-  assert.equal(summarizeProbe({ ok: true, results: [] }, []).ok, false, 'an empty probe proves nothing');
+const contract = (() => {
+  const r = parseContract({ note: 'n', probed: '2.1.330', entries: [
+    { id: 'w', kind: 'api', feature: 'wake', surface: 's', checked: [], note: 'n', typings: ['submit('] },
+    { id: 'g', kind: 'internal', feature: 'tasks-bridge', surface: 's', checked: [], note: 'n', search: ['ENABLE_TASKS'], reason: 'r', fallback: 'f', request: 'q' },
+  ] });
+  assert.ok(r.ok, r.ok ? '' : r.error);
+  return r.value;
+})();
+const ok = { ok: true, status: 0, tail: '' };
+const steps = (over: Partial<Steps> = {}): Steps => ({
+  install: { ...ok, tail: '/x/claude' },
+  typings: { ok: true, roots: [{ root: 'claude-code', same: false, added: 3, removed: 1 }] },
+  probe: report(contract, '/x/claude', { typings: 'submit(', binary: 'VERSION:"2.1.400" ENABLE_TASKS' }, null),
+  module: { ...ok, tail: '1 pass' }, validate: ok, ...over,
 });
 
-test('judgeMods: a run that passes passes; a skip (modules off, too old, no claude) or a failing run fails', () => {
-  const ran = 'mod/test/x.test.ts:\n(pass) a\n\n 111 pass\n 0 fail\nRan 111 tests across 10 files. [9.58s]\n';
-  assert.deepEqual(judgeMods(0, ran), { ok: true, skipped: null, pass: 111, fail: 0, status: 0 });
-  const off = judgeMods(0, 'test:mods skipped: claude plugin test: hooks modules are turned off here (disableAllHooks, allowManagedHooksOnly or a policy)\n');
-  assert.equal(off.ok, false);
-  assert.match(off.skipped ?? '', /turned off/);
-  assert.equal(judgeMods(0, 'test:mods skipped: claude 2.1.200 has no function hooks (needs 2.1.292+)\n').ok, false);
-  assert.equal(judgeMods(1, ' 110 pass\n 1 fail\n').ok, false);
-  assert.equal(judgeMods(null, '').ok, false, 'a timeout');
+test('verdict: every step must have run and passed; a typings diff alone is no failure', () => {
+  assert.equal(verdict(steps()), true);
+  assert.equal(verdict(steps({ validate: { ...ok, ok: false } })), false);
+  assert.equal(verdict(steps({ module: { ok: false, status: 1, tail: 'claude plugin test: hooks modules are turned off here' } })), false, 'modules off fails');
+  assert.equal(verdict(steps({ typings: { ok: false, error: 'no bundled declarations in the binary', roots: [] } })), false);
+  assert.equal(verdict(steps({ probe: report(contract, '/x/claude', { typings: 'submit(', binary: 'VERSION:"2.1.400"' }, null) })), false);
+  assert.equal(verdict({ install: { ok: false, status: 1, tail: 'E404' }, typings: null, probe: null, module: null, validate: null }), false);
 });
 
-test('verdict: every step must pass', () => {
-  const okCmd = { ok: true, status: 0, tail: '' };
-  const probe = summarizeProbe({ ok: true, results: [{ id: 'a', ok: true, missing: [] }] }, []);
-  const mods = judgeMods(0, ' 1 pass\n 0 fail\n');
-  assert.equal(verdict({ install: okCmd, probe, mods, validate: okCmd }), true);
-  assert.equal(verdict({ install: okCmd, probe, mods, validate: { ...okCmd, ok: false } }), false);
-  assert.equal(verdict({ install: okCmd, probe, mods: judgeMods(0, 'test:mods skipped: off\n'), validate: okCmd }), false);
-  assert.equal(verdict({ install: { ok: false, status: 1, tail: 'E404' }, probe: null, mods: null, validate: null }), false);
+test('summary: a line a step, and a failed feature names the SUB_HUMAN_CC_OFF value that turns it off', () => {
+  const pass = summary('latest', steps());
+  assert.equal(pass[0], 'canary latest = claude 2.1.400: PASS');
+  assert.ok(pass.some(l => /PASS {2}typings {3}changed: claude-code \+3 -1/.test(l)));
+  const fail = summary('next', steps({ probe: report(contract, '/x/claude', { typings: 'submit(', binary: 'VERSION:"2.1.401"' }, null) }));
+  assert.equal(fail[0], 'canary next = claude 2.1.401: FAIL');
+  assert.ok(fail.some(l => /FAIL {2}probe {5}1\/2 pass, 0 skipped/.test(l)));
+  assert.deepEqual(fail.filter(l => /SUB_HUMAN_CC_OFF/.test(l)).map(l => l.trim()), ['tasks-bridge: g failed; off with SUB_HUMAN_CC_OFF=tasks-bridge']);
 });

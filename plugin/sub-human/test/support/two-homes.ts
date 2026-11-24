@@ -1,264 +1,153 @@
-/**
- * test/support/two-homes.ts: one machine of a two-machine test on one machine: its
- * own SUB_HUMAN_HOME, user home and working directory. The real hooks and the CLI run as child processes with that
- * home; seats are live sleepers standing in for claude processes. test/remote-e2e.node-test.ts and
- * test/support/link-bench.ts use it.
- *
- *   new Machine(t?, name, env?)   env: extra variables for every child (e.g. SUB_HUMAN_LINK_RETRY_MS)
- *     seat(name) -> {name, pid, sid}
- *     hook(handler, input, seat, {env}?) -> spawnSync result + json   hooks/run.ts <handler> as seat
- *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
- *                                     hooks/handlers/mod-hello.ts writes it; join and every prompt write it first
- *     join(seat, args, env?), say(seat, text), plain(seat, text)    the join expansion (env: e.g. SUB_HUMAN_WEB_FRONT
- *                                     for `invite --web`); an @room post; a prompt
- *     take(seat, code)                the hooks module seating a let-in join on its own (the tail's take: no args, the
- *                                     nonce, sub_human_take)
- *     linkFor(code, joiner)           a link to a room hosted here for the second home `joiner`, its token written
- *                                     to the joiner's link file (no invite, no PIN, no card: no command makes one;
- *                                     the robustness tests link with it); then joiner.join(seat, `NAME CODE`)
- *     letIn(hostSeat, code)           the host person's Let in on the card of the join request waiting in room code
- *     joinVia(host, hostSeat, seat, {as?, line?, pin?, invite?, front?, knock?}) -> Promise<{shown, line, code, pin, typed, gave, seated}>
- *                                     (once seated, it waits until the seat resolves here: the mirror's members)
- *                                     the whole join from a second home: `/sub-human invite --pipe` (or invite: other
- *                                     invite args; front: `invite --web` behind that test front, lib/env.ts webFront) on the host, unless line (and its pin) is
- *                                     given; the line typed here (a hidden step: it knocks), the PIN while the card waits
- *                                     (`/sub-human join PIN`, hidden too; the right one lets it in, no card), or with
- *                                     knock no PIN: the host's card's Let in (letIn); the link online, then a bare
- *                                     /sub-human (the seat)
- *   shownInvite(text) ->{line, dest, code, word, pin} | null   an invite's text as the host's person reads it: the
- *                                     line (without "/sub-human "), its parts and the PIN told apart
- *     workers(script, input, seat) -> n     worker threads that hook started (test/support/worker-probe.ts)
- *     tail(seat, seconds) -> Promise<stdout>   seat's tail (scripts/sub-human tail, its NDJSON events) for that long
- *     mcp(seat, tool, args) -> Promise<result>   one tools/call on the room's MCP server (mcp/room-server.ts) as seat
- *     send(seat, code, to, text, {server?}) -> Promise<{isDelivered, reason?} | 'engine'>   a SendMessage as the
- *                                     hooks module's session.send hook takes it (mod/send.ts: the same files read,
- *                                     mod/core/send.ts judges): a seat on another machine is posted to through the room
- *                                     (the room server's post; server: false, hooks/handlers/send.ts as when that
- *                                     server is not connected); 'engine' when the module would pass it on (a seat on
- *                                     this machine: the native send)
- *     lib(fn)                         fn with this machine's home, in this process
- *     log(code) -> string             the room's log.jsonl as stored here ('' when none)
- */
-import fs from 'node:fs';
-import path from 'node:path';
-import crypto from 'node:crypto';
-import { spawn, spawnSync, type SpawnSyncReturns } from 'node:child_process';
+// Two homes in one process (TESTING §6): a host's daemon and a joiner's, each on its own socket, the joiner dialling
+// the host over the pipe pathway (or another dial a test gives). Every step goes through the daemon's socket API, as
+// the commands and the module make it.
+import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
-import * as h from '../helpers.ts';
-import type { HookInput, HookLine } from '../hooks/helpers.ts';
-import { must } from './must.ts';
-import * as identity from '../../lib/identity.ts';
-import * as hostLinks from '../../lib/remote/host-links.ts';
-import * as admission from '../../lib/remote/admission.ts';
-import * as store from '../../lib/room/store.ts';
-import * as links from '../../lib/room/links.ts';
-import * as homeMod from '../../lib/home.ts';
-import * as linkConnect from '../../lib/remote/link-connect.ts';
-import * as linkSocket from '../../lib/remote/link-socket.ts';
-import type { RoomCode } from '../../lib/brand.ts';
-import { roomCode } from '../../lib/text.ts';
-import { peerOf, postArgs, postResult, relayResult } from '../../mod/core/send.ts';
+import type { Answers, Ask, Request } from '../../core/api.js';
+import type { Result } from '../../core/result.js';
+import type { Daemon } from '../../net/daemon.js';
+import { call } from '../../net/daemon/client.js';
+import type { Net, NetOptions } from '../../net/daemon/net.js';
+import type { Rooms } from '../../net/daemon/rooms.js';
+import { makeNet } from '../../net/daemon/net.js';
+import { machineKey } from '../../keys.js';
+import { connect, generateKeyPair } from '../../net/channel.js';
+import type { KeyPair } from '../../net/channel.js';
+import { mac, parse } from '../../net/invite.js';
+import type { ToHost, ToLink } from '../../core/protocol.js';
+import { decodeToLink, encode } from '../../core/protocol.js';
+import type { Dial } from '../../net/link.js';
+import { pipe } from '../../net/pathways/pipe.js';
+import { home, joined, started, until } from './daemon.js';
 
-const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
-
-/** A seat on a Machine: a live sleeper's pid standing in for its claude, a session id and the module's nonce. */
-interface Seat { name: string; pid: number; sid: string; nonce: string }
-/** A tools/call result from the room's MCP server. */
-interface McpResult { isError?: boolean; content?: { type: string; text: string }[] }
-const isMcpResult = (v: unknown): v is McpResult => !!v && typeof v === 'object';
-/** A hook run on a Machine: spawnSync's result plus stdout parsed (null when it printed nothing). */
-type MachineRun = SpawnSyncReturns<string> & { json: HookLine | null };
-type Env = Record<string, string | undefined>;
-
-class Machine {
-  home: string;
-  user: string;
-  cwd: string;
-  extra: Env;
-
-  constructor(t: TestContext | undefined, name: string, env: Env = {}) {
-    // first, so it runs before the home is removed (after hooks run in order): a web listener this home started
-    // (invite --web) is killed, not left serving a deleted home
-    if (t) t.after(() => this.killListener());
-    this.home = h.tmpDir(`sh-${name}-`, t);
-    this.user = h.tmpDir('sh-user-', t);
-    this.cwd = h.tmpDir('sh-cwd-', t);
-    this.extra = env;
-  }
-
-  env(seat: Seat | null | undefined, extra: Env = {}): NodeJS.ProcessEnv {
-    return h.childEnv({
-      SUB_HUMAN_HOME: this.home, HOME: this.user, CLAUDE_PLUGIN_ROOT: h.PLUGIN, CLAUDE_PID: seat ? String(seat.pid) : undefined,
-      SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', ...this.extra, ...extra,
-    });
-  }
-
-  seat(name: string): Seat { return { name, pid: h.spawnSleeper(600).pid as number, sid: crypto.randomUUID(), nonce: crypto.randomBytes(16).toString('hex') }; }
-
-  lease(seat: Seat): void {
-    this.lib(() => identity.writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce }));
-  }
-
-  hook(script: string, input: HookInput, seat: Seat, { env }: { env?: Env } = {}): MachineRun {
-    const r = spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', 'run.ts'), script], {
-      input: JSON.stringify({ ...input, session_id: seat.sid, cwd: this.cwd }), env: this.env(seat, env), encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
-    });
-    return { ...r, json: r.stdout.trim() ? JSON.parse(r.stdout) as HookLine : null }; // a hook's answer, as it printed it
-  }
-
-  join(seat: Seat, args: string, env: Env = {}): MachineRun { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat, { env }); }
-  /** A /sub-human command the hooks module ran (mod/deliver.ts command.run: the session's nonce), not the classic hook. */
-  modJoin(seat: Seat, args: string): MachineRun {
-    this.lease(seat);
-    return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args, sub_human_via: 'command.run', sub_human_nonce: seat.nonce }, seat);
-  }
-  /** The hooks module seating a let-in join on its own (mod/deliver.ts takeSeat on the tail's take): the join hook with
-   * no args, the session's nonce and the room (mod/core/command.ts joinPayload take). */
-  take(seat: Seat, code: RoomCode): MachineRun {
-    this.lease(seat);
-    return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: '', sub_human_via: 'command.run', sub_human_nonce: seat.nonce, sub_human_take: code }, seat);
-  }
-  /** A link (no invite, no PIN, no card) to room code hosted here, for the second home `joiner` on this machine (pipe):
-   * the joiner's link file holds its token (the join over it is then `NAME CODE`). */
-  linkFor(code: RoomCode, joiner: Machine): void {
-    const machine = must(joiner.lib(() => homeMod.machineIn(code)), "the joiner's machine id");
-    const { token } = this.lib(() => hostLinks.create(store.open(code), { id: hostLinks.newLinkId(), machine, seats: [] }));
-    const transport = must(linkConnect.transportOf(`pipe:${this.home}`), 'the pipe transport');
-    joiner.lib(() => links.set(code, { code, transport, token, created_at: new Date().toISOString() }));
-  }
-
-  /** The whole join from this (second) home: the host's invite line and its PIN, typed here, the host's admit, then the seat. */
-  /** The host person's Let in on the card of the one join request waiting in room code (the hooks build the card from
-   * "admit REF" in consent's PreToolUse; its PostToolUse records the answer, signed with hostSeat's key). */
-  letIn(hostSeat: Seat, code: RoomCode): MachineRun {
-    const ref = must(this.lib(() => admission.pending(code))[0], 'a join request waiting for the card').ref;
-    const pre = this.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${ref}`, options: [] }] } }, hostSeat);
-    const card: unknown = must(must(pre.json).hookSpecificOutput, `the card for ${ref}`).updatedInput;
-    const questions: unknown[] = card && typeof card === 'object' && 'questions' in card && Array.isArray(card.questions) ? card.questions : [];
-    const first = questions[0];
-    const q = must(first && typeof first === 'object' && 'question' in first && typeof first.question === 'string' ? first.question : null, 'the card\'s question');
-    return this.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: { questions }, tool_response: { questions, answers: { [q]: 'Let in' } } }, hostSeat);
-  }
-
-  async joinVia(host: Machine, hostSeat: Seat, seat: Seat, { as = seat.name, line, pin, invite = 'invite --pipe', front, knock = false, ms = 15_000 }: { as?: string; line?: string; pin?: string; invite?: string; front?: string; knock?: boolean; ms?: number } = {}) {
-    const shown = line ? null : front ? host.join(hostSeat, 'invite --web', { SUB_HUMAN_WEB_FRONT: front }) : host.join(hostSeat, invite);
-    const inv = shownInvite(line ? `/sub-human ${line.replace(/^\/sub-human /, '')}${pin ? `\napart from the line: ${pin}` : ''}` : shown?.json?.reason || '');
-    if (!inv) throw new Error(`no invite line in: ${JSON.stringify(shown && shown.json)}`);
-    const { code } = inv;
-    const typed = this.join(seat, `${inv.line}${as ? ` --as ${as}` : ''}`);
-    // the line alone knocks (the host's card waits); a host before the knock asks for the PIN instead
-    const asked = await h.until(() => this.lib(() => { const l = links.get(code); return !!(l && (l.awaiting || l.pin_wanted)); }), ms, 50);
-    if (!asked) throw new Error(`the host never answered the line: ${JSON.stringify(typed.json)} ${typed.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
-    // knock: the host person's card lets it in (consent's Pre builds it, its Post records the Let in); else the right
-    // PIN lets the machine in by itself: no card, no admit on the host
-    const gave = knock ? host.letIn(hostSeat, code) : this.join(seat, `join ${inv.pin}`);
-    const linked = await h.until(() => this.lib(() => (links.get(code) || {}).token), ms, 50);
-    if (!linked) throw new Error(`the link never came up: ${JSON.stringify(gave.json)} ${gave.stderr} ${JSON.stringify(this.lib(() => links.get(code)))}`);
-    const seated = this.join(seat, '');
-    // the seat is the host's to record: this home's mirror shows it once the members document streams back, and
-    // until then a hook here cannot resolve it (a prompt typed that fast reads "not in a room")
-    if (seated.json && !seated.json.decision) await h.until(() => this.lib(() => identity.resolveBySession(seat.sid)), ms, 50);
-    return { shown, line: inv.line, code, pin: inv.pin, typed, gave, seated };
-  }
-
-  plain(seat: Seat, text: string): MachineRun {
-    this.lease(seat);
-    const input = { hook_event_name: 'UserPromptSubmit', prompt: text, prompt_id: crypto.randomUUID(), sub_human_origin: 'composer', sub_human_nonce: seat.nonce };
-    return this.hook('prompt', input, seat);
-  }
-  say(seat: Seat, text: string): MachineRun { return this.plain(seat, `@room ${text}`); }
-
-  workers(script: string, input: HookInput, seat: Seat): number {
-    const r = this.hook(script, input, seat, { env: { NODE_OPTIONS: `--import ${PROBE}` } });
-    const m = /WORKERS=(\d+)/.exec(r.stderr);
-    if (!m) throw new Error(`no WORKERS line: ${r.stderr}`);
-    return Number(m[1]);
-  }
-
-  tail(seat: Seat, seconds: number): Promise<string> {
-    const env = this.env(seat, { CLAUDE_CODE_SESSION_ID: seat.sid, SUB_HUMAN_SETTLE_MS: '200', SUB_HUMAN_SETTLE_MAX_MS: '400', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_TAIL_HEALTH_MS: '200' });
-    return new Promise<string>(resolve => {
-      const c = spawn(process.execPath, [h.BIN, 'tail', '--max-seconds', String(seconds)], { env, cwd: this.cwd, stdio: ['ignore', 'pipe', 'ignore'] });
-      let out = '';
-      c.stdout.on('data', d => { out += d; });
-      c.on('exit', () => resolve(out));
-    });
-  }
-
-  mcp(seat: Seat, tool: string, args: Record<string, unknown>): Promise<McpResult> {
-    const env = this.env(seat, { CLAUDE_CODE_SESSION_ID: seat.sid });
-    return new Promise<McpResult>((resolve, reject) => {
-      const c = spawn(process.execPath, [h.MCP], { env, cwd: this.cwd, stdio: ['pipe', 'pipe', 'ignore'] });
-      let buf = '';
-      const timer = setTimeout(() => { c.kill('SIGKILL'); reject(new Error(`mcp ${tool}: no answer`)); }, 15_000);
-      c.stdout.on('data', d => {
-        buf += String(d);
-        for (const line of buf.split('\n').slice(0, -1)) {
-          const m: unknown = JSON.parse(line);
-          const result: unknown = m && typeof m === 'object' && Reflect.get(m, 'id') === 2 ? Reflect.get(m, 'result') : null;
-          if (isMcpResult(result)) { clearTimeout(timer); c.kill(); resolve(result); }
-        }
-        buf = buf.slice(buf.lastIndexOf('\n') + 1);
-      });
-      const send = (m: object) => c.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
-      send({ id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'two-homes', version: '0' } } });
-      send({ method: 'notifications/initialized' });
-      send({ id: 2, method: 'tools/call', params: { name: tool, arguments: args } });
-    });
-  }
-
-  async send(seat: Seat, code: RoomCode, to: string, text: string, { server = true }: { server?: boolean } = {}): Promise<ReturnType<typeof postResult> | 'engine'> {
-    // the module's own judgement (mod/core/send.ts peerOf, as mod/send.ts runs it), over this home's files
-    const read = (f: string): unknown => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
-    const name = await peerOf(to, { name: seat.name, code, role: 'member', addr: `${seat.name}.${code}` }, this.home, read);
-    if (!name) return 'engine';
-    if (!server) return relayResult(name, this.hook('send', { to: name, text }, seat)); // the room server not connected
-    return postResult(name, await this.mcp(seat, 'post', postArgs(name, text)));
-  }
-
-  /** Kill the listener whose pid this home's listen/state.json holds (no-op without one). */
-  killListener(): void {
-    let pid: unknown = null;
-    try { pid = (JSON.parse(fs.readFileSync(path.join(this.home, 'listen', 'state.json'), 'utf8')) as { pid?: unknown }).pid; } catch { return; }
-    if (typeof pid === 'number' && Number.isInteger(pid) && pid > 0) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
-  }
-
-  lib<T>(fn: () => T): T {
-    const old = process.env.SUB_HUMAN_HOME;
-    process.env.SUB_HUMAN_HOME = this.home;
-    try { return fn(); } finally { process.env.SUB_HUMAN_HOME = old; }
-  }
-
-  log(code: RoomCode): string { try { return fs.readFileSync(path.join(this.home, 'rooms', code, 'log.jsonl'), 'utf8'); } catch { return ''; } }
+export interface Side {
+  readonly home: string;
+  /** One request to this side's daemon; asserts it was done and answers its value. */
+  ok<R extends Request>(req: R): Promise<Answers[R['op']]>;
+  call<R extends Request>(req: R): Promise<Result<Answers[R['op']]>>;
+}
+export interface Homes {
+  readonly host: Side;
+  readonly joiner: Side;
+  /** How many times the host held off sleep, and whether it holds now. */
+  readonly awake: { count: number; held: boolean };
+  readonly hostNet: Net;
+  readonly joinNet: Net;
+  /** Closes the host's daemon and starts another on its home, as a restart does; the host's session pings again. */
+  restartHost(): Promise<void>;
 }
 
-/** An invite's text as the host's person reads it (lib/remote/hosting.ts inviteText): the line and the PIN told apart. */
-function shownInvite(text: string): { line: string; dest: string; code: RoomCode; word: string; pin: string } | null {
-  const m = /\/sub-human (join ([^\s#]+)(?: ([a-z]+-\d{4}))?[ #]([0-9a-z]{39})((?: --(?:via|home|forward) \S+)*))\s*$/m.exec(text);
-  const p = /apart from the line[^\n]*: (\d{4})\s*$/m.exec(text);
-  if (!m || !p) return null;
-  const [, line = '', head = '', named, word = ''] = m;
-  // the one line shape (ssh://DEST/ROOM[?…]#SECRET, pipe:HOME/ROOM#SECRET, a web URL#SECRET): the path's last segment
-  // is the room; dest is what comes before it for ssh and pipe, the URL for the web
-  const path = head.replace(/\?.*$/, '');
-  const code = roomCode(named || path.split('/').pop() || '');
-  if (!code) return null;
-  const dest = !named && /^(?:ssh:|pipe:)/.test(path) ? path.slice(0, -(code.length + 1)) : head;
-  return { line, dest, code, word, pin: p[1] ?? '' };
+export const CODE = 'otter-4821';
+
+/** The two daemons, closed after the test; `hostOpts` and `joinOpts` reach makeNet; `hostRooms` sees the host's rooms first. */
+export async function twoHomes(t: TestContext, o: {
+  hostOpts?: Partial<NetOptions>;
+  hostRooms?: (rooms: Rooms) => void;
+  joinOpts?: Partial<NetOptions>;
+  dial?: (hostNet: Net) => Dial;
+} = {}): Promise<Homes> {
+  const awake = { count: 0, held: false };
+  const [hh, jh] = [await home(), await home()];
+  const made: { net?: Net } = {};
+  const startHost = (): Promise<Daemon> => started(t, {
+    home: hh, machine: 'mA', net: rooms => (o.hostRooms?.(rooms), made.net = makeNet(rooms, {
+      home: hh, machine: 'mA', now: Date.now, sshAddr: 'devbox',
+      awake: () => { awake.count++; awake.held = true; return () => { awake.held = false; }; },
+      ...o.hostOpts,
+    })),
+  });
+  let hd = await startHost();
+  const hn = made.net ?? assert.fail('no host net');
+  // the host's net of the moment: a restarted host is dialled as the same machine
+  const now: Net = { links: hn.links, start: () => hn.start(), stop: () => hn.stop(), handle: r => hn.handle(r), accept: (s, src) => { made.net?.accept(s, src); } };
+  const dial = o.dial?.(now) ?? pipe((s, src) => { now.accept(s, src); });
+  let joinNet: Net | null = null;
+  await started(t, { home: jh, machine: 'mB', net: rooms => (joinNet = makeNet(rooms, { home: jh, machine: 'mB', now: Date.now, dial, ...o.joinOpts })) });
+  const host = side(hh);
+  const restartHost = async (): Promise<void> => {
+    await hd.close();
+    hd = await startHost();
+    await host.ok({ op: 'ping', session: 'sa', code: CODE, name: 'alice' });
+  };
+  return { host, joiner: side(jh), awake, hostNet: now, joinNet: joinNet ?? assert.fail('no joiner net'), restartHost };
 }
 
-/** The first child of pid (a link daemon's ssh or serve), or null. */
-const childOf = (pid: number | null | undefined): number | null => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-/** SIGKILL pid; nothing when it is gone or none. */
-const kill = (pid: number | null | undefined): void => { try { if (pid != null) process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
-/** A /sub-human answer shown to the person and hidden from the model. */
-const hiddenBlock = (r: MachineRun): boolean => !!(r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true);
-/** After the test: stop m's link daemon for code (and its child) and remove its socket folder. */
-const stopDaemon = (t: TestContext, m: Machine, code: RoomCode): void => t.after(() => {
-  const d = m.lib(() => linkSocket.status(code));
-  if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
-  fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
-});
+function side(h: string): Side {
+  return {
+    home: h,
+    call: req => call(h, req),
+    ok: async req => {
+      const r = await call(h, req);
+      assert.ok(r.ok, `${req.op}: ${r.ok ? '' : r.error}`);
+      return r.value;
+    },
+  };
+}
 
-export { Machine, shownInvite, childOf, kill, hiddenBlock, stopDaemon };
-export type { Seat, MachineRun };
+/** alice in the room on the host, with a live session (`sa`), so the host is not away. */
+export async function hostRoom(h: Homes): Promise<void> {
+  await h.host.ok({ op: 'ping', session: 'sa', code: CODE, name: 'alice' });
+  await h.host.ok({ op: 'append', code: CODE, draft: joined('alice') });
+}
+
+/** The first ask the host's session is shown. */
+export function nextAsk(h: Homes): Promise<Ask> {
+  return until('an ask on the host', async () => (await h.host.ok({ op: 'asks', session: 'sa' })).asks[0] ?? null);
+}
+
+/** Until the joiner's link to the room is in `phase`. */
+export function linkIs(h: Homes, phase: string): Promise<Answers['link']> {
+  return until(`the link ${phase}`, async () => {
+    const s = await h.joiner.ok({ op: 'link', code: CODE });
+    return s?.phase === phase ? s : null;
+  });
+}
+
+/** An invite for bob, joined and let in: the link online. Answers the line and the check string. */
+export async function joinBob(h: Homes, via: 'ssh' | 'public' | 'tailnet' = 'ssh'): Promise<{ line: string; check: string }> {
+  await hostRoom(h);
+  const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via });
+  const { check } = await h.joiner.ok({ op: 'dial', line, name: 'bob' });
+  const ask = await nextAsk(h);
+  await h.host.ok({ op: 'admit', session: 'sa', code: CODE, id: ask.id, answer: 'let_in' });
+  await linkIs(h, 'online');
+  await h.joiner.ok({ op: 'ping', session: 'sb', code: CODE, name: 'bob' });
+  return { line, check };
+}
+
+/** A dial of `line` by hand, as another machine (`key`, else a new one) naming `name` on `machine`: its check string and its close. */
+export async function dialHost(h: Homes, line: string, o: { name: string; machine: string; key?: KeyPair }): Promise<{ closed: Promise<void>; check: string }> {
+  const inv = parse(line);
+  assert.ok(inv.ok);
+  const me = o.key ?? generateKeyPair();
+  const payload = Buffer.from(JSON.stringify({ code: CODE, name: o.name, machine: o.machine, mac: mac(inv.value, me.pub).toString('base64url') }));
+  const ch = await connect(await pipe((s, src) => { h.hostNet.accept(s, src); })(inv.value.via, CODE), { s: me, rs: inv.value.hostKey, payload });
+  return { check: ch.check, closed: new Promise(res => { ch.onClose(() => { res(); }); }) };
+}
+
+
+/** A link of the joiner's own key that a test drives by hand: it sends what it is told and ignores every bye. */
+export interface RawLink {
+  send(m: ToHost): void;
+  /** Every message the host sent, in order. */
+  readonly got: ToLink[];
+  /** The first message of type `t`, waiting for it. */
+  next(t: ToLink['t']): Promise<ToLink>;
+  readonly closed: Promise<void>;
+}
+
+export async function rawLink(h: Homes, o: { code?: string; name?: string } = {}): Promise<RawLink> {
+  const key = async (home: string) => { const k = await machineKey(home); assert.ok(k.ok); return k.value; };
+  const [me, host] = [await key(h.joiner.home), await key(h.host.home)];
+  const dial = pipe((s, src) => { h.hostNet.accept(s, src); });
+  const payload = Buffer.from(JSON.stringify({ code: o.code ?? CODE, name: o.name ?? 'bob', machine: 'mB' }));
+  const ch = await connect(await dial({ kind: 'ssh', host: 'devbox', user: null, sshPort: null, port: 1 }, CODE), { s: me, rs: host.pub, payload });
+  const got: ToLink[] = [];
+  ch.onMessage(b => { const m = decodeToLink(b.toString('utf8')); if (m.ok && m.value) got.push(m.value); });
+  return {
+    got,
+    send: m => { ch.send(Buffer.from(encode(m))); },
+    next: t => until(`a ${t} from the host`, () => Promise.resolve(got.find(m => m.t === t) ?? null)),
+    closed: new Promise(res => { ch.onClose(() => { res(); }); }),
+  };
+}

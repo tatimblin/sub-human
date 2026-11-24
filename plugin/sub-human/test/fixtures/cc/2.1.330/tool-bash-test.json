@@ -1,0 +1,22 @@
+{
+  "name": "tool-bash-test",
+  "event": "tool.call",
+  "session": "steps",
+  "input": {
+    "command": "npm test",
+    "description": "Run npm tests",
+    "tool": "Bash",
+    "tool_use_id": "toolu_fake0008"
+  },
+  "result": {
+    "ref": 1,
+    "result": {
+      "stdout": "> test\n> node --test\n\n(node:54345) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///work/project/test/one.test.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /work/project/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ one (0.326417ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 63.288708",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": false
+    },
+    "text": "> test\n> node --test\n\n(node:54345) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///work/project/test/one.test.js is not specified and it doesn't parse as CommonJS.\nReparsing as ES module because module syntax was detected. This incurs a performance overhead.\nTo eliminate this warning, add \"type\": \"module\" to /work/project/package.json.\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ one (0.326417ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 63.288708"
+  }
+}

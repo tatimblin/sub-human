@@ -1,0 +1,33 @@
+{
+  "name": "turn-complete-plan",
+  "event": "turn.complete",
+  "session": "plan",
+  "input": {
+    "answer": "ok",
+    "durationMs": 6450,
+    "isAborted": false,
+    "turnId": "00000000-0000-4000-8000-000000000019",
+    "reason": "answer",
+    "usage": {
+      "input_tokens": 4,
+      "output_tokens": 268,
+      "cache_read_input_tokens": 9393,
+      "cache_creation_input_tokens": 5418,
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 5418,
+      "model": "claude-opus-5-5"
+    }
+  },
+  "result": {
+    "text": "ok",
+    "usage": {
+      "input_tokens": 4,
+      "output_tokens": 268,
+      "cache_read_input_tokens": 9393,
+      "cache_creation_input_tokens": 5418,
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 5418,
+      "model": "claude-opus-5-5"
+    }
+  }
+}

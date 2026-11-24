@@ -1,42 +1,23 @@
 {
+  "modules": ["../module/register.ts"],
   "hooks": {
     "UserPromptExpansion": [
       {
-        "matcher": "^(sub-human:)?sub-human$",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/join.sh\"",
-            "timeout": 10
-          }
-        ]
+        "matcher": "^(sub-human:)?room$",
+        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/node.sh\" expand", "timeout": 15 }]
       }
     ],
-    "PreToolUse": [
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/node.sh\" start", "timeout": 5 }] }
+    ],
+    "Notification": [
       {
-        "matcher": "EnterPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/mode-note.sh\"",
-            "timeout": 5
-          }
-        ]
+        "matcher": "permission_prompt",
+        "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/node.sh\" notify", "timeout": 5 }]
       }
     ],
     "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.sh\"",
-            "timeout": 5
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/node.sh\" end", "timeout": 5 }] }
     ]
-  },
-  "modules": [
-    "../mod/register.ts"
-  ]
+  }
 }

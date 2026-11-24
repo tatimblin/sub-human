@@ -1,0 +1,10 @@
+{
+  "modules": ["../module/log.ts"],
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/log.sh\" SessionStart" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/log.sh\" UserPromptSubmit" }] }],
+    "UserPromptExpansion": [{ "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/log.sh\" UserPromptExpansion" }] }],
+    "Notification": [{ "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/log.sh\" Notification" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/log.sh\" SessionEnd" }] }]
+  }
+}

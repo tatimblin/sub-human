@@ -1,0 +1,22 @@
+{
+  "name": "tool-list-extra",
+  "event": "tool.list",
+  "session": "extra",
+  "result": [
+    {
+      "name": "Bash",
+      "description": "Executes a given bash command and returns its output.\n\n`cd` carries to the next call only in the main session, if the command succeeds and ends inside the working directories. Outside them the shell returns to the start folder; otherwise it stays where it was. Shell state does not persist. The shell",
+      "mcp": false
+    },
+    {
+      "name": "TaskCreate",
+      "description": "Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.\nIt also helps the user understand the progress of the task and overall progress of their requests.\n\n## When to Use This Too",
+      "mcp": false
+    },
+    {
+      "name": "TaskUpdate",
+      "description": "Use this tool to update a task in the task list.\n\n## When to Use This Tool\n\n**Mark tasks as resolved:**\n- When you have completed the work described in a task\n- When a task is no longer needed or has been superseded\n- IMPORTANT: Always mark your assigned tasks as resolved when you finish them\n- Afte",
+      "mcp": false
+    }
+  ]
+}

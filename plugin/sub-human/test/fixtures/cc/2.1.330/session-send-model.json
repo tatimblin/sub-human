@@ -1,0 +1,16 @@
+{
+  "name": "session-send-model",
+  "event": "session.send",
+  "session": "steps",
+  "input": {
+    "to": "nobody",
+    "text": "hi",
+    "origin": {
+      "kind": "model"
+    }
+  },
+  "result": {
+    "isDelivered": false,
+    "reason": "No agent named 'nobody' is reachable.\nCheck the spelling, or use the agent ID from a background agent's spawn result."
+  }
+}

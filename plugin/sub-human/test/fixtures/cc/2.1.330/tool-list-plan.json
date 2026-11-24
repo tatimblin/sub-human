@@ -1,0 +1,22 @@
+{
+  "name": "tool-list-plan",
+  "event": "tool.list",
+  "session": "plan",
+  "result": [
+    {
+      "name": "Edit",
+      "description": "Performs exact string replacements in files.\n\nUsage:\n- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.\n- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spac",
+      "mcp": false
+    },
+    {
+      "name": "ExitPlanMode",
+      "description": "Use this tool when you are in plan mode and have finished writing your plan to the plan file and are ready for user approval.\n\n## How This Tool Works\n- You should have already written your plan to the plan file specified in the plan mode system message\n- This tool does NOT take the plan content as a",
+      "mcp": false
+    },
+    {
+      "name": "Write",
+      "description": "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided path.\n- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\n- Prefer the Edit too",
+      "mcp": false
+    }
+  ]
+}

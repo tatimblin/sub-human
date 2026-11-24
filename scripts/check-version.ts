@@ -5,8 +5,8 @@
  *
  *   node scripts/check-version.ts [BASE]
  *       BASE (a git ref) defaults to the newest tag, else the last commit that changed plugin.json's version.
- *       Fails (exit 1) when files under plugin/sub-human/ differ between BASE and the working tree (tests and
- *       mod/test/ excluded: they do not ship behaviour) while the version is not greater than BASE's. Exit 0
+ *       Fails (exit 1) when files under plugin/sub-human/ differ between BASE and the working tree (tests excluded:
+ *       *.node-test.ts, *.test.ts and plugin/sub-human/test/ ship no behaviour) while the version is not greater than BASE's. Exit 0
  *       otherwise, with one line saying why. Exit 2 when git or plugin.json cannot be read.
  *   CI on a pull request passes the target branch: `node scripts/check-version.ts origin/main`.
  *
@@ -24,7 +24,7 @@ export interface VersionCheck { ok: boolean, base: string | null, from: string |
 
 const MANIFEST = 'plugin/sub-human/.claude-plugin/plugin.json';
 const PLUGIN = 'plugin/sub-human/';
-const EXEMPT = /^plugin\/sub-human\/(?:test|mod\/test)\//;
+const EXEMPT = /^plugin\/sub-human\/(?:test\/|.*\.(?:node-)?test\.tsx?$)/;
 
 const git = (cwd: string, args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const tryGit = (cwd: string, args: string[]): string => { try { return git(cwd, args); } catch { return ''; } };
