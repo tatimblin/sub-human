@@ -136,15 +136,31 @@ test('the same machine dialling its pending line again takes its dial\'s place: 
 for (const race of [false, true]) {
   test(race ? 'two machines dialling one open line at once both reach no card: the second finds it pending, and both are refused'
     : 'a leaked line dialled from another machine while the first waits refuses both dials and alerts the host (R30)', async t => {
-    const h = await twoHomes(t);
+    // the race, held open: both dials judge the line open and wait on reading the room; the first goes on alone and
+    // makes the line pending, and only then does the second, whose judgement after the wait must find it pending
+    let armed = false;
+    const held: (() => void)[] = [];
+    const h = await twoHomes(t, race ? {
+      hostRooms: rooms => {
+        const state = rooms.state.bind(rooms);
+        rooms.state = async code => {
+          if (armed && held.length < 2) await new Promise<void>(res => { held.push(res); });
+          return state(code);
+        };
+      },
+    } : {});
     await hostRoom(h);
     const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
     if (race) {
-      await h.restartHost(); // a cold room: the first dial waits on reading it, so the second arrives meanwhile
-      const dials = await Promise.all(['mB', 'mC'].map(machine => dialHost(h, line, { name: 'bob', machine })));
-      const asks = await until('the alert', async () => { const a = (await h.host.ok({ op: 'asks', session: 'sa' })).asks; return a.length ? a : null; });
+      armed = true;
+      const dials = ['mB', 'mC'].map(machine => dialHost(h, line, { name: 'bob', machine }));
+      await until('both dials waiting on the room', () => Promise.resolve(held.length === 2 || null));
+      held[0]?.();
+      await until('the line pending', async () => ((await fs.readFile(`${h.host.home}/host.json`, 'utf8')).includes('"state":"pending"') || null));
+      held[1]?.();
+      await Promise.all((await Promise.all(dials)).map(d => d.closed));
+      const asks = (await h.host.ok({ op: 'asks', session: 'sa' })).asks;
       assert.deepEqual(asks.map(a => [a.kind, a.expected]), [['again', 'bob']]);
-      await Promise.all(dials.map(d => d.closed));
       return;
     }
     await h.joiner.ok({ op: 'dial', line, name: 'bob' });
