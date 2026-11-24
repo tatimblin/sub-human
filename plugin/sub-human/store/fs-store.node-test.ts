@@ -11,7 +11,7 @@ import type { FsStore } from './fs-store.js';
 import { openFsStore } from './fs-store.js';
 import { writeAtomic } from './atomic.js';
 import { parseTail } from './store.js';
-import { post } from '../test/support/store-contract.js';
+import { post } from '../test/store-contract.js';
 import { must } from '../test/support/must.js';
 import { docFile, fileKey, lockFile, logFile, roomDir, snapshotFile, tailFile } from '../home.js';
 

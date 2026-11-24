@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { storeContract } from '../test/support/store-contract.js';
+import { storeContract } from '../test/store-contract.js';
 import { MemoryStore, memoryRoom } from '../test/support/memory-store.js';
 import { FsStore } from './fs-store.js';
 import { MirrorStore } from './mirror-store.js';

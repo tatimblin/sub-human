@@ -187,7 +187,7 @@ These are real Claude sessions with the default model, never pinned, and their c
 ## 10. Budgets and conventions
 
 - The CI suite (layers 1–5) runs in under 60 s. There is no network beyond loopback, and no real Claude.
-- Test code is no larger than runtime code (Q-3).
+- Test files proper are at most 1.2 × the runtime at the cutover (Q-3, `node scripts/budget.ts --final`). The harness under `test/support/` is counted on its own row and kept out of the ratio; a test of a support helper is a test file and counts. Every test covers one behaviour (or one table of cases) that no other test covers, at the lowest layer that can prove it; a kit test that repeats a core rule stays only when it proves the wiring, and says so.
 - Every PRD story has at least one module test (§4) and appears in the live gate: S-Live, S-Relevant, S-Ask, plan together, send a plan, split, join, remote join, leave.
 - Tests narrow with `assert.ok` or `must(value, what)`; there is no `!`.
 - A test that writes outside its temp home fails, which keeps the POC's "REAL CONFIG TOUCHED" guard.

@@ -45,7 +45,7 @@ proof of concept. User docs: `plugin/sub-human/README.md`.
   `scripts/directory-lint.ts`. `scripts/lint.ts` kills tsgolint above 4 GB (`SUB_HUMAN_LINT_CAP_MB`).
 - `npm run validate`, `npm run probe`, `npm run canary -- latest`, `npm run typings`, `npm run vendor [-- --check]`.
   Run at most 2 test processes at once.
-- `node scripts/budget.ts [--final]` (ARCHITECTURE §11; `--final`: tests ≤ runtime), `node scripts/trace.ts
+- `node scripts/budget.ts [--final]` (ARCHITECTURE §11; `--final`: tests ≤ 1.2 × runtime, `test/support/` apart), `node scripts/trace.ts
   [--check]` (TESTING §12, from `R…` tags in test names), `node scripts/check-version.ts [BASE]`.
 
 ## Conventions

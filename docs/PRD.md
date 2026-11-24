@@ -363,7 +363,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
 
 - **Q-1. Deterministic scenes.** Each reference scene (join, live update reaching a colleague's Claude, relevance, overlap heads-up, ask and Claude-to-Claude wake, plan and agree, send a plan, split, leave, remote join) runs without a live model, against the memory store and a fake clock, in CI.
 - **Q-2. Small live gate.** One named live run per release, at a known cost, across the three permission modes. It covers at least three workflows: no-plan pairing, plan-then-build, and non-code writing. It also includes an injection scene: a planted instruction travels through one Claude's direct message, and it must not lead the recipient to run anything unattended.
-- **Q-3. Test-to-runtime ratio** of at most 1:1. Remote end-to-end tests are deterministic over the memory and pipe transports. Any Docker lab runs in CI or is deleted.
+- **Q-3. Test-to-runtime ratio** of at most 1.2:1 at the cutover (`node scripts/budget.ts --final`), counting the test files proper; the shared harness under `test/support/` (seeded rooms, two homes, fake daemons, the kit fixtures reader) is counted and shown apart and kept out of the ratio. Every test is uniquely valuable: it covers a behaviour no other test covers, and the ratio is met by consolidating, never by dropping coverage. Remote end-to-end tests are deterministic over the memory and pipe transports. Any Docker lab runs in CI or is deleted.
 - **Q-4. Canary.** A nightly probe of the (small) internals list against Claude Code `latest` and `next` stays.
 - **Q-5. Docs.** One README of at most about 200 lines, one architecture document, and a CHANGELOG. Commit messages are plain sentences.
 

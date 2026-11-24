@@ -2,10 +2,10 @@
 // memory and fs, and the mirror joins it later with a Backend of its own.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { StoreDraft } from '../../core/entries.js';
-import type { RoomStore } from '../../store/store.js';
-import { fold } from '../../core/fold.js';
-import { must } from './must.js';
+import type { StoreDraft } from '../core/entries.js';
+import type { RoomStore } from '../store/store.js';
+import { fold } from '../core/fold.js';
+import { must } from './support/must.js';
 
 /** A fresh room in a backend. */
 export interface Backend { room(every?: number): Promise<Room> }

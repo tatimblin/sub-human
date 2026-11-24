@@ -412,7 +412,7 @@ Timings are constants in `config.ts`. Tests pass their own values in through par
 ## 11. Size budget
 
 Lines of code, comments and blank lines left out, as `node scripts/budget.ts` counts them; it prints the built count
-of each area beside its cap (`--final` also holds tests to no more than the runtime).
+of each area beside its cap, then the tests and, on a row of its own, their support (`test/support/`, not held); `--final` also holds the tests to at most 1.2 × the runtime.
 
 | Area | Lines (max) |
 |---|---|
@@ -423,10 +423,10 @@ of each area beside its cap (`--final` also holds tests to no more than the runt
 | `net/` (channel 300, pathways 600, host, link, invite) | 2,300 |
 | keys, home, config, CLI | 1,000 |
 | **Total** | **9,000** (`vendor/` not counted) |
-| Tests (PRD Q-3) | no more than the runtime |
+| Tests (PRD Q-3) | at most 1.2 × the runtime; `test/support/` counted apart |
 
-The tests are over PRD Q-3's 1:1 at the cutover; the owner decides whether to relax it, and no test is deleted to
-fit. A pull request that pushes an area over its line is either split or comes with a deletion.
+The owner set Q-3 at 1.2:1 with the harness apart (2026-11-23). The tests meet it by consolidation: a test is deleted
+only as a duplicate, naming the test that still catches its behaviour. A pull request that pushes an area over its line is either split or comes with a deletion.
 
 ## 12. Testing
 
