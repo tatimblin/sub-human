@@ -193,6 +193,9 @@ test('doctor: node, the socket path, the module, the version checked on, every r
   assert.equal(text[3], 'ok    sub-human is checked on Claude Code 2.1.330; sessions here run 2.1.331, which it was not checked on');
   assert.equal(text[5], 'ok    no sshd here to read; only an ssh invite needs one, on the machine that invites');
   assert.equal(text[6], 'fix   Tailscale isn\'t installed or doesn\'t answer: install it to invite by URL, or use /room invite NAME --ssh');
+  fake.unwritable = 'ENOSYS';
+  const stuck = (await runCommand('doctor', testCtx(fake, { env: { SUB_HUMAN_HOME: '/h' }, run: {} }))).text.split('\n');
+  assert.deepEqual(stuck.slice(1, 4), ['ok    home /h', 'fix   sub-human can\'t write to /h (ENOSYS); the next /room command starts it again', 'ok    hooks module on in 1 session here']);
 });
 
 test('nodeRuns: 22.18+, 24.3+, 25 on; never 23', () => {
