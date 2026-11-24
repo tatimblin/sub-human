@@ -161,7 +161,8 @@
       "bodyColumns: number;"
      ]
     },
-    "invalidate: (event: InvalidatableEventName) => void;",
+    "invalidate: (event: InvalidatableEventName",
+    "export type InvalidatableEventName = RenderEventName |",
     {
      "in": "export type ButtonProps = {",
      "has": [
@@ -178,7 +179,8 @@
     }
    ],
    "checked": [
-    "2.1.330"
+    "2.1.330",
+    "2.1.331"
    ],
    "note": "The row shown while the person is alone in their room (R30): a button per way in, then the line with copy and cancel. Early access: clicks land only in fullscreen; elsewhere ctrl+x tab focuses the band. No digit hotkeys: a bare digit in an empty prompt presses a band Button."
   },
@@ -373,10 +375,11 @@
    "surface": "a module's command.run answer {} to a prompt the person typed adds no row: no echo of the command line, no expansion hook, no model turn",
    "search": [
     "but no command.run hook answered it",
-    "I.length===0&&!V)return{messages:[],shouldQuery:!1"
+    ")return{messages:[],shouldQuery:!1,command:"
    ],
    "checked": [
-    "2.1.330"
+    "2.1.330",
+    "2.1.331"
    ],
    "reason": "A /room answer must be one plain line: a {text} answer echoes the typed command (a join line's secret) into the transcript, and the classic UserPromptExpansion block draws 'UserPromptExpansion operation blocked by hook:'.",
    "fallback": "The classic hook answers, inside Claude Code's 'blocked by hook' frame.",
