@@ -17,7 +17,6 @@ export function nodeCtx(o: { config: Config; session: string; cwd: string; daemo
   return {
     ...o,
     now: Date.now,
-    random: Math.random,
     uuid: randomUUID,
     rooms: fsRooms(o.config.home),
     sessions: fsSessions(o.config.home),

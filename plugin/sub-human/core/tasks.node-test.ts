@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { Draft, Entry, Member, RoomState, Task } from './entries.js';
 import type { Result } from './result.js';
 import { decodeEntry } from './schema.js';
-import { add, bridgeOp, claim, done, parseTag, release, tag, waitingOn } from './tasks.js';
+import { add, bridgeOp, claim, done, parseTag, release, tag } from './tasks.js';
 
 const task = (n: number, t: Partial<Task> = {}): Task => ({ n, title: `t${n}`, status: 'open', addedBy: 'ann', blockedBy: [], ...t });
 const room = (tasks: readonly Task[], members: readonly Member[] = []): RoomState => ({ seq: 0, hash: '', members, plans: [], sent: [], tasks, recent: [] });
@@ -69,11 +69,6 @@ test('anyone may release a kicked member\'s task, but not mark it done', () => {
   assert.deepEqual(after(release(s, { n: 2, from: 'bob' })), task(2));
   assert.equal(after(done(s, { n: 2, from: 'bob' })), 'Task #2 was not marked done: ann has it.');
   assert.equal(after(release(room(s.tasks), { n: 2, from: 'bob' })), 'Task #2 was not released: ann has it.');
-});
-
-test('waitingOn lists the blockers not yet done (R25)', () => {
-  const s = room([task(1, { status: 'done' }), task(2, { status: 'claimed', owner: 'ann' }), task(3, { blockedBy: [1, 2, 7] })]);
-  assert.deepEqual(waitingOn(s, task(3, { blockedBy: [1, 2, 7] })), [2]);
 });
 
 test('the bridge tag round-trips inside a native subject (R24a)', () => {

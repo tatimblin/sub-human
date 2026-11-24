@@ -123,7 +123,7 @@ export class FsStore implements RoomStore {
     return decoded(kind, await readText(docFile(this.dir, kind, await fileKey(name))));
   }
   async docs(): Promise<Docs> {
-    const all = async <K extends 'presence' | 'activity' | 'focus'>(kind: K): Promise<DocKinds[K][]> => {
+    const all = async <K extends DocKind>(kind: K): Promise<DocKinds[K][]> => {
       const names = await fs.readdir(docDir(this.dir, kind)).catch(() => []);
       const texts = await Promise.all(names.filter(n => n.endsWith('.json')).map(n => readText(`${docDir(this.dir, kind)}/${n}`)));
       return texts.flatMap(t => decoded(kind, t) ?? []);

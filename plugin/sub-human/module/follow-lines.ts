@@ -1,7 +1,7 @@
 // What follow.ts reads, as pure functions: the log's new lines from a byte range, the tail's documents stamp, the
 // documents held for fold, and what a poll's news is for me (absorb). No `$` here; follow.ts makes the reads.
 import * as v from '../vendor/valibot.mjs';
-import type { ActivityDoc, DocKinds, Docs, LogLine, RoomState } from '../core/entries.js';
+import type { ActivityDoc, DocKind, DocKinds, Docs, LogLine, RoomState } from '../core/entries.js';
 import type { Input, Item, Me, State } from '../core/deliver.js';
 import { deliver, edits } from '../core/deliver.js';
 import { updatesSince } from '../core/fold.js';
@@ -11,9 +11,8 @@ import { ok } from '../core/result.js';
 import type { Head } from '../store/store.js';
 import { lineHash, verifyLines } from '../store/store.js';
 
-export type Kind = 'presence' | 'activity' | 'focus';
 /** The documents follow has read, by file name, with the mtime it read them at. */
-export type Held = { [K in Kind]: Map<string, { mtime: number; doc: DocKinds[K] }> };
+export type Held = { [K in DocKind]: Map<string, { mtime: number; doc: DocKinds[K] }> };
 
 /**
  * The complete lines of a log read that follow `head`, chain-checked; `bytes` is how much of `text` they took. A
@@ -34,7 +33,7 @@ const Stamp = v.looseObject({ docs: v.optional(v.string()) });
 export function docsStamp(tail: string): string | undefined { const s = parseJson(Stamp, tail); return s.ok ? s.value.docs : undefined; }
 
 export function docsOf(held: Held): Docs {
-  const docs = <K extends Kind>(kind: K): DocKinds[K][] => [...held[kind].values()].map(x => x.doc);
+  const docs = <K extends DocKind>(kind: K): DocKinds[K][] => [...held[kind].values()].map(x => x.doc);
   return { presence: docs('presence'), activity: docs('activity'), focus: docs('focus') };
 }
 

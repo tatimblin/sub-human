@@ -6,6 +6,7 @@ import type { Input } from '../core/deliver.js';
 import type { Member, RoomState } from '../core/entries.js';
 import { oneLine } from '../core/text.js';
 import { COMMAND, session } from './session.js';
+import { isHere } from '../core/entries.js';
 
 /** The pane's id; one news pane at a time. */
 export const NEWS_PANE = 'sub-human-news';
@@ -17,7 +18,7 @@ const LINE_MAX = 300;
  * when nobody's presence can be known), my open room tasks (R24), and what I haven't seen.
  */
 export function statusLine(room: RoomState, me: { readonly code: string; readonly name: string }, count: number, away = false): string {
-  const here = room.members.filter(m => m.name !== me.name && !m.kicked && m.machines.length > 0).map(doing);
+  const here = room.members.filter(m => m.name !== me.name && isHere(m)).map(doing);
   const tasks = room.tasks.filter(t => t.owner === me.name && t.status !== 'done').length;
   return [
     me.code, ...(away ? ['host away'] : here.length ? [`${here.join(', ')} here`] : []), ...plural(tasks, 'task'), ...plural(count, 'update'),

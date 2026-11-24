@@ -6,7 +6,7 @@
 import type { Author, PlanAct } from './api.js';
 import type { Acceptance, Answer, Draft, Plan, PlanAnswerRecord, PlanScope, PlanVersion, RoomState, Task } from './entries.js';
 import { err, ok, type Result } from './result.js';
-import { LIMITS } from './entries.js';
+import { LIMITS, isMember } from './entries.js';
 import { entry, nextN, unclaimed } from './tasks.js';
 import { terms } from './deliver.js';
 import { refusedPath } from './secrets.js';
@@ -254,6 +254,3 @@ function noted(note: string | undefined): { note?: string } {
   return note?.trim() ? { note } : {};
 }
 
-function isMember(s: RoomState, name: string): boolean {
-  return s.members.some(m => m.name === name && !m.kicked);
-}

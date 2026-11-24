@@ -4,10 +4,11 @@
 import type { RoomState } from '../../core/entries.js';
 import type { Result } from '../../core/result.js';
 import { err, ok } from '../../core/result.js';
+import { isHere } from '../../core/entries.js';
 
 export type Pick = { readonly code: string; readonly fresh: boolean } | { readonly rooms: readonly string[] };
 
-const open = (s: RoomState): boolean => s.members.some(m => m.machines.length > 0);
+const open = (s: RoomState): boolean => s.members.some(isHere);
 
 export function pick(o: {
   readonly rooms: ReadonlyMap<string, RoomState>;

@@ -130,9 +130,10 @@ export interface PresenceDoc {
 export interface ActivityDoc { readonly name: string; readonly files: readonly string[]; readonly at: number }
 export interface FocusDoc { readonly name: string; readonly text: string; readonly repo?: string; readonly branch?: string; readonly at: number }
 /** The host's members document: which link each member's machine came in on. */
-export interface MembersDoc { readonly members: readonly { readonly name: string; readonly machine: string; readonly link?: string }[] }
-export interface DocKinds { presence: PresenceDoc; activity: ActivityDoc; focus: FocusDoc; members: MembersDoc }
-export type DocKind = keyof DocKinds;
+export interface DocKinds { presence: PresenceDoc; activity: ActivityDoc; focus: FocusDoc }
+/** The documents a member writes about itself. */
+export const DOC_KINDS: readonly ['presence', 'activity', 'focus'] = ['presence', 'activity', 'focus'];
+export type DocKind = (typeof DOC_KINDS)[number];
 export interface Docs {
   readonly presence: readonly PresenceDoc[];
   readonly activity: readonly ActivityDoc[];
@@ -195,3 +196,10 @@ export interface Member extends MemberRecord {
   readonly focus?: FocusDoc;
 }
 export interface RoomState extends Omit<LogState, 'members'> { readonly members: readonly Member[] }
+
+/** Whether `name` is in the room's membership and was never removed. */
+export function isMember(s: { readonly members: readonly MemberRecord[] }, name: string): boolean {
+  return s.members.some(m => m.name === name && !m.kicked);
+}
+/** Whether the member is in the room now, on some machine (a removed member never is: fold gives them none). */
+export function isHere(m: Member): boolean { return m.machines.length > 0; }

@@ -8,10 +8,9 @@ import type { InviteRecord, Pathway } from './invite.js';
 
 const hostKey = crypto.randomBytes(32), joinerKey = crypto.randomBytes(32);
 const NOW = 1_000_000, TTL = 15 * 60_000;
-const lineFor = (via: Pathway, secret?: Buffer) => mint({ code: 'vole-8126', name: 'jess', hostKey, via, now: NOW, ttlMs: TTL, ...(secret ? { secret } : {}) });
+const lineFor = (via: Pathway) => mint({ code: 'vole-8126', name: 'jess', hostKey, via, now: NOW, ttlMs: TTL });
 
 test('mint and parse: https (Funnel or Serve) and ssh lines carry the code, the host key and the secret', () => {
-  const secret = crypto.randomBytes(16);
   const cases: [Pathway, RegExp][] = [
     [{ kind: 'https', origin: 'https://devbox.tail1234.ts.net' }, /^https:\/\/devbox\.tail1234\.ts\.net\/vole-8126#[0-9a-hjkmnp-tv-z]{77}$/],
     [{ kind: 'https', origin: 'https://devbox.tail1234.ts.net:8443' }, /^https:\/\/devbox\.tail1234\.ts\.net:8443\/vole-8126#/],
@@ -19,11 +18,13 @@ test('mint and parse: https (Funnel or Serve) and ssh lines carry the code, the 
     [{ kind: 'ssh', host: 'box.example.com', user: 'jess', sshPort: 2222, port: 7311 }, /^ssh:\/\/jess@box\.example\.com:2222\/vole-8126\?port=7311#/],
   ];
   for (const [via, shape] of cases) {
-    const { line, record } = lineFor(via, secret);
+    const { line, record } = lineFor(via);
     assert.match(line, shape);
     const p = parse(`  ${line}\n`);
     assert.ok(p.ok, line);
-    assert.deepEqual(p.value, { code: 'vole-8126', hostKey, secret, via });
+    assert.deepEqual(p.value, { code: 'vole-8126', hostKey, secret: p.value.secret, via });
+    const { secret } = p.value;
+    assert.equal(secret.length, 16);
     assert.deepEqual([record.code, record.name, record.state, record.expiresAt], ['vole-8126', 'jess', 'open', NOW + TTL]);
     assert.ok(!JSON.stringify(record).includes(secret.toString('base64url')), 'the record never holds the secret');
   }
@@ -97,8 +98,7 @@ test('parse never throws: a bad escape, a hex or exponent port, and 200k random 
   }
 });
 
-test('mint refuses a host key or secret of the wrong length', () => {
+test('mint refuses a host key of the wrong length', () => {
   const via: Pathway = { kind: 'https', origin: 'https://h.ts.net' };
   assert.throws(() => mint({ code: 'vole-8126', name: 'jess', hostKey: Buffer.alloc(31), via, now: NOW, ttlMs: TTL }), TypeError);
-  assert.throws(() => lineFor(via, Buffer.alloc(15)), TypeError);
 });

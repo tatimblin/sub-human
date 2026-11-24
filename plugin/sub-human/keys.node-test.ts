@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { machineId, machineKey, machineKeyFile } from './keys.js';
+import { machineKey, machineKeyFile } from './keys.js';
 import { keyPair } from './net/channel.js';
 import { tempHome } from './test/support/command-ctx.js';
 
@@ -36,9 +36,9 @@ test('a home from an earlier v2 build keeps its key: noise.key is taken as the m
 test('first uses at once all get the one key that won', async () => {
   const home = tempHome();
   const keys = await Promise.all(Array.from({ length: 8 }, () => machineKey(home)));
-  const ids = new Set(keys.map(k => (k.ok ? machineId(k.value.pub) : k.error)));
+  const ids = new Set(keys.map(k => (k.ok ? k.value.pub.toString('hex') : k.error)));
   assert.equal(ids.size, 1);
-  assert.match([...ids][0] ?? '', /^[0-9a-f]{16}$/);
+  assert.match([...ids][0] ?? '', /^[0-9a-f]{64}$/);
 });
 
 test('a key others can read, or one that is not a key, is refused with what to do', async () => {

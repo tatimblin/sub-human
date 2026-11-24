@@ -15,7 +15,7 @@ import { home, joined, post } from '../../test/support/daemon.js';
 import { must } from '../../test/support/must.js';
 
 const BOB = { code: 'vole-0001', name: 'bob', title: 'bob.vole-0001', leave: '7d9c2a1e-4b3f-4c5d-8e6f-0a1b2c3d4e5f' };
-const rooms = (h: string): Rooms => new Rooms({ home: h, now: () => 5, machine: 'm', idleMs: 60_000, links: NO_LINKS });
+const rooms = (h: string): Rooms => new Rooms({ home: h, now: () => 5, machine: 'm', idleMs: 60_000, random: Math.random });
 async function kinds(h: string, code: string): Promise<Kind[]> {
   const s = await openFsStore({ home: h, code });
   assert.ok(s.ok);
@@ -167,7 +167,7 @@ test('session writes the pointer the module reads (0600) with its title, retire 
   for (const id of ['gone', 'quiet']) await fs.writeFile(sessionFile(h, id), '{"code":"R","name":"x"}');
   const day = new Date(Date.now() - 25 * 3600_000);
   for (const id of ['gone', 'quiet']) await fs.utimes(sessionFile(h, id), day, day);
-  const live = new Rooms({ home: h, now: Date.now, machine: 'm', idleMs: 60_000, links: NO_LINKS });
+  const live = new Rooms({ home: h, now: Date.now, machine: 'm', idleMs: 60_000, random: Math.random });
   await okv(live, { op: 'ping', session: 'quiet' }); // still pinging: its pointer is kept fresh
   await sleep(50);
   assert.deepEqual(await joinAs(live, 's1', BOB), { code: BOB.code, title: BOB.title, opened: false, others: [] });
@@ -184,7 +184,7 @@ test('session writes the pointer the module reads (0600) with its title, retire 
 test('handoff moves a pointer aside for the next session in the cwd; claim takes it once, and only while fresh', async () => {
   const h = await home();
   let now = 1_000;
-  const r = new Rooms({ home: h, now: () => now, machine: 'm', idleMs: 60_000, links: NO_LINKS });
+  const r = new Rooms({ home: h, now: () => now, machine: 'm', idleMs: 60_000, random: Math.random });
   await joinAs(r, 'old', BOB);
   assert.equal(await okv(r, { op: 'handoff', id: 'old', cwd: '/work/api' }), null);
   await assert.rejects(fs.access(sessionFile(h, 'old')));
@@ -201,7 +201,7 @@ test('handoff moves a pointer aside for the next session in the cwd; claim takes
 
 test('handoffs in one cwd are a list: two pending are both kept, and claims take the oldest first', async () => {
   const h = await home();
-  const r = new Rooms({ home: h, now: () => 1_000, machine: 'm', idleMs: 60_000, links: NO_LINKS });
+  const r = new Rooms({ home: h, now: () => 1_000, machine: 'm', idleMs: 60_000, random: Math.random });
   const ALICE = { ...BOB, name: 'alice', title: 'alice.vole-0001', leave: '8e9c2a1e-4b3f-4c5d-8e6f-0a1b2c3d4e5f' };
   await joinAs(r, 'one', BOB);
   await joinAs(r, 'two', ALICE);
@@ -214,7 +214,7 @@ test('handoffs in one cwd are a list: two pending are both kept, and claims take
 
 test('a handoff and a claim sent together run in order on the cwd\'s chain: the claim gets it', async () => {
   const h = await home();
-  const r = new Rooms({ home: h, now: () => 1_000, machine: 'm', idleMs: 60_000, links: NO_LINKS });
+  const r = new Rooms({ home: h, now: () => 1_000, machine: 'm', idleMs: 60_000, random: Math.random });
   await joinAs(r, 'one', BOB);
   const [, claimed] = await Promise.all([r.handle({ op: 'handoff', id: 'one', cwd: '/w' }), r.handle({ op: 'claim', id: 'two', cwd: '/w' })]);
   assert.ok(claimed.ok);
@@ -271,7 +271,8 @@ test('the sweep deletes a room or copy nobody has used for 30 days and no pointe
   const h = await home();
   let now = 1_000;
   const forgot: string[] = [];
-  const r = new Rooms({ home: h, now: () => now, machine: 'm', idleMs: 60_000, links: { ...NO_LINKS, forget: code => { forgot.push(code); return Promise.resolve(); } } });
+  const r = new Rooms({ home: h, now: () => now, machine: 'm', idleMs: 60_000, random: Math.random });
+  r.links = { ...NO_LINKS, forget: code => { forgot.push(code); return Promise.resolve(); } };
   const [OLD, MOVED] = ['vole-0002', 'vole-0003'].map(code => ({ ...BOB, code, title: `bob.${code}` }));
   await joinAs(r, 'held', BOB);
   await joinAs(r, 'gone', must(OLD, 'old'));

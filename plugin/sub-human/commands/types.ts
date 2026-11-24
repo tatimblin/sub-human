@@ -2,7 +2,7 @@
 // daemon (Daemon), and reads go through Rooms and Sessions, so a test hands them in over memory stores.
 import type { Config } from '../config.js';
 import type { Answers, Joining, Pointer, Request, Via } from '../core/api.js';
-import type { DocKinds, Draft, RoomState } from '../core/entries.js';
+import type { DocKinds, RoomState } from '../core/entries.js';
 import type { Result } from '../core/result.js';
 import type { Membership } from './membership.js';
 
@@ -16,8 +16,6 @@ export type MemberDoc = { [K in 'presence' | 'focus']: { readonly kind: K; reado
 
 /** The daemon's ops the commands use (core/api.ts), one function each. */
 export interface Daemon {
-  /** The host stamps the rest of the envelope; `id` is ours, so a retry with it is stored once. */
-  append(code: string, draft: Draft, id: string): Promise<Result<unknown>>;
   putDoc(code: string, doc: MemberDoc): Promise<Result<unknown>>;
   /** The host's: `by` removes `name` for good, or the daemon says why not. */
   kick(code: string, name: string, by: string): Promise<Result<unknown>>;
@@ -64,7 +62,6 @@ export interface Ctx {
   readonly session: string;
   readonly cwd: string;
   readonly now: () => number;
-  readonly random: () => number;
   /** A fresh UUID, for the ids of entries. */
   readonly uuid: () => string;
   readonly daemon: Daemon;

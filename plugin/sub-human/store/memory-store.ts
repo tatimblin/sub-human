@@ -65,7 +65,7 @@ export class MemoryStore implements RoomStore {
     return Promise.resolve(this.decoded(kind, this.room.docs.get(`${kind}/${name}`)));
   }
   docs(): Promise<Docs> {
-    const all = <K extends 'presence' | 'activity' | 'focus'>(kind: K): DocKinds[K][] =>
+    const all = <K extends DocKind>(kind: K): DocKinds[K][] =>
       [...this.room.docs].filter(([k]) => k.startsWith(`${kind}/`)).flatMap(([, t]) => this.decoded(kind, t) ?? []);
     return Promise.resolve({ presence: all('presence'), activity: all('activity'), focus: all('focus') });
   }

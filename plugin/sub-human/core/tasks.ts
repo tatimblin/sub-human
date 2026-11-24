@@ -48,11 +48,6 @@ export function done(s: RoomState, d: Op & { readonly note?: string }): Result<D
   return ok([entry(d.from, { ...task, status: 'done', ...(note !== undefined && { note }) })]);
 }
 
-/** The tasks a task still waits on: its blockers that aren't done. */
-export function waitingOn(s: RoomState, task: Task): readonly number[] {
-  return task.blockedBy.filter(n => s.tasks.some(t => t.n === n && t.status !== 'done'));
-}
-
 export function nextN(tasks: readonly Task[]): number {
   return tasks.reduce((n, t) => Math.max(n, t.n), 0) + 1;
 }

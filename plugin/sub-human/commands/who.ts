@@ -3,6 +3,8 @@ import type { Member } from '../core/entries.js';
 import { oneLine } from '../core/text.js';
 import type { Verb } from './types.js';
 import { refused, say } from './types.js';
+import { hostAway } from '../core/api.js';
+import { isHere } from '../core/entries.js';
 
 export const who: Verb = async (_args, ctx) => {
   const mine = await ctx.sessions.get(ctx.session);
@@ -11,8 +13,8 @@ export const who: Verb = async (_args, ctx) => {
   if (!s.ok) return refused(`Nobody could be listed: ${s.error}`);
   // R34: a room hosted elsewhere whose host can't be reached shows who was here when it went
   const link = await ctx.daemon.link(mine.code);
-  const away = link.ok && (link.value?.phase === 'host_away' || link.value?.phase === 'offline') ? ' · host away' : '';
-  const here = s.value.members.filter(m => m.machines.length > 0 && !m.kicked);
+  const away = link.ok && hostAway(link.value?.phase) ? ' · host away' : '';
+  const here = s.value.members.filter(isHere);
   return say([`${mine.code} · ${here.length} here${away}`, ...here.map(m => line(m, m.name === mine.name))].join('\n'));
 };
 

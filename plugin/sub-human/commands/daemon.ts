@@ -23,7 +23,6 @@ export function daemonFor(home: string): Daemon {
     return started.ok ? call(home, req, CALL_MS) : err(started.error);
   };
   return {
-    append: (code, draft, id) => send({ op: 'append', code, draft: { ...draft, id } }),
     putDoc: (code, d) => send({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
     kick: (code, name, from) => send({ op: 'kick', code, from, name }),
     invite: (code, from, name, via) => send({ op: 'invite', code, from, name, via }),

@@ -2,7 +2,7 @@
 // read the blobs and make the daemon calls; plans-notes.ts says what Claude is told. The copy fits reviewing someone
 // else's plan for any kind of work (R19). plans-pending.ts finds the plan waiting on my answer and draws its pane.
 import type { Plan, RoomState } from '../core/entries.js';
-import { LIMITS } from '../core/entries.js';
+import { LIMITS, isHere } from '../core/entries.js';
 import { oneLine } from '../core/text.js';
 import type { Pending } from './plans-pending.js';
 import { summary } from './plans-pending.js';
@@ -17,7 +17,7 @@ export const BACK = 'Back to the question';
 export interface Card { readonly question: string; readonly options: readonly string[]; readonly multiSelect?: true }
 
 const others = (s: RoomState, me: string) => s.members.filter(m => !m.kicked && m.name !== me);
-const isMember = (s: RoomState, name: string) => others(s, '').find(m => m.name.toLowerCase() === name.trim().toLowerCase())?.name;
+const memberNamed = (s: RoomState, name: string) => others(s, '').find(m => m.name.toLowerCase() === name.trim().toLowerCase())?.name;
 const onPlan = (p: Plan, me: string) => p.versions.some(v => v.from === me || v.asked.includes(me));
 
 /** A plan's name from its first heading or line: `## Cursor paging` → `cursor-paging`. */
@@ -42,10 +42,10 @@ export function approval(s: RoomState, me: string, code: string, text: string, f
   const name = [...stored].find(([, f]) => f && f === file)?.[0] ?? planName(text);
   const plan = s.plans.find(p => p.name === name && p.scope === 'group');
   const at = plan?.versions.at(-1);
-  const revision = plan && at && onPlan(plan, me) ? { name, base: at.version, people: [...new Set([at.from, ...at.asked])].filter(p => p !== me && isMember(s, p)) } : undefined;
+  const revision = plan && at && onPlan(plan, me) ? { name, base: at.version, people: [...new Set([at.from, ...at.asked])].filter(p => p !== me && memberNamed(s, p)) } : undefined;
   if (revision && stored.has(name)) return { kind: 'revision', revision };
   const first = [...(revision ? [revise(name)] : []), KEEP, ROOM];
-  const here = others(s, me).filter(m => m.machines.length > 0).map(m => `Send to ${m.name}`);
+  const here = others(s, me).filter(isHere).map(m => `Send to ${m.name}`);
   const options = [...first, ...here, TO_ROOM].slice(0, 4);
   return { kind: 'ask', name, card: { question: `Share your plan with ${code}? To send it to someone else, type their name under Other.`, options }, ...(revision && { revision }) };
 }
@@ -61,7 +61,7 @@ export function choice(picked: string | null, a: Extract<Approval, { kind: 'ask'
   if (a.revision && picked === revise(a.name)) return { kind: 'revise' };
   const said = picked.replace(/^\s*send(?: it)? to\s+/i, '').trim();
   if (/^(?:the )?room$/i.test(said)) return { kind: 'send' };
-  const to = isMember(s, said);
+  const to = memberNamed(s, said);
   if (to && to !== me) return { kind: 'send', to };
   return { kind: 'keep', line: `sub-human: ${code} has no member named ${oneLine(said, 64)}; your plan stays yours.` };
 }
@@ -81,14 +81,14 @@ export function freeName(s: RoomState, name: string, me: string, scope: Plan['sc
 
 /** Who to ask to agree, members here first; null when there is nobody to ask. */
 export function reviewersCard(s: RoomState, me: string, name: string, version: number): Card | null {
-  const names = [...others(s, me)].sort((a, b) => Number(b.machines.length > 0) - Number(a.machines.length > 0)).map(m => m.name);
+  const names = [...others(s, me)].sort((a, b) => Number(isHere(b)) - Number(isHere(a))).map(m => m.name);
   if (!names.length) return null;
   return { question: `Who should agree on ${name} v${version}? Pick them, or type names under Other.`, options: [...names.slice(0, 3), NOBODY], multiSelect: true };
 }
 
 /** The members a reviewers answer names, comma-joined labels or typed names. */
 export function reviewers(picked: string | null, s: RoomState, me: string): string[] {
-  const named = (picked ?? '').split(/[,\s]+/).flatMap(n => isMember(s, n) ?? []);
+  const named = (picked ?? '').split(/[,\s]+/).flatMap(n => memberNamed(s, n) ?? []);
   return [...new Set(named)].filter(n => n !== me);
 }
 

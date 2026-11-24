@@ -60,7 +60,6 @@ test('documents decode by kind', () => {
   assert.ok(decodeDoc('presence', { name: 'ann', state: 'working', at: 1 }).ok);
   assert.ok(decodeDoc('activity', { name: 'ann', files: ['a.ts'], at: 1 }).ok);
   assert.ok(decodeDoc('focus', { name: 'ann', text: 'paging', branch: 'feat', at: 1 }).ok);
-  assert.ok(decodeDoc('members', { members: [{ name: 'ann', machine: 'm1', link: 'k1' }] }).ok);
   assert.equal(decodeDoc('presence', { name: 'ann', state: 'asleep', at: 1 }).ok, false);
   assert.equal(decodeDoc('activity', { name: 'ann', at: 1 }).ok, false);
   const focus = decodeDoc('focus', { name: 'ann', text: 'paging', at: 1 });
@@ -110,7 +109,6 @@ test('decoders never throw on random JSON or on valid entries with a field chang
         decodeSnapshot(input);
         decodeSnapshot({ v: 1, state: input });
         decodeDoc('presence', input);
-        decodeDoc('members', input);
       });
     }
   }

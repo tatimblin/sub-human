@@ -60,7 +60,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Result<Daemon | nul
   const ready = await readyHome(home);
   if (!ready.ok) return ready;
   const sock = ready.value;
-  const rooms = new Rooms({ home, now, machine, idleMs });
+  const rooms = new Rooms({ home, now, machine, idleMs, random: Math.random });
   const theNet = (o.net ?? (r => makeNet(r, { home, machine, now })))(rooms);
   rooms.links = theNet.links; // net/ is made from the rooms, so the rooms reach it after
   const inflight = new Set<Promise<void>>();

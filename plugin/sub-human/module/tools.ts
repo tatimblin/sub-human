@@ -11,7 +11,7 @@ import { MAX_BODY } from '../core/api.js';
 import { brief } from '../core/brief.js';
 import type { Input } from '../core/deliver.js';
 import type { RoomState } from '../core/entries.js';
-import { LIMITS } from '../core/entries.js';
+import { LIMITS, isMember } from '../core/entries.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { secretIn } from '../core/secrets.js';
@@ -96,7 +96,7 @@ export function shareCall(input: unknown, room: InRoom, state: RoomState | null,
   if (op === 'focus') {
     return ok({ req: { op: 'put_doc', code: room.code, kind: 'focus', name: room.name, doc: { name: room.name, text: oneLine(text, FOCUS_MAX), at: now } }, done: `Your focus in ${room.code} is updated.` });
   }
-  if (to !== undefined && op === 'post' && !state?.members.some(m => m.name === to && !m.kicked)) return err(`Nothing was posted: ${room.code} has no member named ${oneLine(to, 64)}.`);
+  if (to !== undefined && op === 'post' && !(state && isMember(state, to))) return err(`Nothing was posted: ${room.code} has no member named ${oneLine(to, 64)}.`);
   const draft: AppendDraft = op === 'finding'
     ? { kind: 'finding', id, from: room.name, by: 'claude', text: oneLine(text, FINDING_MAX) }
     : { kind: 'post', id, from: room.name, by: 'claude', text: text.trim().slice(0, LIMITS.text), ...(to !== undefined && { to }) };

@@ -3,6 +3,7 @@
 // the oldest updates first. The text is content about the room; framing it as data is the caller's job.
 import type { Member, Plan, PlanVersion, RoomState, SentPlan, Task, Update } from './entries.js';
 import { oneLine } from './text.js';
+import { isHere } from './entries.js';
 
 export const BRIEF_MAX = 4000;
 const LINE_MAX = 240;
@@ -10,7 +11,7 @@ const LINE_MAX = 240;
 export interface BriefOptions { readonly code: string; readonly maxChars?: number }
 
 export function brief(state: RoomState, { code, maxChars = BRIEF_MAX }: BriefOptions): string {
-  const here = state.members.filter(m => m.machines.length > 0);
+  const here = state.members.filter(isHere);
   const plans = state.plans.map(planLine);
   const sent = state.sent.map(sentLine);
   const tasks = state.tasks.filter(t => t.status !== 'done').map(taskLine);

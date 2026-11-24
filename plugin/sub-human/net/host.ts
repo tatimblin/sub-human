@@ -25,7 +25,7 @@ import type { Rooms } from './daemon/rooms.js';
 import type { InviteRecord, Pathway } from './invite.js';
 import { mint, verify } from './invite.js';
 import { nameFrom } from '../commands/membership.js';
-import { LIMITS } from '../core/entries.js';
+import { LIMITS, isMember } from '../core/entries.js';
 import { parseProxy } from './proxy-v2.js';
 import { acceptWs } from './pathways/tailscale.js';
 
@@ -164,7 +164,7 @@ export class Host {
   async invite(req: { code: string; from: string; name: string; via: Via }): Promise<Result<{ line: string }>> {
     const st = await this.o.rooms.state(req.code);
     if (!st.ok) return st;
-    if (!st.value.members.some(m => m.name === req.from && !m.kicked)) return err(`${req.from} is not in ${req.code}; no invite was made`);
+    if (!isMember(st.value, req.from)) return err(`${req.from} is not in ${req.code}; no invite was made`);
     if (st.value.members.some(m => m.name === req.name && m.kicked)) return err(`${req.name} was removed from ${req.code}; no invite was made`);
     const port = await this.listen();
     let via: Pathway;
@@ -313,7 +313,7 @@ export class Host {
       mine.shown.clear();
       return this.decide(mine, ++mine.gen, p);
     }
-    const member = st.ok && st.value.members.some(m => m.name === p.name && !m.kicked);
+    const member = st.ok && isMember(st.value, p.name);
     const ask = { id: randomUUID(), code: rec.code, name: p.name, expected: rec.name, machine: p.machine, check, member };
     if (verdict.kind === 'again') {
       // a leaked line: the dial waiting on it is refused too; a member it already let in can be kicked from the card

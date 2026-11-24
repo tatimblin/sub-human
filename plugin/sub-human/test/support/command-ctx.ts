@@ -33,7 +33,6 @@ export const GIT_ALICE: Readonly<Record<string, string>> = {
 
 /** A session's Ctx in the fake's home. */
 export function testCtx(fake: FakeHome, o: TestCtxOptions = {}): Ctx {
-  let seed = 7;
   const run = o.run ?? GIT_ALICE;
   const dir = fake.dir;
   return {
@@ -41,7 +40,6 @@ export function testCtx(fake: FakeHome, o: TestCtxOptions = {}): Ctx {
     session: o.session ?? 'session-1',
     cwd: o.cwd ?? '/work/api',
     now: o.now ?? (() => 5_000),
-    random: () => { seed = (seed * 48_271) % 2_147_483_647; return seed / 2_147_483_647; },
     uuid: randomUUID,
     daemon: fake.daemon,
     rooms: fake.rooms,

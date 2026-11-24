@@ -3,7 +3,7 @@
 // are tolerated (R33), while a missing or mistyped field is refused.
 import * as v from '../vendor/valibot.mjs';
 import type {
-  ActivityDoc, DocKind, DocKinds, Entry, FocusDoc, LogState, MemberRecord, MembersDoc, Plan, PresenceDoc, SentPlan,
+  ActivityDoc, DocKind, DocKinds, Entry, FocusDoc, LogState, MemberRecord, Plan, PresenceDoc, SentPlan,
   Snapshot, Task, Update,
 } from './entries.js';
 import { LIMITS } from './entries.js';
@@ -79,7 +79,6 @@ const docs: { readonly [K in DocKind]: Schema<DocKinds[K]> } = {
   presence: exact<PresenceDoc>()(v.object({ name, state: v.picklist(['working', 'idle', 'away']), waiting: opt(v.boolean()), machine: opt(short), at: count }), true),
   activity: exact<ActivityDoc>()(v.object({ name, files, at: count }), true),
   focus: exact<FocusDoc>()(v.object({ name, text: short, ...where, at: count }), true),
-  members: exact<MembersDoc>()(v.object({ members: v.array(v.object({ name, machine: short, link: opt(short) })) }), true),
 };
 
 const member = exact<MemberRecord>()(v.object({ name, machine: opt(short), since: count, ...where, kicked: v.boolean() }), true);

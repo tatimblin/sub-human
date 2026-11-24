@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { readConfig } from '../../config.js';
 import type { Duplex } from 'node:stream';
 import type { Answers, Joining, NetOp, NetRequest, Op, Request } from '../../core/api.js';
+import { HOST_AWAY } from '../../core/api.js';
 import type { Result } from '../../core/result.js';
 import { err, ok } from '../../core/result.js';
 import { machineKey } from '../../keys.js';
@@ -74,7 +75,7 @@ export function makeNet(rooms: Rooms, o: NetOptions): Net {
   const failed = new Map<string, string>();
   const links: Links = {
     hosts: code => set?.hosts(code) ?? false,
-    forward: (code, req) => set?.forward(code, req) ?? Promise.resolve(err('the room\'s host is away; nothing was sent')),
+    forward: (code, req) => set?.forward(code, req) ?? Promise.resolve(err(HOST_AWAY)),
     relay: (code, to, from, text) => host?.relay(code, to, from, text) ?? false,
     state: code => set?.state(code) ?? Promise.resolve(null),
     forget: async code => { await set?.forget(code); },

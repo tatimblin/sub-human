@@ -79,12 +79,12 @@ export function format(invite: Invite): string {
 }
 
 /** A new line bound to the expected name and this host's key, and the host's record of it. */
-export function mint(o: { code: string; name: string; hostKey: Buffer; via: Pathway; now: number; ttlMs: number; secret?: Buffer }): {
+export function mint(o: { code: string; name: string; hostKey: Buffer; via: Pathway; now: number; ttlMs: number }): {
   line: string;
   record: InviteRecord;
 } {
-  const secret = o.secret ?? crypto.randomBytes(SECRET_BYTES);
-  if (o.hostKey.length !== KEY_BYTES || secret.length !== SECRET_BYTES) throw new TypeError('an invite needs a 32-byte host key and a 16-byte secret');
+  const secret = crypto.randomBytes(SECRET_BYTES);
+  if (o.hostKey.length !== KEY_BYTES) throw new TypeError('an invite needs a 32-byte host key');
   const invite: Invite = { code: o.code, hostKey: o.hostKey, secret, via: o.via };
   const line = format(invite);
   const parsed = parse(line);

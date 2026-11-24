@@ -9,7 +9,7 @@ import type { Result } from '../../core/result.js';
 import { fileKey, logFile, roomDir } from '../../home.js';
 import type { FsStore } from '../../store/fs-store.js';
 import { openFsStore } from '../../store/fs-store.js';
-import { NO_LINKS, Rooms as DaemonRooms } from '../../net/daemon/rooms.js';
+import { Rooms as DaemonRooms } from '../../net/daemon/rooms.js';
 import { fsRooms } from '../../commands/context.js';
 import type { Daemon, Rooms } from '../../commands/types.js';
 import { tempHome } from './command-ctx.js';
@@ -64,7 +64,6 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
   const home: FakeHome = {
     calls: [], dir, down: null, failing: new Map(), linked: new Map(), sessions: 1, modules: true, cc: ['2.1.330'], now: Date.now(),
     daemon: {
-      append: async (code, draft, id) => guard(`append ${code} ${draft.kind} ${draft.from}`) ?? real.handle({ op: 'append', code, draft: { ...draft, id } }),
       putDoc: async (code, d) => guard(`put ${code} ${d.kind} ${d.doc.name}`) ?? real.handle({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
       kick: async (code, name, by) => {
         const g = guard(`kick ${code} ${name} ${by}`);
@@ -108,6 +107,6 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
     presence: async (code, name) => (await home.store(code)).getDoc('presence', `${name}@${machine}`),
     kinds: async code => (await home.lines(code)).map(l => /"kind":"(\w+)"/.exec(l)?.[1] ?? '?'),
   };
-  const real = new DaemonRooms({ home: dir, now: () => home.now, machine, idleMs: 60_000, links: NO_LINKS });
+  const real = new DaemonRooms({ home: dir, now: () => home.now, machine, idleMs: 60_000, random: Math.random });
   return home;
 }

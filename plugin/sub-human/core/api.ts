@@ -53,8 +53,8 @@
 //
 // Every request keeps the daemon up; it exits after a minute with none.
 import * as v from '../vendor/valibot.mjs';
-import type { Acceptance, ActivityDoc, Answer, By, Entry, FocusDoc, PlanScope, PresenceDoc } from './entries.js';
-import { LIMITS } from './entries.js';
+import type { Acceptance, ActivityDoc, Answer, By, DocKind, Entry, FocusDoc, PlanScope, PresenceDoc } from './entries.js';
+import { DOC_KINDS, LIMITS } from './entries.js';
 import type { Result } from './result.js';
 import { err, ok } from './result.js';
 import { decode, decodeDoc, decodeEntry, parseJson } from './schema.js';
@@ -118,8 +118,6 @@ export function daemonArgv(node: string, plugin: string, home: string): string[]
 type Without<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 /** An entry as a caller sends it: the host stamps seq, at, prev and machine; `id` is the caller's. */
 export type AppendDraft = Without<Entry, 'seq' | 'at' | 'prev' | 'machine'>;
-/** The documents a member writes about itself; `members` is the host's. */
-export type MemberDocKind = 'presence' | 'activity' | 'focus';
 export interface Message { readonly code: string; readonly from: string; readonly text: string; readonly at: number }
 export interface Status { readonly version: number; readonly pid: number; readonly sessions: number; readonly cc: readonly string[]; readonly pinged?: boolean }
 /** The session a dial takes into the room once it is let in. */
@@ -158,13 +156,17 @@ export interface Ask {
   readonly member: boolean;
 }
 export type LinkPhase = 'waiting' | 'connecting' | 'online' | 'offline' | 'host_away' | 'stopped';
+/** Whether a link in `phase` can't reach the room's host now (R34). */
+export function hostAway(phase: LinkPhase | undefined): boolean { return phase === 'host_away' || phase === 'offline'; }
+/** What a write to a room whose host can't be reached answers. */
+export const HOST_AWAY = 'the room\'s host is away; nothing was sent';
 export interface LinkStatus { readonly phase: LinkPhase; readonly why: string | null }
 
 export type Request =
   | { readonly op: 'append'; readonly code: string; readonly draft: AppendDraft }
   | ({ readonly op: 'plan' } & Writer & PlanAct)
   | ({ readonly op: 'task' } & Writer & TaskAct)
-  | { readonly op: 'put_doc'; readonly code: string; readonly kind: MemberDocKind; readonly name: string; readonly doc: PresenceDoc | ActivityDoc | FocusDoc }
+  | { readonly op: 'put_doc'; readonly code: string; readonly kind: DocKind; readonly name: string; readonly doc: PresenceDoc | ActivityDoc | FocusDoc }
   | { readonly op: 'put_blob'; readonly code: string; readonly text: string }
   | {
     readonly op: 'join'; readonly id: string; readonly cwd: string; readonly name: string; readonly leave: string;
@@ -246,7 +248,7 @@ const request = v.variant('op', [
     v.object({ op: v.literal('task'), ...writer, act: v.picklist(['claim', 'release']), n: version }),
     v.object({ op: v.literal('task'), ...writer, act: v.literal('done'), n: version, note: opt(v.string()) }),
   ]),
-  v.object({ op: v.literal('put_doc'), code: name, kind: v.picklist(['presence', 'activity', 'focus']), name, doc: v.unknown() }),
+  v.object({ op: v.literal('put_doc'), code: name, kind: v.picklist(DOC_KINDS), name, doc: v.unknown() }),
   v.object({ op: v.literal('put_blob'), code: name, text: blob }),
   v.object({
     op: v.literal('join'), id: sessionId, cwd, name,

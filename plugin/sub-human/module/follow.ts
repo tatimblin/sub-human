@@ -8,18 +8,18 @@
 // the daemon writes the pointer once the host lets this machine in (R30): its appearing is drawn as one line. The link
 // to a room hosted elsewhere is asked at each ping, so the status line says when its host is away (R34).
 import type { On } from 'claude-code';
-import type { DocKinds, LogLine, RoomState } from '../core/entries.js';
+import type { DocKind, DocKinds, LogLine, RoomState } from '../core/entries.js';
 import { fold, takeSnapshot } from '../core/fold.js';
 import type { Me } from '../core/deliver.js';
 import { enqueue, terms } from '../core/deliver.js';
 import { parseDoc } from '../core/schema.js';
-import { PING_MS, decodePointer, sessionFile } from '../core/api.js';
+import { PING_MS, decodePointer, hostAway, sessionFile } from '../core/api.js';
 import { readConfig } from '../config.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { blobFile, docDir, fileKey, homeDir, logFile, roomDir, tailFile } from '../home.js';
 import { parseTail } from '../store/store.js';
-import type { Absorbed, Kind } from './follow-lines.js';
+import type { Absorbed } from './follow-lines.js';
 import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, planTerms, unreadPlans } from './follow-lines.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
@@ -54,7 +54,7 @@ export function registerFollow(on: On): void {
     const say = (line: string, key = line): void => { if (once(session, key)) $.ui.log(line); };
 
     // the documents of a kind whose file changed since the last look, each with the one it replaced
-    const readDocs = async <K extends Kind>(room: InRoom, kind: K): Promise<{ before?: DocKinds[K]; doc: DocKinds[K] }[]> => {
+    const readDocs = async <K extends DocKind>(room: InRoom, kind: K): Promise<{ before?: DocKinds[K]; doc: DocKinds[K] }[]> => {
       const changed = [];
       for (const f of await $.fs.list(docDir(room.dir, kind)).catch(() => [])) {
         const old = c.held[kind].get(f.name);
@@ -175,7 +175,7 @@ export function registerFollow(on: On): void {
       const line = joined(session, p, l);
       if (line !== null) $.ui.log(line);
       if (!p) return;
-      const away = l?.phase === 'host_away' || l?.phase === 'offline';
+      const away = hostAway(l?.phase);
       if (away !== session.away && session.room) { session.away = away; shown(session.room); }
       if (!registered) { // Claude's tools, from the next prompt on, once this session is in a room
         registered = true;

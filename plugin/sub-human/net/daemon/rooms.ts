@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import type { Answers, Message, Op, PlanAct, RoomRequest, TaskAct } from '../../core/api.js';
-import { API_VERSION, CODE, SESSION_ID, pingedFile, refusedAppend, sessionFile } from '../../core/api.js';
+import { API_VERSION, CODE, HOST_AWAY, SESSION_ID, pingedFile, refusedAppend, sessionFile } from '../../core/api.js';
 import { sha256 } from '../../core/hash.js';
 import { Pointers } from './pointers.js';
 import { asRoom, fold } from '../../core/fold.js';
@@ -24,6 +24,7 @@ import { nextSnapshot } from '../../store/store.js';
 import { RETAIN_MS, dropOld, unused } from '../../store/retention.js';
 import { writeAtomic } from '../../store/atomic.js';
 import { fileKey, roomDir } from '../../home.js';
+import { isHere, isMember } from '../../core/entries.js';
 
 /** Rooms hosted on another machine: their writes and messages go over that room's link (net/link.ts). */
 export interface Links {
@@ -39,7 +40,7 @@ export interface Links {
 /** No links: every room is hosted here. */
 export const NO_LINKS: Links = {
   hosts: () => false,
-  forward: () => Promise.resolve(err('the room\'s host is away; nothing was sent')),
+  forward: () => Promise.resolve(err(HOST_AWAY)),
   relay: () => false,
   state: () => Promise.resolve(null),
   forget: () => Promise.resolve(),
@@ -72,7 +73,8 @@ export interface RoomsOptions {
   readonly machine: string;
   /** A session not heard from for this long is gone. */
   readonly idleMs: number;
-  readonly links?: Links;
+  /** In [0, 1): what a fresh room code is drawn from. */
+  readonly random: () => number;
 }
 
 export class Rooms {
@@ -96,7 +98,7 @@ export class Rooms {
   constructor(o: RoomsOptions) {
     this.o = o;
     this.lastSeen = o.now();
-    this.links = o.links ?? NO_LINKS;
+    this.links = NO_LINKS;
     this.pointers = new Pointers({
       home: o.home, now: o.now, pingedAt: id => this.pinged.get(id),
       left: p => this.handle({ op: 'append', code: p.code, draft: { kind: 'left', from: p.name, by: 'system', id: p.leave } }),
@@ -138,7 +140,7 @@ export class Rooms {
       case 'put_doc':
         if (links.hosts(req.code)) return links.forward(req.code, req);
         return this.queue(req.code, async room => {
-          if (!member(asRoom(room.snap.state), req.name)) return err(`${req.name} is not in ${req.code}; nothing was written`);
+          if (!isMember(room.snap.state, req.name)) return err(`${req.name} is not in ${req.code}; nothing was written`);
           // a presence is one machine's: `presence/NAME@MACHINE`, stamped with the writer's machine; the store renews
           // the tail's documents stamp
           const doc = req.doc;
@@ -290,7 +292,7 @@ export class Rooms {
       if (room.ok) rooms.set(code, fold(room.value.snap, [], await room.value.store.docs()));
     }
     const last = await this.pointers.last(req.cwd);
-    const p = pick({ rooms, name: req.name, random: Math.random, ...(req.code !== undefined && { asked: req.code }), ...(last !== null && { last }) });
+    const p = pick({ rooms, name: req.name, random: this.o.random, ...(req.code !== undefined && { asked: req.code }), ...(last !== null && { last }) });
     if (!p.ok) return p;
     if ('rooms' in p.value) return ok({ rooms: p.value.rooms });
     const { code, fresh } = p.value;
@@ -307,7 +309,7 @@ export class Rooms {
     const t = await this.pointers.write(req.id, { code, name: req.name, leave: req.leave });
     if (!t.ok) return t;
     await this.pointers.setLast(req.cwd, code);
-    const others = (state?.members ?? []).filter(m => m.machines.length > 0 && m.name !== req.name).map(m => m.name);
+    const others = (state?.members ?? []).filter(m => isHere(m) && m.name !== req.name).map(m => m.name);
     return ok({ code, title: t.value.title, opened: fresh, others });
   }
 
@@ -335,7 +337,7 @@ export class Rooms {
 
   private async task(room: Room, req: Writer & TaskAct): Promise<Result<Answers['task']>> {
     const s = asRoom(room.snap.state);
-    if (!member(s, req.from)) return err(`${req.from} is not in ${req.code}; nothing was written`);
+    if (!isMember(s, req.from)) return err(`${req.from} is not in ${req.code}; nothing was written`);
     const drafts = req.act === 'add' ? add(s, req) : req.act === 'claim' ? claim(s, req) : req.act === 'release' ? release(s, req) : done(s, req);
     const n = req.act === 'add' ? nextN(s.tasks) : req.n;
     const r = drafts.ok ? await this.commit(room, drafts.value) : drafts;
@@ -409,7 +411,6 @@ async function texts(room: Room, names: readonly string[]): Promise<Texts> {
   }
   return hash => known.get(hash) ?? '';
 }
-function member(s: RoomState, name: string): boolean { return s.members.some(m => m.name === name && !m.kicked); }
 function remember(ids: Map<string, Placed>, id: string, p: Placed): void {
   ids.set(id, p);
   for (const k of ids.keys()) { if (ids.size <= IDS_MAX) break; ids.delete(k); }

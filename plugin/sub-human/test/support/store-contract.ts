@@ -62,10 +62,8 @@ export function storeContract(name: string, backend: Backend): void {
       await s.putDoc('presence', 'ann', { name: 'ann', state: 'idle', at: 2 });
       await s.putDoc('presence', 'bob', { name: 'bob', state: 'working', at: 3 });
       await s.putDoc('focus', 'ann', { name: 'ann', text: 'paging', at: 4 });
-      await s.putDoc('members', 'room', { members: [{ name: 'ann', machine: 'm1' }] });
       const other = room.open();
       assert.deepEqual(await other.getDoc('presence', 'ann'), { name: 'ann', state: 'idle', at: 2 });
-      assert.deepEqual(await other.getDoc('members', 'room'), { members: [{ name: 'ann', machine: 'm1' }] });
       const docs = await other.docs();
       assert.deepEqual([...docs.presence].sort((x, y) => x.at - y.at), [
         { name: 'ann', state: 'idle', at: 2 }, { name: 'bob', state: 'working', at: 3 },

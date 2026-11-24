@@ -34,8 +34,6 @@ test('a document is read by its kind and must be the named member\'s', () => {
   assert.ok(decodeRequest({ op: 'put_doc', code: 'R', kind: 'focus', name: 'a', doc }).ok);
   const other = decodeRequest({ op: 'put_doc', code: 'R', kind: 'focus', name: 'b', doc });
   assert.ok(!other.ok && /can't be stored as b's/.test(other.error));
-  const members = decodeRequest({ op: 'put_doc', code: 'R', kind: 'members', name: 'a', doc: { members: [] } });
-  assert.ok(!members.ok, 'the members document is the host\'s');
 });
 
 test('an unknown op, a missing field and an empty code are refused', () => {

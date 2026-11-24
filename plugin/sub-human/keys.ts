@@ -50,8 +50,3 @@ async function readKey(file: string): Promise<Result<KeyPair>> {
   if ((mode & 0o077) !== 0) return err(`the machine key in ${file} can be read by others; run chmod 600 on it`);
   return ok(keyPair(Buffer.from(text, 'hex')));
 }
-
-/** A short, stable id of a machine's public key, for records and doctor. */
-export function machineId(pub: Buffer): string {
-  return crypto.createHash('sha256').update(pub).digest('hex').slice(0, 16);
-}

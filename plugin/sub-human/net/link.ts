@@ -9,8 +9,9 @@ import { randomUUID } from 'node:crypto';
 import type { Duplex } from 'node:stream';
 import * as v from '../vendor/valibot.mjs';
 import type { AppendDraft, Answers, LinkStatus, Op, RoomRequest } from '../core/api.js';
-import { decodeAppendDraft, readAnswer } from '../core/api.js';
+import { HOST_AWAY as AWAY, decodeAppendDraft, readAnswer } from '../core/api.js';
 import type { RoomState } from '../core/entries.js';
+import { DOC_KINDS } from '../core/entries.js';
 import { fold } from '../core/fold.js';
 import type { LinkEffect, LinkEvent, LinkState, Timer, Timings } from '../core/link-engine.js';
 import { initial, step } from '../core/link-engine.js';
@@ -25,7 +26,7 @@ import { MirrorStore } from '../store/mirror-store.js';
 import type { Draft } from '../store/store.js';
 import type { Channel, KeyPair } from './channel.js';
 import { NoiseError, connect } from './channel.js';
-import type { Links, Rooms } from './daemon/rooms.js';
+import type { Rooms } from './daemon/rooms.js';
 import type { Pathway } from './invite.js';
 import { mac, parse } from './invite.js';
 
@@ -40,8 +41,6 @@ export const TIMINGS: Timings = { retryMs: 1000, retryMaxMs: 60_000, dialMs: 20_
 /** How long a write waits for the host's ack, and a join for the host's answer (its card waits five minutes). */
 const WRITE_MS = 15_000;
 const JOIN_MS = 6 * 60_000;
-const AWAY = 'the room\'s host is away; nothing was sent';
-const DOCS = ['presence', 'activity', 'focus'] as const;
 
 const linkFile = v.object({
   code: v.string(), name: v.string(), hostKey: v.string(), stopped: v.exactOptional(v.string()),
@@ -64,7 +63,7 @@ export interface LinkSetOptions {
   readonly phase?: (code: string, phase: LinkStatus['phase']) => void;
 }
 
-export class LinkSet implements Links {
+export class LinkSet {
   private readonly o: LinkSetOptions;
   private readonly links = new Map<string, Link>();
   private readonly joining = new Map<string, LinkStatus>();
@@ -86,7 +85,6 @@ export class LinkSet implements Links {
   forward(code: string, req: RoomRequest): Promise<Result<Answers[Op]>> {
     return this.links.get(code)?.forward(req) ?? Promise.resolve(err(AWAY));
   }
-  relay(): boolean { return false; }
   async state(code: string): Promise<RoomState | null> {
     const m = this.links.get(code)?.mirror;
     const c = m ? await m.catchup() : null;
@@ -98,7 +96,6 @@ export class LinkSet implements Links {
     await fs.rm(`${this.o.home}/links/${await fileKey(code)}.json`, { force: true });
   }
   status(code: string): LinkStatus | null { return this.links.get(code)?.status ?? this.joining.get(code) ?? null; }
-  mirror(code: string): MirrorStore | null { return this.links.get(code)?.mirror ?? null; }
 
   /** Proves the line to its host and answers the check string; the host's answer arrives later (status). */
   async join(line: string, name: string): Promise<Result<{ code: string; check: string }>> {
@@ -267,7 +264,7 @@ class Link {
         break;
       case 'flush':
         this.chain = this.chain.then(async () => {
-          for (const kind of DOCS) {
+          for (const kind of DOC_KINDS) {
             const doc = await this.mirror.getDoc(kind, this.file.name);
             if (doc) this.send({ t: 'put_doc', id: randomUUID(), key: `${kind}/${this.file.name}`, doc });
           }
@@ -331,7 +328,7 @@ class Link {
       }
       case 'put_doc': {
         const [kind, who] = m.key.split('/');
-        const k = DOCS.find(d => d === kind);
+        const k = DOC_KINDS.find(d => d === kind);
         const doc = k && who !== undefined && who !== this.file.name ? decodeDoc(k, m.doc) : null;
         if (k && doc?.ok) await this.mirror.hostDoc(k, who ?? '', doc.value);
         return;
