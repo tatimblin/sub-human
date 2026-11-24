@@ -102,7 +102,8 @@ const state = exact<LogState>()(v.object({
 }), true);
 const snapshot = exact<Snapshot>()(v.object({ v: v.literal(1), state }), true);
 
-function decode<T>(schema: Schema<T>, input: unknown): Result<T> {
+/** `input` through `schema`, or its first issue and where. */
+export function decode<T>(schema: Schema<T>, input: unknown): Result<T> {
   const r = v.safeParse(schema, input);
   if (r.success) return ok(r.output);
   const issue = r.issues[0];
@@ -110,6 +111,15 @@ function decode<T>(schema: Schema<T>, input: unknown): Result<T> {
   return err(at ? `${at}: ${issue.message}` : issue.message);
 }
 
+/** JSON text through `schema`: text that isn't JSON is refused as a wrong shape is. */
+export function parseJson<T>(schema: Schema<T>, text: string): Result<T> {
+  let json: unknown;
+  try { json = JSON.parse(text); } catch { return err('not JSON'); }
+  return decode(schema, json);
+}
+
 export function decodeEntry(input: unknown): Result<Entry> { return decode(entry, input); }
 export function decodeDoc<K extends DocKind>(kind: K, input: unknown): Result<DocKinds[K]> { return decode(docs[kind], input); }
 export function decodeSnapshot(input: unknown): Result<Snapshot> { return decode(snapshot, input); }
+export function parseSnapshot(text: string): Result<Snapshot> { return parseJson(snapshot, text); }
+export function parseDoc<K extends DocKind>(kind: K, text: string): Result<DocKinds[K]> { return parseJson(docs[kind], text); }

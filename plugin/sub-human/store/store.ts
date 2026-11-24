@@ -8,7 +8,7 @@ import * as v from '../vendor/valibot.mjs';
 import type { DocKind, DocKinds, Docs, Entry, LogLine, Snapshot } from '../core/entries.js';
 import { NO_DOCS } from '../core/entries.js';
 import { fold, takeSnapshot } from '../core/fold.js';
-import { decodeEntry } from '../core/schema.js';
+import { decodeEntry, parseJson } from '../core/schema.js';
 import { sha256 } from '../core/hash.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
@@ -58,10 +58,8 @@ export function placeLine(draft: Draft, head: Head): Result<{ readonly line: str
 
 const chained = v.looseObject({ seq: v.number(), prev: v.string() });
 function chainOf(line: string): { seq: number; prev: string } | null {
-  try {
-    const r = v.safeParse(chained, JSON.parse(line));
-    return r.success ? r.output : null;
-  } catch { return null; }
+  const r = parseJson(chained, line);
+  return r.ok ? r.value : null;
 }
 
 /** The head of complete raw lines (the last line's seq and hash). */
@@ -109,8 +107,6 @@ const tail = v.object({
 });
 export function tailText(t: Tail): string { return JSON.stringify(t); }
 export function parseTail(text: string): Result<Tail> {
-  try {
-    const r = v.safeParse(tail, JSON.parse(text));
-    return r.success ? ok(r.output) : err('the tail file is not readable');
-  } catch { return err('the tail file is not readable'); }
+  const r = parseJson(tail, text);
+  return r.ok ? r : err('the tail file is not readable');
 }

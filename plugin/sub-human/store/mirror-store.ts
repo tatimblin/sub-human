@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { DocKind, DocKinds, Docs, LogLine, Snapshot } from '../core/entries.js';
 import { SNAPSHOT_EVERY, snapshotDue } from '../core/fold.js';
-import { decodeSnapshot } from '../core/schema.js';
+import { parseSnapshot } from '../core/schema.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { logFile, snapshotFile, tailFile } from '../home.js';
@@ -134,7 +134,8 @@ export class MirrorStore implements RoomStore {
   private async snapshot(): Promise<Snapshot | null> {
     const text = await fs.readFile(snapshotFile(this.dir), 'utf8').catch(() => null);
     if (text === null) return null;
-    try { const r = decodeSnapshot(JSON.parse(text)); return r.ok ? r.value : null; } catch { return null; }
+    const r = parseSnapshot(text);
+    return r.ok ? r.value : null;
   }
 
   /** The complete lines here, and the seq before the first; torn: a line cut short by a crash, left out. */

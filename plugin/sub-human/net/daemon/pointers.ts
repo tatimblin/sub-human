@@ -12,12 +12,15 @@ import type { Handoff, Pointer } from '../../core/api.js';
 import { CODE, HANDOFF_MS, LIVE_MS, decodeHandoffs, decodePointer, handoffFile, lastFile, sessionFile, titleFor } from '../../core/api.js';
 import type { Result } from '../../core/result.js';
 import { ok } from '../../core/result.js';
+import { parseJson } from '../../core/schema.js';
+import * as v from '../../vendor/valibot.mjs';
 import { writeAtomic } from '../../store/atomic.js';
 
 /** A cwd's handoff file name: its SHA-256, taken at once, so calls join the cwd's chain in the order they came. */
 const cwdKey = (cwd: string): string => createHash('sha256').update(cwd).digest('hex');
 /** A pointer nobody has pinged for this long is swept: its session ended with no SessionEnd. */
 const POINTER_STALE_MS = 24 * 3600_000;
+const LAST = v.object({ code: v.pipe(v.string(), v.regex(CODE)) });
 /** A pointer for the same name in the same room as `p`. */
 const sameName = (p: Pointer) => (q: Pointer): boolean => q.code === p.code && q.name === p.name;
 
@@ -103,11 +106,8 @@ export class Pointers {
 
   /** The room `cwd` last joined, or null. */
   async last(cwd: string): Promise<string | null> {
-    try {
-      const r: unknown = JSON.parse(await fs.readFile(lastFile(this.o.home, cwdKey(cwd)), 'utf8'));
-      const code: unknown = r !== null && typeof r === 'object' ? Reflect.get(r, 'code') : undefined;
-      return typeof code === 'string' && CODE.test(code) ? code : null;
-    } catch { return null; }
+    const r = parseJson(LAST, await fs.readFile(lastFile(this.o.home, cwdKey(cwd)), 'utf8').catch(() => ''));
+    return r.ok ? r.value.code : null;
   }
   async setLast(cwd: string, code: string): Promise<void> {
     await writeAtomic(lastFile(this.o.home, cwdKey(cwd)), JSON.stringify({ code }));

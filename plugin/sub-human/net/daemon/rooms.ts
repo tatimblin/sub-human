@@ -104,6 +104,9 @@ export class Rooms {
     });
   }
 
+  /** A debug line for the next ping to take. */
+  note(line: string): void { this.notes.push(line); }
+
   /** `link` names the machine of a link a write came over; with none, it came from this machine. */
   handle(req: RoomRequest, link?: { readonly machine: string }): Promise<Result<Answers[Op]>> {
     const { links } = this;

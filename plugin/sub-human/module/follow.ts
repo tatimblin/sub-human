@@ -8,12 +8,11 @@
 // the daemon writes the pointer once the host lets this machine in (R30): its appearing is drawn as one line. The link
 // to a room hosted elsewhere is asked at each ping, so the status line says when its host is away (R34).
 import type { On } from 'claude-code';
-import * as v from '../vendor/valibot.mjs';
 import type { DocKinds, LogLine, RoomState } from '../core/entries.js';
 import { fold, takeSnapshot } from '../core/fold.js';
 import type { Me } from '../core/deliver.js';
 import { enqueue, terms } from '../core/deliver.js';
-import { decodeDoc } from '../core/schema.js';
+import { parseDoc } from '../core/schema.js';
 import { PING_MS, decodePointer, sessionFile } from '../core/api.js';
 import { readConfig } from '../config.js';
 import type { Result } from '../core/result.js';
@@ -21,7 +20,7 @@ import { err, ok } from '../core/result.js';
 import { blobFile, docDir, fileKey, homeDir, logFile, roomDir, tailFile } from '../home.js';
 import { parseTail } from '../store/store.js';
 import type { Absorbed, Kind } from './follow-lines.js';
-import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, parseJson, planTerms, unreadPlans } from './follow-lines.js';
+import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, planTerms, unreadPlans } from './follow-lines.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
 import { forget, fresh, joined, once, session } from './session.js';
@@ -61,8 +60,8 @@ export function registerFollow(on: On): void {
         const old = c.held[kind].get(f.name);
         if (f.kind !== 'file' || !f.name.endsWith('.json') || old?.mtime === f.mtimeMs) continue;
         const text = await $.fs.read(`${docDir(room.dir, kind)}/${f.name}`).catch(() => null);
-        const d = decodeDoc(kind, text === null ? null : parseJson(v.unknown(), text));
-        if (!d.ok) continue;
+        const d = text === null ? null : parseDoc(kind, text);
+        if (!d?.ok) continue;
         c.held[kind].set(f.name, { mtime: f.mtimeMs, doc: d.value });
         changed.push({ doc: d.value, ...(old && { before: old.doc }) });
       }

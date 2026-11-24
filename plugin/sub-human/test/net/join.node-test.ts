@@ -13,7 +13,9 @@ import { parse } from '../../net/invite.js';
 import { pipe } from '../../net/pathways/pipe.js';
 import { CODE, hostRoom, joinBob, linkIs, nextAsk, twoHomes } from '../support/two-homes.js';
 import type { Homes } from '../support/two-homes.js';
-import { post, until } from '../support/daemon.js';
+import { home, post, started, until } from '../support/daemon.js';
+import { call } from '../../net/daemon/client.js';
+import { makeNet } from '../../net/daemon/net.js';
 import { must } from '../support/must.js';
 
 const none = { append: () => Promise.resolve({ ok: true as const, value: null }), putDoc: () => Promise.resolve(), putBlob: () => Promise.resolve() };
@@ -275,4 +277,15 @@ test('a copy the sweep deletes loses its link for good: closed, and its file gon
   await h.joinNet.links.forget(CODE);
   assert.equal(await h.joiner.ok({ op: 'link', code: CODE }), null);
   await assert.rejects(fs.access(`${h.joiner.home}/links/${CODE}.json`));
+});
+
+test('an unreadable link file is skipped with one debug line each; the daemon starts and serves', async t => {
+  const dir = await home();
+  await fs.mkdir(`${dir}/links`);
+  await fs.writeFile(`${dir}/links/torn.json`, '{');
+  await fs.writeFile(`${dir}/links/wrong.json`, '{"code":1}');
+  await started(t, { home: dir, machine: 'mB', net: rooms => makeNet(rooms, { home: dir, machine: 'mB', now: Date.now, dial: () => Promise.reject(new Error('no dial')) }) });
+  const r = await call(dir, { op: 'ping', session: 's' });
+  assert.ok(r.ok);
+  assert.deepEqual(r.value?.notes.map(n => n.split('.json:')[0]).sort(), ['sub-human: could not read its record of a room joined elsewhere (torn', 'sub-human: could not read its record of a room joined elsewhere (wrong']);
 });

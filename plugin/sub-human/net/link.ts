@@ -18,7 +18,7 @@ import type { ToHost } from '../core/protocol.js';
 import { decodeToLink, encode, hello, negotiate, skewLine } from '../core/protocol.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
-import { decodeDoc } from '../core/schema.js';
+import { decodeDoc, parseJson } from '../core/schema.js';
 import { fileKey, roomDir } from '../home.js';
 import { writeAtomic } from '../store/atomic.js';
 import { MirrorStore } from '../store/mirror-store.js';
@@ -73,8 +73,11 @@ export class LinkSet implements Links {
   async start(): Promise<void> {
     const dir = `${this.o.home}/links`;
     for (const n of await fs.readdir(dir).catch(() => [])) {
-      const r = v.safeParse(linkFile, JSON.parse(await fs.readFile(`${dir}/${n}`, 'utf8').catch(() => 'null')));
-      if (r.success) await this.add(r.output);
+      if (!n.endsWith('.json')) continue;
+      const r = parseJson(linkFile, await fs.readFile(`${dir}/${n}`, 'utf8').catch(() => ''));
+      // one unreadable file costs its own room's link, never the daemon's start
+      if (r.ok) await this.add(r.value);
+      else this.o.rooms.note(`sub-human: could not read its record of a room joined elsewhere (${n}: ${r.error}); that room stays closed here`);
     }
   }
   stop(): void { for (const l of this.links.values()) l.close(); }

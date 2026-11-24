@@ -57,7 +57,7 @@ import type { Acceptance, ActivityDoc, Answer, By, Entry, FocusDoc, PlanScope, P
 import { LIMITS } from './entries.js';
 import type { Result } from './result.js';
 import { err, ok } from './result.js';
-import { decodeDoc, decodeEntry } from './schema.js';
+import { decode, decodeDoc, decodeEntry, parseJson } from './schema.js';
 
 /** Bumped when a request or an answer changes shape; status carries it. */
 export const API_VERSION = 5;
@@ -102,17 +102,13 @@ export function titleFor(name: string, code: string, held: readonly string[]): s
 export interface Handoff extends Pointer { readonly at: number }
 /** A session pointer as the module reads it, or null when it is not one. */
 export function decodePointer(text: string): Pointer | null {
-  try {
-    const r = v.safeParse(v.object(pointerFields()), JSON.parse(text));
-    return r.success ? r.output : null;
-  } catch { return null; }
+  const r = parseJson(v.object(pointerFields()), text);
+  return r.ok ? r.value : null;
 }
 /** A cwd's handoffs, oldest first; a file that doesn't read holds none. */
 export function decodeHandoffs(text: string): Handoff[] {
-  try {
-    const r = v.safeParse(v.array(v.object({ ...pointerFields(), at: v.number() })), JSON.parse(text));
-    return r.success ? r.output : [];
-  } catch { return []; }
+  const r = parseJson(v.array(v.object({ ...pointerFields(), at: v.number() })), text);
+  return r.ok ? r.value : [];
 }
 /** How to start the daemon: node's absolute path, the plugin's root and the home. It detaches itself. */
 export function daemonArgv(node: string, plugin: string, home: string): string[] {
@@ -304,13 +300,6 @@ const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
   })),
 };
 const envelope = v.variant('ok', [v.object({ ok: v.literal(true), value: v.unknown() }), v.object({ ok: v.literal(false), error: v.string() })]);
-
-function decode<T>(schema: v.GenericSchema<unknown, T>, input: unknown): Result<T> {
-  const r = v.safeParse(schema, input);
-  if (r.success) return ok(r.output);
-  const at = r.issues[0].path?.map(p => String(p.key)).join('.') ?? '';
-  return err(at ? `${at}: ${r.issues[0].message}` : r.issues[0].message);
-}
 
 /** An entry as its writer sent it, through the entry schema; any stamps of the host's it carries come off. */
 export function decodeAppendDraft(input: unknown): Result<AppendDraft> {

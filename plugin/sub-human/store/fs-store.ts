@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import type { DocKind, DocKinds, Docs, LogLine, Snapshot } from '../core/entries.js';
 import { SNAPSHOT_EVERY, snapshotDue } from '../core/fold.js';
-import { decodeDoc, decodeSnapshot } from '../core/schema.js';
+import { parseDoc, parseSnapshot } from '../core/schema.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { blobFile, docDir, docFile, fileKey, lockFile, logFile, roomDir, snapshotFile, tailFile } from '../home.js';
@@ -146,8 +146,7 @@ export class FsStore implements RoomStore {
 
   private async readSnapshot(): Promise<Snapshot | null> {
     const text = await readText(snapshotFile(this.dir));
-    const snap = text === null ? null : parse(text);
-    const r = snap === undefined ? null : decodeSnapshot(snap);
+    const r = text === null ? null : parseSnapshot(text);
     return r?.ok ? r.value : null;
   }
 
@@ -175,11 +174,7 @@ async function lastLine(fh: FileHandle, size: number): Promise<{ last?: string; 
 async function readText(file: string): Promise<string | null> {
   return fs.readFile(file, 'utf8').catch(() => null);
 }
-function parse(text: string): unknown {
-  try { const x: unknown = JSON.parse(text); return x; } catch { return undefined; }
-}
 function decoded<K extends DocKind>(kind: K, text: string | null): DocKinds[K] | null {
-  const doc = text === null ? undefined : parse(text);
-  const r = doc === undefined ? null : decodeDoc(kind, doc);
+  const r = text === null ? null : parseDoc(kind, text);
   return r?.ok ? r.value : null;
 }

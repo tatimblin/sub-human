@@ -18,6 +18,7 @@ import * as v from '../../vendor/valibot.mjs';
 import { WebSocket, WebSocketServer, createWebSocketStream } from '../../vendor/ws/index.mjs';
 import type { Result } from '../../core/result.js';
 import { err, ok } from '../../core/result.js';
+import { parseJson } from '../../core/schema.js';
 import type { Forward } from '../host.js';
 import { MAX_FRAME } from '../channel.js';
 
@@ -55,7 +56,6 @@ function run(bin: string, args: readonly string[], env: Env): Promise<{ code: nu
   });
 }
 
-const parse = (text: string): unknown => { try { const x: unknown = JSON.parse(text || '{}'); return x; } catch { return null; } };
 const selfSchema = v.object({ BackendState: v.optional(v.string()), Self: v.optional(v.object({ DNSName: v.string() })) });
 const serveSchema = v.object({
   TCP: v.optional(v.record(v.string(), v.object({ TCPForward: v.optional(v.string()), ProxyProtocol: v.optional(v.number()) }))),
@@ -67,14 +67,14 @@ export async function expose(mode: 'public' | 'tailnet', port: number, env: Env 
   const what = mode === 'public' ? 'funnel' : 'serve';
   const bin = findTailscale(env, macApp);
   if (!bin) return err('Tailscale isn\'t installed here; no invite was made. Install it, or invite with --ssh');
-  const st = v.safeParse(selfSchema, parse((await run(bin, ['status', '--json'], env)).out));
-  const dns = st.success ? st.output.Self?.DNSName.replace(/\.$/, '').toLowerCase() : undefined;
-  if (!dns || (st.success && st.output.BackendState !== 'Running')) {
+  const st = parseJson(selfSchema, (await run(bin, ['status', '--json'], env)).out);
+  const dns = st.ok ? st.value.Self?.DNSName.replace(/\.$/, '').toLowerCase() : undefined;
+  if (!dns || (st.ok && st.value.BackendState !== 'Running')) {
     return err('Tailscale isn\'t running or logged in here; no invite was made. Start it and log in, then invite again');
   }
-  const cfg = v.safeParse(serveSchema, parse((await run(bin, ['serve', 'status', '--json'], env)).out));
-  const tcp = cfg.success ? cfg.output.TCP ?? {} : {};
-  const funnel = cfg.success ? cfg.output.AllowFunnel ?? {} : {};
+  const cfg = parseJson(serveSchema, (await run(bin, ['serve', 'status', '--json'], env)).out);
+  const tcp = cfg.ok ? cfg.value.TCP ?? {} : {};
+  const funnel = cfg.ok ? cfg.value.AllowFunnel ?? {} : {};
   const ours = (p: number): boolean => tcp[p]?.TCPForward === `127.0.0.1:${port}` && (funnel[`${dns}:${p}`] === true) === (mode === 'public');
   const origin = (p: number): string => `https://${dns}${p === 443 ? '' : `:${p}`}`;
   const off = (p: number) => async (): Promise<void> => { await run(bin, [what, `--tls-terminated-tcp=${p}`, 'off'], env); };

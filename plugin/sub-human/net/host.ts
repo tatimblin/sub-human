@@ -15,6 +15,7 @@ import { decodeRequest } from '../core/api.js';
 import type { LogLine } from '../core/entries.js';
 import type { ByeReason, ToLink } from '../core/protocol.js';
 import { decodeToHost, encode, hello, negotiate } from '../core/protocol.js';
+import { parseJson } from '../core/schema.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { writeAtomic } from '../store/atomic.js';
@@ -112,9 +113,8 @@ export class Host {
   private get file(): string { return `${this.o.home}/host.json`; }
 
   async start(): Promise<void> {
-    const text = await fs.readFile(this.file, 'utf8').catch(() => 'null');
-    const r = v.safeParse(stateSchema, parseJson(text));
-    if (r.success) this.s = r.output;
+    const r = parseJson(stateSchema, await fs.readFile(this.file, 'utf8').catch(() => ''));
+    if (r.ok) this.s = r.value;
     if (!this.wanted()) return;
     const port = await this.listen();
     for (const mode of this.s.forwards) {
@@ -290,9 +290,9 @@ export class Host {
 
   /** The link a dial is admitted as, or null. A dial with neither a known key nor an invite's MAC touches nothing. */
   private async admit(rk: Buffer, raw: Buffer, check: string): Promise<LinkRecord | null> {
-    const r = v.safeParse(payload, parseJson(raw.toString('utf8')));
-    if (!r.success) return null;
-    const p = r.output, key = rk.toString('base64url');
+    const r = parseJson(payload, raw.toString('utf8'));
+    if (!r.ok) return null;
+    const p = r.value, key = rk.toString('base64url');
     const known = this.s.links.find(l => l.key === key && l.code === p.code);
     if (known) return known.kicked ? null : known;
     if (p.mac === undefined) return null;
@@ -473,7 +473,3 @@ export class Host {
 
 /** A source as its cap counts it: an IPv4 address, or an IPv6 one's /64, which one joiner holds whole. */
 const perNet = (s: string): string => (s.includes(':') ? `${s.split(':').slice(0, 4).join(':')}::/64` : s);
-
-function parseJson(text: string): unknown {
-  try { const x: unknown = JSON.parse(text); return x; } catch { return null; }
-}

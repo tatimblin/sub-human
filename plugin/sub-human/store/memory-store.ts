@@ -3,7 +3,7 @@
 // one room; their appends take turns, as the lock makes them on disk.
 import type { DocKind, DocKinds, Docs, LogLine, Snapshot } from '../core/entries.js';
 import { SNAPSHOT_EVERY, snapshotDue } from '../core/fold.js';
-import { decodeDoc } from '../core/schema.js';
+import { parseDoc } from '../core/schema.js';
 import type { Result } from '../core/result.js';
 import { ok } from '../core/result.js';
 import type { Catchup, Draft, Head, RoomStore } from './store.js';
@@ -71,7 +71,7 @@ export class MemoryStore implements RoomStore {
   }
   private decoded<K extends DocKind>(kind: K, text: string | undefined): DocKinds[K] | null {
     if (text === undefined) return null;
-    const d = decodeDoc(kind, JSON.parse(text));
+    const d = parseDoc(kind, text);
     return d.ok ? d.value : null;
   }
 

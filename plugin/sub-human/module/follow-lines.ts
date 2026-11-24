@@ -5,39 +5,33 @@ import type { ActivityDoc, DocKinds, Docs, LogLine, RoomState } from '../core/en
 import type { Input, Item, Me, State } from '../core/deliver.js';
 import { deliver, edits } from '../core/deliver.js';
 import { updatesSince } from '../core/fold.js';
-import { decodeEntry } from '../core/schema.js';
+import { parseJson } from '../core/schema.js';
 import type { Result } from '../core/result.js';
-import { err, ok } from '../core/result.js';
+import { ok } from '../core/result.js';
 import type { Head } from '../store/store.js';
-import { lineHash } from '../store/store.js';
+import { lineHash, verifyLines } from '../store/store.js';
 
 export type Kind = 'presence' | 'activity' | 'focus';
 /** The documents follow has read, by file name, with the mtime it read them at. */
 export type Held = { [K in Kind]: Map<string, { mtime: number; doc: DocKinds[K] }> };
 
-const Chained = v.looseObject({ seq: v.number(), prev: v.string() });
 /**
  * The complete lines of a log read that follow `head`, chain-checked; `bytes` is how much of `text` they took. A
  * break is a fork (the error starts `fork`), never repaired.
  */
 export async function linesAfter(text: string, head: Head): Promise<Result<{ lines: LogLine[]; head: Head; bytes: number }>> {
   const done = text.slice(0, text.lastIndexOf('\n') + 1); // a line with no newline yet is still being written
-  const lines: LogLine[] = [];
-  let h = head;
-  for (const raw of done.split('\n').slice(0, -1)) {
-    const json = parseJson(v.unknown(), raw);
-    const c = v.safeParse(Chained, json);
-    if (!c.success || c.output.seq !== h.seq + 1 || c.output.prev !== h.hash) return err(`fork: the log's chain breaks at entry ${h.seq + 1}`);
-    h = { seq: c.output.seq, hash: await lineHash(raw) };
-    const entry = decodeEntry(json); // a kind from a newer writer chains but is left out
-    if (entry.ok) lines.push({ entry: entry.value, hash: h.hash });
-  }
-  return ok({ lines, head: h, bytes: new TextEncoder().encode(done).length });
+  const raws = done.split('\n').slice(0, -1);
+  const r = await verifyLines(raws, head.seq, head.hash, head.seq);
+  if (!r.ok) return r;
+  const last = raws.at(-1);
+  const h = last === undefined ? head : { seq: head.seq + raws.length, hash: await lineHash(last) };
+  return ok({ lines: [...r.value], head: h, bytes: new TextEncoder().encode(done).length });
 }
 
 const Stamp = v.looseObject({ docs: v.optional(v.string()) });
 /** The tail file's documents stamp, which the daemon renews on every put_doc. */
-export function docsStamp(tail: string): string | undefined { return parseJson(Stamp, tail)?.docs; }
+export function docsStamp(tail: string): string | undefined { const s = parseJson(Stamp, tail); return s.ok ? s.value.docs : undefined; }
 
 export function docsOf(held: Held): Docs {
   const docs = <K extends Kind>(kind: K): DocKinds[K][] => [...held[kind].values()].map(x => x.doc);
@@ -146,11 +140,4 @@ export function absorb(
     : i.kind === 'entry' && i.entry.from !== me.name && (i.entry.kind === 'joined' || i.entry.kind === 'left')));
   const feed = [...others, ...news.items.map(entry => ({ kind: 'entry', entry }) satisfies Input)].sort((a, b) => at(a) - at(b));
   return { state: s, items, drawn, wakes, feed, count: news.count + unread };
-}
-
-export function parseJson<T>(schema: v.GenericSchema<unknown, T>, text: string): T | null {
-  try {
-    const r = v.safeParse(schema, JSON.parse(text));
-    return r.success ? r.output : null;
-  } catch { return null; }
 }
