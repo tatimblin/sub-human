@@ -19,5 +19,5 @@ export const invite: Verb = async (args, ctx) => {
   if (name === null || flags.length > 1 || via === undefined) return refused('No invite was made. Type /room invite NAME, with --public, --tailnet or --ssh.');
   const r = await ctx.daemon.invite(mine.code, mine.name, name, via);
   if (!r.ok) return refused(`No invite was made: ${r.error}`);
-  return say(`Send ${name} this line to type in Claude Code; it works once, for ${INVITE_TTL_MS / 60_000} minutes, and you'll be asked to let them in:\n/sub-human join ${r.value.line}`);
+  return say(`Send ${name} this line to type in Claude Code; it works once, for ${INVITE_TTL_MS / 60_000} minutes, and you'll be asked to let them in:\n/room join ${r.value.line}`);
 };

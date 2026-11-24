@@ -194,7 +194,7 @@ These are real Claude sessions with the default model, never pinned, and their c
 
 ## 11. By milestone, as built
 
-What exists in 2.0.0, by the milestone that brought it. Node tests run with `npm run test:node`, kit tests with
+What exists in 1.0.0, by the milestone that brought it. Node tests run with `npm run test:node`, kit tests with
 `npm run test:module`, script tests with `npm run test:scripts`.
 
 | Milestone | Tests that exist |

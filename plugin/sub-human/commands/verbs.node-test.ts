@@ -138,7 +138,7 @@ test('invite: one line for NAME by the pathway asked, else the default; only fro
   const { fake, alice, code } = await room();
   const r = await runCommand('invite carol', alice);
   assert.equal(r.kind, 'say');
-  assert.match(r.text, new RegExp(`^Send carol this line .*\n/sub-human join ssh://devbox/${code}\\?port=7420#0+$`));
+  assert.match(r.text, new RegExp(`^Send carol this line .*\n/room join ssh://devbox/${code}\\?port=7420#0+$`));
   await runCommand('invite carol --ssh', alice);
   assert.deepEqual(fake.calls.filter(c => c.startsWith('invite')), [`invite ${code} carol public alice`, `invite ${code} carol ssh alice`]);
   assert.equal((await runCommand('invite', alice)).kind, 'refused');
