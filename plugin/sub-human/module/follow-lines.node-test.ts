@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Head } from '../store/store.js';
-import { MemoryStore } from '../store/memory-store.js';
+import { MemoryStore } from '../test/support/memory-store.js';
 import type { Me, State } from '../core/deliver.js';
 import type { Entry, LogLine } from '../core/entries.js';
 import { NO_DOCS } from '../core/entries.js';

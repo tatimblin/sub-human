@@ -209,7 +209,7 @@ class Link {
         if (!online) return err(AWAY);
         const id = randomUUID();
         const r = await this.wait(id, () => { this.send({ t: 'call', id, req }); });
-        return r.ok ? readAnswer(req.op, 200, JSON.stringify({ ok: true, value: r.value })) : r;
+        return r.ok ? readAnswer(req.op, { status: 200, text: JSON.stringify({ ok: true, value: r.value }) }) : r;
       }
       case 'join': case 'leave': case 'retire': case 'handoff': case 'claim': case 'ping': case 'inbox': case 'status':
         return err(`${req.op} is not sent to a room's host; nothing was done`);

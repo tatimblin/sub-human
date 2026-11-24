@@ -101,9 +101,9 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
   const who = label(e.from, e.by);
   const item = (text: string, value: number, line = true, more: Pick<Item, 'block' | 'tag'> = {}): Extract<Verdict, { kind: 'context' }> => {
     const it: Item = { at: e.at, label: who, text, value, ...more };
-    return { kind: 'context', item: it, ...(line && { line: clip(`${who}: ${text}`) }) };
+    return { kind: 'context', item: it, ...(line && { line: oneLine(`${who}: ${text}`, LINE_MAX) }) };
   };
-  const notice = (text: string): Verdict => ({ kind: 'notice', line: clip(text) });
+  const notice = (text: string): Verdict => ({ kind: 'notice', line: oneLine(text, LINE_MAX) });
   // an answer's note reaches the plan's author word for word (R22): a block of its own, never one clipped line
   const noted = (what: string, note: string | undefined): Verdict => (note ? item(`${what}. Their note, word for word:\n${note}`, 2, true, { block: true }) : item(what, 2));
   if (e.from === me.name && e.kind !== 'decision') {
@@ -146,7 +146,7 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
     case 'decision': {
       if (!onPlan(room, e.name, me.name)) return keep(NONE);
       const how = e.changes.length ? `changes were asked by ${e.changes.join(', ')}` : `it was agreed by ${e.agreed.join(', ')}`;
-      return keep({ ...item(`plan ${e.name} version ${e.version} is decided: ${how}`, 2, false), line: clip(`Plan ${e.name} version ${e.version} is decided: ${how}.`) });
+      return keep({ ...item(`plan ${e.name} version ${e.version} is decided: ${how}`, 2, false), line: oneLine(`Plan ${e.name} version ${e.version} is decided: ${how}.`, LINE_MAX) });
     }
     case 'plan_sent':
       return keep(e.to === undefined || e.to === me.name
@@ -180,7 +180,7 @@ function wake(s: State, code: string, now: number, budget: number, key: string, 
   if (runs(src.text)) {
     const drawKey = `${key}:draw`;
     const prev = s.bursts[drawKey];
-    const line = clip(`${src.label} ${src.verb} your Claude with a command or URL, held for you: ${src.text}`);
+    const line = oneLine(`${src.label} ${src.verb} your Claude with a command or URL, held for you: ${src.text}`, LINE_MAX);
     // never counted against the wake budget, but drawn only as its burst's first, while that budget lasts, and within
     // the hour's own cap on drawn lines
     const unread = (prev !== undefined && now - prev < BURST_MS) || s.wakes.length >= budget || s.draws.length >= DRAWS_PER_HOUR;
@@ -192,15 +192,15 @@ function wake(s: State, code: string, now: number, budget: number, key: string, 
   if (last !== undefined && now - last < BURST_MS) {
     return { verdict: { kind: 'context', item: { at: now, label: src.label, text: src.text, value: 2 } }, state: { ...s, bursts } };
   }
-  if (s.wakes.length >= budget) return { verdict: { kind: 'notice', line: clip(`${src.label}: ${src.text}`) }, state: s };
+  if (s.wakes.length >= budget) return { verdict: { kind: 'notice', line: oneLine(`${src.label}: ${src.text}`, LINE_MAX) }, state: s };
   const text = `${mark({ at: now, label: `${src.label}, to you`, text: src.text, value: 2 }, code)}\n${FRAME}`;
-  return { verdict: { kind: 'wake', text, line: clip(`${src.label} ${src.verb} your Claude.`) }, state: { ...s, wakes: [...s.wakes, now], bursts } };
+  return { verdict: { kind: 'wake', text, line: oneLine(`${src.label} ${src.verb} your Claude.`, LINE_MAX) }, state: { ...s, wakes: [...s.wakes, now], bursts } };
 }
 
 /** Two people on one file, or one on a file a plan names (R15d): told to both sides, so my own edits are checked too. */
 function overlap(from: string, files: readonly string[], me: Me, room: RoomState, now: number): Verdict {
   const told = (line: string): Verdict => {
-    const text = clip(line);
+    const text = oneLine(line, LINE_MAX);
     return { kind: 'context', item: { at: now, label: 'overlap', text, value: 3, overlap: true }, line: text };
   };
   if (from === me.name) {
@@ -208,17 +208,17 @@ function overlap(from: string, files: readonly string[], me: Me, room: RoomState
     const by = (f: string) => room.members.find(m => m.name !== me.name && !m.kicked && m.activity && now - m.activity.at < RECENT_MS && m.activity.files.includes(f));
     for (const f of files) {
       const other = by(f);
-      if (other) return told(`You are editing ${f}, which ${name(other.name)} edited recently.`);
+      if (other) return told(`You are editing ${f}, which ${markLabel(other.name, 64)} edited recently.`);
     }
     const on = partners(room, me.name);
     const hit = files.find(f => me.terms.includes(f));
-    return hit !== undefined && on.length ? told(`You are editing ${hit}, which a plan you are on with ${on.map(name).join(', ')} names.`) : NONE;
+    return hit !== undefined && on.length ? told(`You are editing ${hit}, which a plan you are on with ${on.map(n => markLabel(n, 64)).join(', ')} names.`) : NONE;
   }
   const mine = recent(me, now);
   const named = interests(me, room);
   const hit = files.find(f => mine.includes(f)) ?? files.find(f => named.includes(f));
   if (hit === undefined) return NONE;
-  return told(`${name(from)} is editing ${hit}, which ${mine.includes(hit) ? 'you edited recently' : 'a plan you are on names'}.`);
+  return told(`${markLabel(from, 64)} is editing ${hit}, which ${mine.includes(hit) ? 'you edited recently' : 'a plan you are on names'}.`);
 }
 
 /** Whether an update bears on my work (R15c): naming me, from someone on a plan with me, or naming a file I touched or a term of mine. */
@@ -307,13 +307,9 @@ export function runs(text: string): boolean {
   return URL.test(t) || CODE.test(t) || COMMAND.test(t);
 }
 
-/** A member's name as drawn: one line, no brackets, so it can't close a label and open another. */
-function name(from: string): string {
-  return markLabel(from, 64);
-}
-
+/** A member as drawn: one line, no brackets, so a name can't close a label and open another. */
 function label(from: string, by: By): string {
-  return by === 'claude' ? `${name(from)}'s Claude` : name(from);
+  return by === 'claude' ? `${markLabel(from, 64)}'s Claude` : markLabel(from, 64);
 }
 
 /** One datamarked line: who it is from, and the text on one line with no way to forge another label. */
@@ -321,10 +317,6 @@ function mark(it: Item, code: string): string {
   if (it.block) return datamark(code, it.label, it.text, { block: true, max: LIMITS.text });
   // a tag can't come from the data, which has every `[room` defused
   return `${datamark(code, it.label, it.text, { max: LINE_MAX })}${it.tag ? ` · for your task list: ${it.tag}` : ''}`;
-}
-
-function clip(text: string): string {
-  return oneLine(text, LINE_MAX);
 }
 
 function prune(s: State, now: number): State {

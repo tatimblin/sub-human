@@ -65,15 +65,15 @@ test('plan and task requests are read by their act', () => {
   const done = { op: 'task', code: 'R', from: 'a', act: 'done', n: 2 };
   assert.deepEqual(decodeRequest(done), { ok: true, value: done });
   const refused = { refused: 'stale', latest: { version: 2, hash: 'h' } };
-  assert.deepEqual(readAnswer('plan', 200, JSON.stringify({ ok: true, value: refused })), { ok: true, value: refused });
+  assert.deepEqual(readAnswer('plan', { status: 200, text: JSON.stringify({ ok: true, value: refused }) }), { ok: true, value: refused });
 });
 
 test('readAnswer: the value for its op, the daemon\'s own error, and one line for anything else', () => {
-  assert.deepEqual(readAnswer('append', 200, '{"ok":true,"value":{"seq":3,"hash":"h"}}'), { ok: true, value: { seq: 3, hash: 'h' } });
-  assert.deepEqual(readAnswer('ping', 200, '{"ok":true,"value":null}'), { ok: true, value: null });
-  assert.deepEqual(readAnswer('append', 200, '{"ok":false,"error":"busy"}'), { ok: false, error: 'busy' });
+  assert.deepEqual(readAnswer('append', { status: 200, text: '{"ok":true,"value":{"seq":3,"hash":"h"}}' }), { ok: true, value: { seq: 3, hash: 'h' } });
+  assert.deepEqual(readAnswer('ping', { status: 200, text: '{"ok":true,"value":null}' }), { ok: true, value: null });
+  assert.deepEqual(readAnswer('append', { status: 200, text: '{"ok":false,"error":"busy"}' }), { ok: false, error: 'busy' });
   for (const [status, body] of [[200, '{"ok":true,"value":{"seq":0}}'], [502, 'Bad gateway'], [200, '{"ok":"yes"}']] as const) {
-    const r = readAnswer('append', status, body);
+    const r = readAnswer('append', { status, text: body });
     assert.ok(!r.ok && !r.error.includes('\n') && /nothing was done|not understood/.test(r.error), body);
   }
 });
@@ -85,9 +85,9 @@ test('the net ops are read with their fields, and an admit answer is one of thre
   assert.ok(!decodeRequest({ op: 'admit', session: 's1', code: 'vole-8126', id: 'a1', answer: 'yes' }).ok);
   assert.ok(decodeRequest({ op: 'dial', line: 'https://n.ts.net/vole-8126#x', name: 'jess' }).ok);
   assert.ok(!decodeRequest({ op: 'dial', line: 'x'.repeat(2000), name: 'jess' }).ok);
-  const asks = readAnswer('asks', 200, JSON.stringify({ ok: true, value: { asks: [{ id: 'a', code: 'c', kind: 'leaked', name: 'n', expected: 'n', machine: '', check: '1-2', member: false }] } }));
+  const asks = readAnswer('asks', { status: 200, text: JSON.stringify({ ok: true, value: { asks: [{ id: 'a', code: 'c', kind: 'leaked', name: 'n', expected: 'n', machine: '', check: '1-2', member: false }] } }) });
   assert.ok(asks.ok);
-  assert.deepEqual(readAnswer('link', 200, '{"ok":true,"value":null}'), { ok: true, value: null });
+  assert.deepEqual(readAnswer('link', { status: 200, text: '{"ok":true,"value":null}' }), { ok: true, value: null });
 });
 
 test('the socket and the daemon\'s argv are under the home and the plugin', () => {

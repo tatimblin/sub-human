@@ -5,10 +5,11 @@
 // Every write goes to the daemon over its Unix socket (§5); module/bridge.ts builds the call. The native task bridge's
 // rules are module/tasks.ts; this hook makes its calls, unless SUB_HUMAN_CC_OFF turns it off (said once).
 import type { On } from 'claude-code';
+import { readAnswer } from '../core/api.js';
 import { why } from '../core/text.js';
 import { capture, plansDir } from '../core/activity.js';
 import { err } from '../core/result.js';
-import { answer, request } from './bridge.js';
+import { request } from './bridge.js';
 import { off, once, session } from './session.js';
 import { bridgeCall, fill, native, needsList, remember } from './tasks.js';
 
@@ -40,7 +41,7 @@ export function registerCapture(on: On): void {
     } else if (bridged === 'already') $.ui.log(`sub-human: room ${room.code} already shows that task change`, { to: 'debug' });
     else if (bridged) {
       const q = request(bridged, room.home);
-      const res = await $.http.fetch(q.url, q).then(x => answer('task', x), (x: unknown) => err(why(x)));
+      const res = await $.http.fetch(q.url, q).then(x => readAnswer('task', x), (x: unknown) => err(why(x)));
       if (!res.ok && once(session, `task ${bridged.act} ${bridged.n}`)) $.ui.log(`sub-human couldn't update task #${bridged.n} in ${room.code}: ${res.error}`);
     }
     if (c.kind === 'none') return r;
@@ -50,7 +51,7 @@ export function registerCapture(on: On): void {
       : c.events.map(d => request({ op: 'append', code: room.code, draft: { ...d, id: crypto.randomUUID() } }, room.home));
     const op = c.kind === 'doc' ? 'put_doc' : 'append';
     for (const q of calls) {
-      const res = await $.http.fetch(q.url, q).then(x => answer(op, x), (x: unknown) => err(why(x)));
+      const res = await $.http.fetch(q.url, q).then(x => readAnswer(op, x), (x: unknown) => err(why(x)));
       if (!res.ok && once(session, 'write')) { // one line a session (C3)
         $.ui.log(`sub-human couldn't share your work with room ${room.code}: ${res.error}`);
       }

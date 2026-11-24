@@ -9,7 +9,7 @@ import { registerMessages } from './messages.js';
 import { registerStatus } from './status.js';
 import { registerTools } from './tools.js';
 import { registerTasks } from './tasks.js';
-import { admitCards } from './admit.js';
+import { registerAdmit } from './admit.js';
 import { registerWake } from './wake.js';
 import { registerPlans } from './plans.js';
 
@@ -21,7 +21,7 @@ export function register(on: On): void {
   registerStatus(on);
   registerTools(on);
   registerTasks(on);
-  admitCards(on);
+  registerAdmit(on);
   registerMessages(on);
   registerWake(on);
   registerPlans(on);

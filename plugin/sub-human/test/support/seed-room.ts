@@ -6,7 +6,7 @@ import type { MockClock } from 'claude-code/testing';
 import { mock } from 'claude-code/testing';
 import type { DocKind, DocKinds, Draft } from '../../core/entries.js';
 import { blobFile, docFile, fileKey, logFile, roomDir, tailFile } from '../../home.js';
-import { MemoryStore } from '../../store/memory-store.js';
+import { MemoryStore } from './memory-store.js';
 import { tailText } from '../../store/store.js';
 import type { Answers, LinkStatus, Message, PlanAct, Request, TaskAct } from '../../core/api.js';
 import { decodeRequest, sessionFile, socketFile } from '../../core/api.js';

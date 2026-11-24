@@ -7,7 +7,7 @@
 import type { On, ToolSpec } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import type { Request } from '../core/api.js';
-import { MAX_BODY } from '../core/api.js';
+import { MAX_BODY, readAnswer } from '../core/api.js';
 import { brief } from '../core/brief.js';
 import type { Input } from '../core/deliver.js';
 import type { AppendDraft, RoomState } from '../core/entries.js';
@@ -17,7 +17,7 @@ import { err, ok } from '../core/result.js';
 import { secretIn } from '../core/secrets.js';
 import { datamark, markLabel, oneLine, why } from '../core/text.js';
 import { blobFile } from '../home.js';
-import { answer, request } from './bridge.js';
+import { request } from './bridge.js';
 import type { InRoom } from './session.js';
 import { session, unread } from './session.js';
 import { newsLines } from './status.js';
@@ -136,7 +136,7 @@ export function registerTools(on: On): void {
     const c = shareCall(e, room, session.state, await $.clock.now(), crypto.randomUUID());
     if (!c.ok) return { deny: c.error };
     const q = request(c.value.req, room.home);
-    const r = await $.http.fetch(q.url, q).then(x => answer(c.value.req.op, x), (x: unknown) => err(why(x)));
+    const r = await $.http.fetch(q.url, q).then(x => readAnswer(c.value.req.op, x), (x: unknown) => err(why(x)));
     if (!r.ok) return { deny: `Nothing was shared with ${room.code}: ${r.error}` };
     return { result: c.value.done };
   });

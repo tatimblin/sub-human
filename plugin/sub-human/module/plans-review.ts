@@ -6,11 +6,12 @@
 // Claude with my next prompt. A card dismissed twice is left to the status count and news. No plan file is touched
 // and no mode changes (R19); nothing here starts a turn.
 import type { On } from 'claude-code';
+import { readAnswer } from '../core/api.js';
 import { why } from '../core/text.js';
 import type { PlanAct } from '../core/api.js';
 import { err } from '../core/result.js';
 import { blobFile } from '../home.js';
-import { answer, request } from './bridge.js';
+import { request } from './bridge.js';
 import type { Card } from './plans-cards.js';
 import { BACK, noteCard, readPick, reviewCard } from './plans-cards.js';
 import { nextPending, paneLines } from './plans-pending.js';
@@ -92,7 +93,7 @@ export function registerReview(on: On): void {
             ? { act: 'answer', name: p.name, version: p.version, answer: pick.answer === 'changes' ? 'changes' : 'agree', ...note }
             : { act: 'accept', name: p.name, version: p.version, answer: pick.answer === 'agree' ? 'accept' : pick.answer, ...note };
           const q = request({ op: 'plan', code: room.code, from: room.name, ...act }, room.home);
-          const r = await $.http.fetch(q.url, q).then(x => answer('plan', x), (x: unknown) => err(why(x)));
+          const r = await $.http.fetch(q.url, q).then(x => readAnswer('plan', x), (x: unknown) => err(why(x)));
           if (!r.ok) {
             $.ui.log(`sub-human couldn't record your answer on ${p.name} v${p.version}: ${r.error}`);
             skip.set(p.key, 'later');

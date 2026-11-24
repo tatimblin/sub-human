@@ -6,7 +6,7 @@ import { fold } from '../../core/fold.js';
 import { sha256 } from '../../core/hash.js';
 import { applyPlan } from '../../core/plans.js';
 import type { Result } from '../../core/result.js';
-import type { MemoryStore } from '../../store/memory-store.js';
+import type { MemoryStore } from './memory-store.js';
 
 export async function roomState(store: MemoryStore): Promise<RoomState> {
   const c = await store.catchup();

@@ -7,10 +7,11 @@
 // throws: a send it can't carry is answered undelivered, with the reason the Claude reads. SUB_HUMAN_CC_OFF=messages
 // leaves every send to Claude Code, said once.
 import type { On, SessionSendResult } from 'claude-code';
+import { readAnswer } from '../core/api.js';
 import { why } from '../core/text.js';
 import type { RoomState } from '../core/entries.js';
 import { secretIn } from '../core/secrets.js';
-import { answer, request } from './bridge.js';
+import { request } from './bridge.js';
 import { off, once, session } from './session.js';
 
 export function registerMessages(on: On): void {
@@ -29,7 +30,7 @@ export function registerMessages(on: On): void {
       const rule = secretIn(e.text);
       if (rule) return refused(`the text looks like it holds a secret (${rule}); send it without the secret`);
       const q = request({ op: 'message', code: room.code, to: name, from: room.name, text: e.text }, room.home);
-      const r = answer('message', await $.http.fetch(q.url, q));
+      const r = readAnswer('message', await $.http.fetch(q.url, q));
       return r.ok ? { isDelivered: true } : refused(r.error);
     } catch (x) {
       return refused(`sub-human didn't answer (${why(x)}); /sub-human doctor says why`);

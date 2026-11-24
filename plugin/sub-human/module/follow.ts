@@ -14,7 +14,7 @@ import { fold, takeSnapshot } from '../core/fold.js';
 import type { Me } from '../core/deliver.js';
 import { enqueue, terms } from '../core/deliver.js';
 import { parseDoc } from '../core/schema.js';
-import { PING_MS, decodePointer, hostAway, sessionFile } from '../core/api.js';
+import { PING_MS, decodePointer, hostAway, readAnswer, sessionFile } from '../core/api.js';
 import { readConfig } from '../config.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
@@ -22,7 +22,7 @@ import { blobFile, docDir, fileKey, homeDir, logFile, roomDir, tailFile } from '
 import { parseTail } from '../store/store.js';
 import type { Absorbed } from './follow-lines.js';
 import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, planTerms, unreadPlans } from './follow-lines.js';
-import { answer, request } from './bridge.js';
+import { request } from './bridge.js';
 import type { InRoom } from './session.js';
 import { feed, forget, fresh, joined, once, session } from './session.js';
 import { statusLine } from './status.js';
@@ -129,7 +129,7 @@ export function registerFollow(on: On): void {
     const inbox = async (room: InRoom): Promise<void> => {
       if (!c.state) return; // the room isn't read yet: the messages wait in the daemon
       const q = request({ op: 'inbox', session: id }, home);
-      const r = await $.http.fetch(q.url, q).then(x => answer('inbox', x), () => null);
+      const r = await $.http.fetch(q.url, q).then(x => readAnswer('inbox', x), () => null);
       const messages = r?.ok ? r.value.messages.filter(m => m.code === room.code) : [];
       const st = c.state; // read again: the room may have changed during the fetch
       if (!messages.length || !st) return;
@@ -163,14 +163,14 @@ export function registerFollow(on: On): void {
       const now = await $.clock.now();
       if (p || pinged.id !== id || now - pinged.at >= PING_MS) {
         const q = request({ op: 'ping', session: id, ...(p && { code: p.code, name: p.name }), ...(cc && { cc }) }, home);
-        const r = await $.http.fetch(q.url, q).then(x => answer('ping', x), (x: unknown) => err(why(x)));
+        const r = await $.http.fetch(q.url, q).then(x => readAnswer('ping', x), (x: unknown) => err(why(x)));
         if (r.ok) pinged = { id, at: now };
         for (const n of r.ok ? r.value?.notes ?? [] : []) $.ui.log(n, { to: 'debug' }); // the daemon's (a room swept)
         if (!r.ok && p) say(`sub-human didn't answer, so ${p.code} may show you away: ${r.error}. /sub-human doctor says why.`, 'ping');
       }
       const code = p?.code ?? session.joining;
       const q = code === null ? null : request({ op: 'link', code }, home);
-      const got = q && (await $.http.fetch(q.url, q).then(x => answer('link', x), () => null));
+      const got = q && (await $.http.fetch(q.url, q).then(x => readAnswer('link', x), () => null));
       const l = got?.ok ? got.value : null;
       const line = joined(session, p, l);
       if (line !== null) $.ui.log(line);

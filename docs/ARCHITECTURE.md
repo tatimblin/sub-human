@@ -137,7 +137,6 @@ plugin/sub-human/
     store.ts         RoomStore interface, line placing and chain checks
     fs-store.ts      host: log, documents, plan blobs, the tail file; lock.ts (open 'wx'), atomic.ts (crash-safe write)
     mirror-store.ts  a room hosted elsewhere: the host's snapshot plus its lines, every write sent to the host
-    memory-store.ts  tests
   module/          the hooks module (Claude Code edge); no Node, relative imports only
     register.ts      wires each part's hooks; nothing else
     session.ts       the plain data the parts share (a `$` never crosses a file)
@@ -150,8 +149,8 @@ plugin/sub-human/
     at-room.ts       prompt.submit: an `@room` line posted as the person's, dropped from the model (R8)
     wake.ts          $.prompt.submit once idle; retry on turn.complete.isAborted (R10)
     plans.ts         ExitPlanMode result → keep / room / send; the plan tool (R17–R18, R22b)
-    plans-review.ts  the reviewer's card (ui.ask) and pane (ui.open) (R21–R22c); plans-cards.ts, plans-pending.ts,
-                     plans-notes.ts and plan-diff.ts its pure parts
+    plans-review.ts  the reviewer's card (ui.ask) and pane (ui.open) (R21–R22c); plans-cards.ts, plans-pending.ts
+                     and plans-notes.ts its pure parts
     tasks.ts         the task tool and the bridge into the native list (R24, R24a)
     tools.ts         Claude's share and read tools via $.tool.register + tool.run (§6)
     admit.ts         the host's Let in / Refuse card (R30)

@@ -2,8 +2,9 @@
 // so the module can neither take the lock nor write crash-safe. The module only reads, with `$.fs`: the tail file, and
 // the log by byte ranges (4 MiB per read); readers skip a torn last line, and lineHash runs there too.
 //
-// RoomStore is the one seam over a room's files (ARCHITECTURE §4): memory-store.ts for tests, fs-store.ts on the host,
-// the mirror later. What both backends share is here: the line format, the chain check and the tail file.
+// RoomStore is the one seam over a room's files (ARCHITECTURE §4): fs-store.ts on the host, mirror-store.ts for a room
+// hosted elsewhere, test/support/memory-store.ts in tests. What they share is here: the line format, the chain check
+// and the tail file.
 import * as v from '../vendor/valibot.mjs';
 import type { DocKind, DocKinds, Docs, Entry, LogLine, Snapshot, StoreDraft } from '../core/entries.js';
 import { NO_DOCS } from '../core/entries.js';

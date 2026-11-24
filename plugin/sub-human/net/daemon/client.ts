@@ -19,7 +19,7 @@ export function call<R extends Request>(home: string, req: R, timeoutMs = 5000):
       let text = '';
       res.setEncoding('utf8');
       res.on('data', (c: string) => { text += c; });
-      res.on('end', () => { resolve(readAnswer<R['op']>(req.op, res.statusCode ?? 0, text)); });
+      res.on('end', () => { resolve(readAnswer<R['op']>(req.op, { status: res.statusCode ?? 0, text })); });
       res.on('error', () => { resolve(err(NO_ANSWER)); });
     });
     q.on('timeout', () => { q.destroy(); });

@@ -22,7 +22,7 @@ export function brief(state: RoomState, { code, maxChars = BRIEF_MAX }: BriefOpt
     ...section('Plans', [...plans, ...sent], 'none'),
     ...section('Open tasks', tasks, 'none'),
     ...section('Recent updates, newest first', recent, 'none'),
-  ].map(clip);
+  ].map(l => oneLine(l, LINE_MAX)); // every field is a colleague's: escapes, bidi and a forged `[room` label come out
   return fit(lines, maxChars);
 }
 
@@ -78,11 +78,6 @@ function updateLine(u: Update): string {
 
 function list(xs: readonly string[], max = 8): string {
   return xs.length > max ? `${xs.slice(0, max).join(', ')} and ${xs.length - max} more` : xs.join(', ');
-}
-
-/** Every field in it is a colleague's: escapes, bidi and a forged `[room` label come out with the line breaks. */
-function clip(line: string): string {
-  return oneLine(line, LINE_MAX);
 }
 
 /** Whole lines up to the bound, then `… N more lines` if that fits too; never longer than `max`. */

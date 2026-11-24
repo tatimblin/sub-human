@@ -355,10 +355,10 @@ export function decodeRequest(input: unknown): Result<Request> {
   return ok(req);
 }
 
-/** The daemon's answer to an `op` request, from the response's status and body. */
-export function readAnswer<O extends Op>(op: O, status: number, body: string): Result<Answers[O]> {
+/** The daemon's answer to an `op` request, from the response's status and body (`$.http.fetch`'s response as it is). */
+export function readAnswer<O extends Op>(op: O, { status, text }: { readonly status: number; readonly text: string }): Result<Answers[O]> {
   let json: unknown;
-  try { json = JSON.parse(body); } catch { return err(`sub-human answered ${status} with no result; nothing was done`); }
+  try { json = JSON.parse(text); } catch { return err(`sub-human answered ${status} with no result; nothing was done`); }
   const e = decode(envelope, json);
   if (!e.ok) return err(`sub-human's answer was not understood; nothing was done`);
   if (!e.value.ok) return err(e.value.error);

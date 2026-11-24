@@ -1,14 +1,14 @@
 // The in-memory RoomStore, for tests and the kit harness. It keeps raw lines and document text, as the files do, so
 // it hashes, chains and decodes exactly as fs-store does. Several stores over one MemoryRoom are several handles on
 // one room; their appends take turns, as the lock makes them on disk.
-import type { DocKind, DocKinds, Docs, LogLine, Snapshot, StoreDraft } from '../core/entries.js';
-import { SNAPSHOT_EVERY, snapshotDue } from '../core/fold.js';
-import { parseDoc } from '../core/schema.js';
-import type { Result } from '../core/result.js';
-import { ok } from '../core/result.js';
-import type { Catchup, Head, RoomStore } from './store.js';
-import { BLOB_HASH, headOf, lineHash, nextSnapshot, placeLine, verifyLines } from './store.js';
-import { sha256 } from '../core/hash.js';
+import type { DocKind, DocKinds, Docs, LogLine, Snapshot, StoreDraft } from '../../core/entries.js';
+import { SNAPSHOT_EVERY, snapshotDue } from '../../core/fold.js';
+import { parseDoc } from '../../core/schema.js';
+import type { Result } from '../../core/result.js';
+import { ok } from '../../core/result.js';
+import type { Catchup, Head, RoomStore } from '../../store/store.js';
+import { BLOB_HASH, headOf, lineHash, nextSnapshot, placeLine, verifyLines } from '../../store/store.js';
+import { sha256 } from '../../core/hash.js';
 
 /** A room's contents; tests may edit `lines` to forge a fork. */
 export interface MemoryRoom {

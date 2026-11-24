@@ -5,7 +5,7 @@ import type { Draft } from '../../core/entries.js';
 import { fold } from '../../core/fold.js';
 import type { Result } from '../../core/result.js';
 import { applyTask } from '../../core/tasks.js';
-import type { MemoryStore } from '../../store/memory-store.js';
+import type { MemoryStore } from './memory-store.js';
 
 export async function taskRule(store: MemoryStore, code: string, from: string, act: TaskAct): Promise<Result<{ readonly drafts: readonly Draft[]; readonly n: number }>> {
   const c = await store.catchup();

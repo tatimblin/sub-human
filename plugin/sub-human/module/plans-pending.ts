@@ -1,8 +1,9 @@
 // A plan waiting on my answer (R21, R22c), pure: which one comes next, what changed since the version I last saw, and
-// the plan pane's lines. plans-review.ts asks the cards (plans-cards.ts) and shows the pane.
+// the plan pane's lines. plans-review.ts asks the cards (plans-cards.ts) and shows the pane. The one module-side use of
+// the vendored diff, so `claude plugin validate` type-checks that import.
 import type { RoomState } from '../core/entries.js';
 import { oneLine } from '../core/text.js';
-import { planDiff } from './plan-diff.js';
+import { createPatch } from '../vendor/diff/index.js';
 
 /** A plan waiting on my answer: a version I was asked to agree on, or a plan sent to me or the room. */
 export interface Pending {
@@ -36,6 +37,11 @@ export function nextPending(s: RoomState, me: string, skip: ReadonlySet<string>)
     return { kind: 'sent', key, name: x.name, version: x.version, from: x.from, hash: v.hash, files: x.files, ...(x.note && { note: x.note }), ...(x.branch && { branch: x.branch }) };
   }
   return null;
+}
+
+/** A unified diff of plan `name` from `before` to `after`, without the file header lines. */
+export function planDiff(name: string, before: string, after: string): string {
+  return createPatch(name, before, after).split('\n').slice(4).join('\n');
 }
 
 /** What changed since the version I last saw, in a few words. */

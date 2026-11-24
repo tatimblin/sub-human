@@ -8,6 +8,7 @@
 // list after). Claude Code's task files are never read, and nothing waits on a deletion (auto-reset deletes silently).
 import type { On } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
+import { readAnswer } from '../core/api.js';
 import { why } from '../core/text.js';
 import type { Request } from '../core/api.js';
 import type { RoomState } from '../core/entries.js';
@@ -15,7 +16,7 @@ import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { secretIn } from '../core/secrets.js';
 import { bridgeOp, parseTag, tag, taskLines } from '../core/tasks.js';
-import { answer, request } from './bridge.js';
+import { request } from './bridge.js';
 import type { InRoom } from './session.js';
 import { off, session } from './session.js';
 import { toolName } from './tools.js';
@@ -108,7 +109,7 @@ export function registerTasks(on: On): void {
     if (!c.ok) return { deny: c.error };
     if ('text' in c.value) return { result: c.value.text };
     const q = request(c.value.req, room.home);
-    const r = await $.http.fetch(q.url, q).then(x => answer('task', x), (x: unknown) => err(why(x)));
+    const r = await $.http.fetch(q.url, q).then(x => readAnswer('task', x), (x: unknown) => err(why(x)));
     return r.ok ? { result: c.value.done(r.value.n) } : { deny: r.error };
   });
 }
