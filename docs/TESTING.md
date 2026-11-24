@@ -23,7 +23,7 @@ Layers 1–5 make up the CI suite. Two file names keep the runners apart: the ki
 Pure functions get table tests, with inputs in and outputs out, and no I/O.
 
 - **`fold`:** log plus documents → `RoomState`, for joins, leaves, plans, decisions and tasks.
-- **`deliver`:** every row of the R10 wake rule and the R15c relevance rules, as a table of `(entry, member, state) → none | context | notice | wake`. It covers:
+- **`deliver`:** every row of the R10 wake rule and the R15c relevance rules, as a table of `(entry, member, state) → none | context | notice | wake | draw`. It covers:
   - broadcasts never wake;
   - a direct message wakes once (debounced);
   - the hourly budget;
@@ -49,7 +49,7 @@ Pure functions get table tests, with inputs in and outputs out, and no I/O.
 - **`link-engine`:** table tests on an injected clock, covering backoff, heartbeat, sleep (a wall-clock jump), fork, and kick.
 - **`protocol`:** encode and decode round trips, version and caps negotiation, and unknown fields being tolerated.
 - **Schemas:** valibot schemas reject malformed outside data. A small property test feeds random JSON to every decoder.
-- **Noise:** `noise.ts` against the published cacophony and snow vectors.
+- **Noise:** `net/channel.ts` against the published cacophony and snow vectors.
 
 ## 3. Store contract tests
 
@@ -98,7 +98,7 @@ test('a relevant colleague change reaches my next prompt, capped', async ($, on)
 | Context (R15a) | `$.prompt.submit` | only relevant updates, datamarked, under the cap; nothing for broadcasts that don't bear on my work |
 | Status and news (R15b, R16) | `mock.clock` advance | the `ui.status` text; `/sub-human news` renders with no model call |
 | Messages (R6), sender side | a `SendMessage` to `bob.CODE`, which fires the module's `session.send` hook | answered `{ isDelivered: true }` without `next`; the message goes to the room channel stamped with the sender, never the log. **The M1 risk test:** run under `claude plugin test` against the real engine to show the answer without `next` is honoured. |
-| Wakes (R10), recipient side | a scripted incoming message on the room channel, then `$.turn.complete(...)` | one `prompt.submit` after the turn ends, framed `bob's Claude asks: …`; debounce and budget; a retry when `isAborted`; in every mode, a command- or URL-bearing message is drawn, not submitted; the permission mode is untouched |
+| Wakes (R10), recipient side | a scripted incoming message on the room channel, then `$.turn.complete(...)` | one `prompt.submit` after the turn ends, `[room CODE · bob's Claude, to you] …` then the `FRAME` line; debounce and budget; a retry when `isAborted`; in every mode, a command- or URL-bearing message is drawn, not submitted; the permission mode is untouched |
 | Claude's tools (§6 of ARCHITECTURE) | `$.tool.run` for `share`, `read`, `plan`, `task` | each registered with `$.tool.register`; one-line answers; plan compare-and-swap conflicts; secrets refused on `share` |
 | Plans (R18–R22) | `$.tool.call({ tool: 'ExitPlanMode', … })` with a recorded result | the keep / room / send question; the review card from `ui.ask` (it arrives as a `tool.call` to `AskUserQuestion`), stubbed to answer Agree, Ask for changes (Other) or Read the full plan; the last one mounts the pane, which scrolls |
 | R19's three properties | the plan flows above | the person's own plan file is never written (`fs.write` stub records nothing); the mode is unchanged |
@@ -130,7 +130,7 @@ The kit needs hooks modules turned on in the shell that runs it. If they're off,
 ## 5. Edge tests (`node:test`)
 
 - **Command hooks.** Each `hooks.json` handler (the `/sub-human` expansion, `SessionStart` with its title, `Notification` and `SessionEnd`) runs with recorded stdin fixtures. The tests assert its stdout `Reply` and exit code, and that nothing is written to stderr on success.
-- **The module-to-daemon bridge:** the daemon answers the module's `$.http.fetch` calls on its Unix socket, re-spawns itself detached, lets only one instance bind the socket, takes every write, and exits a minute after the last local session stops pinging.
+- **The module-to-daemon bridge:** the daemon answers the module's `$.http.fetch` calls on its Unix socket, re-spawns itself detached, lets only one instance bind the socket, takes every write, and exits `IDLE_MS` (120 s, twice a session's liveness) after the last request.
 - **Vendored files:** `scripts/vendor.ts --check` fails when `vendor/VENDOR.json` disagrees with the pinned devDependencies or the file hashes; each vendored file loads in node.
 - **CLI and commands:** `parseArgs` cases; every `/sub-human` verb against a temp home.
 
@@ -146,7 +146,7 @@ The tests cover:
 - **Sync:** a snapshot plus the entries after it, for a late joiner; fork detection.
 - **Reconnect** on the fake clock. A post is queued while offline and deduplicated by its client id on resend.
 - **ssh pathway:** `ssh -W` to the loopback listener, with a fake `ssh` on `PATH` that execs a local socket bridge.
-- **Tailscale control:** a fake `tailscale` binary (and a fake LocalAPI socket, if we use it) records commands. The tests cover Funnel and Serve, port 443 conflicts, and turning one forward off while another stays.
+- **Tailscale control:** a fake `tailscale` binary records commands. The tests cover Funnel and Serve, port 443 conflicts, and turning one forward off while another stays.
 
 One manual check per release, not in CI: a real Funnel join from a machine with no Tailscale.
 
@@ -202,7 +202,7 @@ What exists in 2.0.0, by the milestone that brought it. Node tests run with `npm
 | Milestone | Tests that exist |
 |---|---|
 | M0 | `test/helpers.ts` (temp homes, the REAL CONFIG TOUCHED guard) and its test; `module/vendor-smoke.test.ts` and `test/vendor.node-test.ts`; `scripts/vendor.ts --check`; the fixtures recorder (`scripts/record-fixtures.ts`) and `test/fixtures/cc/2.1.330/`; the store contract on the memory, fs and mirror stores (`store/store-contract.node-test.ts`); `core/schema.node-test.ts` (with random JSON); `net/channel.node-test.ts` (cacophony and snow vectors); `core/cc/contract.node-test.ts` |
-| M1 | `core/deliver`, `activity`, `secrets`, `fold`, `brief`, `mechanics`, `text` unit tests; kit tests for capture, follow, context, status and news, messages (with the sender-side risk test), wake, safety and tools; the scenes `s-live`, `s-relevant`, `s-ask`, `leave`; edge tests for the command hooks (`commands/hooks.node-test.ts`, `cli.node-test.ts`), the verbs (`bare`, `verbs`, `membership`), the bridge (`module/bridge.node-test.ts`) and the daemon (`net/daemon.node-test.ts`, `net/daemon/rooms.node-test.ts`); `store/fs-store`, `lock` and `store` tests |
+| M1 | `core/deliver`, `activity`, `secrets`, `fold`, `brief`, `mechanics`, `text` unit tests; kit tests for capture, follow, context, status and news, messages (with the sender-side risk test), wake, safety and tools; the scenes `s-live`, `s-relevant`, `s-ask`, `leave`; edge tests for the command hooks (`commands/hooks.node-test.ts`, `cli.node-test.ts`), the verbs (`bare`, `verbs`, `core/join`), the bridge (`module/bridge.node-test.ts`) and the daemon (`net/daemon.node-test.ts`, `net/daemon/rooms.node-test.ts`); `store/fs-store`, `lock` and `store` tests |
 | M2 | `core/plans.node-test.ts`; `module/plans.test.ts` (approval, cards, the pane, R19's properties on every flow); `plans-notes` and `plans-pending` unit tests; the scenes `plan-together`, `send-plan` |
 | M3 | `core/tasks.node-test.ts` (rules and the bridge mapping); `module/tasks.test.ts` and `module/tasks.node-test.ts` on the recorded TaskCreate and TaskUpdate fixtures; the scene `split` |
 | M4 | `core/link-engine.node-test.ts`, `core/protocol.node-test.ts`, `net/invite.node-test.ts`; two homes in `test/net/` (`join`, `host`, `reconnect`, `funnel` through a TLS + PROXY v2 front, `pathways` with the fake `ssh` and `tailscale` in `test/fixtures/bin/`); `module/admit.test.ts` |
@@ -219,7 +219,7 @@ when it is stale. A requirement no test names is listed as uncovered.
 | R | Priority | Requirement | Tests (file: names) |
 |---|---|---|---|
 | R1 | P0 | A room is not tied to a repo or directory | `commands/bare.node-test.ts`: “a bare /sub-human with no room open opens one, as the git name, with repo and branch (R1)”; “NAME and ROOM may be given, in either order (R1)”; “with several rooms open it lists them and joins none (R1)”<br>`module/capture.test.ts`: “my work is shared from its repo: an ignored file never, a plans folder's file is no edit, and entries name the repo and branch (R1, R12, R14a)” |
-| R2 | P0 | A room has a short human-readable code (e.g. vole-8126). Each member i | `commands/membership.node-test.ts`: “newCode is a word and four digits (R2)”<br>`net/daemon/rooms.node-test.ts`: “titleFor: NAME.CODE, else the lowest free NAME-N.CODE among the titles held (R5) (R2)”<br>`scripts/test/trace.test.ts`: “engine: ${r.name} (R2)” |
+| R2 | P0 | A room has a short human-readable code (e.g. vole-8126). Each member i | `core/join.node-test.ts`: “newCode is a word and four digits (R2)”<br>`net/daemon/rooms.node-test.ts`: “titleFor: NAME.CODE, else the lowest free NAME-N.CODE among the titles held (R5) (R2)”<br>`scripts/test/trace.test.ts`: “engine: ${r.name} (R2)” |
 | R3 | P0 | /sub-human leave leaves the room and keeps the session | `commands/bare.node-test.ts`: “a room whose every member is away, or who left, is not open: a bare join opens a new one (R3)”<br>`commands/hooks.node-test.ts`: “SessionEnd posts no left: the pointer goes and the member is away; a session in no room writes nothing (R3)”<br>`commands/verbs.node-test.ts`: “leave writes left and an away presence, and forgets the session; another session as the name keeps it (R3)”<br>`net/daemon/rooms.node-test.ts`: “the sweep deletes a room or copy nobody has used for 30 days and no pointer or fresh handoff holds, with its link; the next ping says so once (R3)”<br>`test/net/join.node-test.ts`: “a copy the sweep deletes loses its link for good: closed, and its file gone (R3)” |
 | R4 | P0 | /sub-human who lists the members, their machines and their state | `commands/verbs.node-test.ts`: “who lists the members here, their machines, state, focus and where they work, each one line with no escapes (R4, R14); and when the host is away (R34)”; “help is at most six lines (R4)” |
 | R5 | P1 | One person seated from two sessions or two machines counts once for ag | `commands/bare.node-test.ts`: “a second session as a name already here joins with no second joined, and the lowest free title (R5)”<br>`net/daemon/rooms.node-test.ts`: “titleFor: NAME.CODE, else the lowest free NAME-N.CODE among the titles held (R5) (R2)” |
@@ -252,7 +252,7 @@ when it is stale. A requirement no test names is listed as uncovered.
 | R23 | P0 | Personal native task changes are mirrored to the room as activity, fro | `core/activity.node-test.ts`: “a personal task change is an event; a room task (tagged) is the bridge's, never activity (R23)”<br>`module/capture.test.ts`: “a personal task finished is an activity entry, named by the subject its create carried (R23)” |
 | R24 | P0 | The room task list | `commands/verbs.node-test.ts`: “tasks lists the open tasks with owners and blockers, one line each, and counts the done ones (R24)”<br>`core/tasks.node-test.ts`: “claim is for oneself, refused while someone else owns the task (R24)”; “release and done are the owner's only; done keeps an optional note (R24, R26)”<br>`module/tasks.test.ts`: “the task tool adds, claims, lists and finishes room tasks, each in one line (R23a, R24)” |
 | R24a | P0 | Bridge into the native list | `core/tasks.node-test.ts`: “the bridge tag round-trips inside a native subject (R24a)”; “bridgeOp: completed is done, deleted is release, a reopen is nothing, untagged is activity (R23b, R24a)”<br>`module/plans.test.ts`: “a plan I am asked about is a card at my turn's end; Agree is recorded, and my part, with its task's tag, reaches my next prompt (R19, R21, R22a, R24a)”<br>`module/tasks.test.ts`: “M3: a claimed room task goes onto my native list with its tag, and completing it there closes the room task (R24a)”; “deleting a tagged native task releases the room task; a subagent's call is mine (R23b, R24a)” |
-| R25 | P1 | A room task can depend on others (blockedBy). When a task is done or r | `core/deliver.node-test.ts`: “plans, sent plans and tasks reach those they are about (R25)”<br>`core/tasks.node-test.ts`: “waitingOn lists the blockers not yet done (R25)” |
+| R25 | P1 | A room task can depend on others (blockedBy). When a task is done or r | `core/deliver.node-test.ts`: “plans, sent plans and tasks reach those they are about (R25)” |
 | R26 | P1 | "Done" takes an optional note, not required evidence | `core/tasks.node-test.ts`: “release and done are the owner's only; done keeps an optional note (R24, R26)” |
 | R23a | P0 | The room list never depends on native tools | `module/tasks.test.ts`: “the task tool adds, claims, lists and finishes room tasks, each in one line (R23a, R24)” |
 | R23b | P0 | Mirror from TaskCreate and TaskUpdate | `core/tasks.node-test.ts`: “bridgeOp: completed is done, deleted is release, a reopen is nothing, untagged is activity (R23b, R24a)”<br>`module/tasks.test.ts`: “deleting a tagged native task releases the room task; a subagent's call is mine (R23b, R24a)”; “after a /clear the map is gone; TaskList, asked before the update runs, finds the tag, so a deletion still releases (R23b)” |

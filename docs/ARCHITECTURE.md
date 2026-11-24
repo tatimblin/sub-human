@@ -35,7 +35,7 @@ These hold for every module; review against them.
 4. **Inject time and I/O.** Clocks, randomness, the store and the transport are parameters. Tests use a fake clock and the memory store; nothing reads an env var for test timing.
 5. **Types at the boundary, schemas in.** Data from disk, the wire or Claude Code passes through one valibot schema per shape (`core/schema.ts`) and is typed after that. No `any`, no unchecked casts, and no `!` in runtime code.
 6. **Every Claude Code fact is in the contract.** Each `$` call and each event field the plugin relies on is listed in `contract.json`, marked `API` (in the typings) or `internal`. Internal entries are capped at 10 (PRD C2). One table (§9) maps each requirement to the surfaces it uses.
-7. **Small budget.** At most about 10k runtime lines (§11). Adding a feature means deleting something, or showing it fits.
+7. **Small budget.** Each area has a line budget (§11). Adding a feature means deleting something, or showing it fits.
 8. **Use open source for solved problems** (PRD C6). We write the product; maintained libraries do everything else. Each dependency is pinned and wrapped behind one small module of ours, so it can be swapped without touching callers. See §2a for the list.
 
 ## 2a. Dependencies
@@ -67,7 +67,7 @@ Small, single-purpose packages with few or no dependencies of their own. Each on
 
 | Piece | Why we keep it |
 |---|---|
-| **The channel**, `net/channel.ts` | This is the POC's `noise.ts`: Noise XK on `node:crypto`, 280 lines, zero dependencies, already passing the published cacophony and snow vectors. Its alternatives were weighed: `@hyperswarm/secret-stream` brings 19 MB of sodium-native; Node TLS with pinned keys needs certificate generation; `@chainsafe/libp2p-noise` pulls in libp2p. The Noise spec is frozen and the vectors run in CI, so the code we own is small and has a fixed target. |
+| **The channel**, `net/channel.ts` | Kept from the POC: Noise XK on `node:crypto`, 280 lines, zero dependencies, already passing the published cacophony and snow vectors. Its alternatives were weighed: `@hyperswarm/secret-stream` brings 19 MB of sodium-native; Node TLS with pinned keys needs certificate generation; `@chainsafe/libp2p-noise` pulls in libp2p. The Noise spec is frozen and the vectors run in CI, so the code we own is small and has a fixed target. |
 | **The log** | A hash-chained JSON-lines file in `store/` (§4), a few hundred lines. Presence, activity and focus stay JSON documents. |
 | **Invites and admission** | A 128-bit secret sent inside Noise, compared in constant time, about 20 lines (R30). The Q14 spike rejected `blind-pairing`: it brings 19 MB of sodium-native, inside Noise it adds nothing, and its last release was October 2024. |
 | **Tailscale control** | No maintained package exists; `net/pathways/tailscale.ts` drives the `tailscale` CLI. |
@@ -86,7 +86,7 @@ Small, single-purpose packages with few or no dependencies of their own. Each on
 - **`@peculiar/x509`, `node-forge`:** we don't need TLS certificates.
 - **`chokidar`:** the module has no file watch and polls a small file; the node processes use `fs.watch`.
 - **`ssh2`:** it would ignore the person's own ssh config, agent and `known_hosts`.
-- **git libraries:** the repo comes from `session.repo`. The branch, and anything else, is one `git` command through `$.process.run`, or `$.vcs.detect`, which is experimental.
+- **git libraries:** the repo and branch come from `$.vcs.detect` (marked experimental; `contract.json` `repo-branch`).
 - **Secret scanners:** we use a curated MIT pattern list (from gitleaks) as data, matched with `ignore` and a few regexes.
 - **`proper-lockfile`, `write-file-atomic`:** see "Dropped" above.
 
@@ -97,10 +97,10 @@ Small, single-purpose packages with few or no dependencies of their own. Each on
     - `@sproutseeds/tailnet-app`: manages Serve only, and only for one app's workflow;
     - `@monopi/remote-tailscale`: per-session token links and QR handoff;
     - Tailscale MCP servers: read-only diagnostics, or Tailscale's cloud API.
-  - **Talk to the LocalAPI, not the CLI.** Read and update the `ServeConfig` through tailscaled's LocalAPI (`/localapi/v0/serve-config`): a Unix socket on Linux, or a loopback port plus password for the sandboxed macOS app. This replaces shelling out to `tailscale serve`/`funnel`. A compare-and-set on that one JSON object makes "remove my forward without breaking another app's" deterministic.
+  - **Future: talk to the LocalAPI, not the CLI.** Not built; `net/pathways/tailscale.ts` drives the CLI today. Read and update the `ServeConfig` through tailscaled's LocalAPI (`/localapi/v0/serve-config`): a Unix socket on Linux, or a loopback port plus password for the sandboxed macOS app. This replaces shelling out to `tailscale serve`/`funnel`. A compare-and-set on that one JSON object makes "remove my forward without breaking another app's" deterministic.
   - **Find Tailscale on every install type.** On macOS, the App Store and GUI installs keep the binary at `/Applications/Tailscale.app/Contents/MacOS/Tailscale` and often off `PATH`; Homebrew installs use `tailscaled`. Linux and WSL differ again.
   - **Handle the limits** the spike hit: Funnel ports are 443, 8443 and 10000 only; raw TCP can't share a port already serving HTTPS; Serve and Funnel collide on the same port.
-  - **Before relying on the LocalAPI, a spike should check two things:** the exact `ServeConfig` schema and its compatibility across versions, since the LocalAPI is not a stable public API; and the macOS app's socket and credential discovery.
+  - **Future: before relying on the LocalAPI, a spike should check two things:** the exact `ServeConfig` schema and its compatibility across versions, since the LocalAPI is not a stable public API; and the macOS app's socket and credential discovery.
 - `cc-contract`, the contract probe and canary for Claude Code internals. Nothing comparable was found. Published if other plugin authors ask for it.
 
 Not published:
@@ -117,7 +117,7 @@ As built in 2.0.0. Plugin files import each other as `./x.js` (validate refuses 
 ```
 plugin/sub-human/
   core/            pure: no node:fs, no net, no Claude Code; loadable by the module and by node (relative imports only)
-    entries.ts       entry and document types, the kinds (§4), LIMITS
+    entries.ts       entry and document types, the kinds (§4), the Draft stages, LIMITS; isMember, isHere
     schema.ts        valibot schemas for everything read from outside
     result.ts        the one Result<T>
     api.ts           the daemon's socket API: requests, answers, their schemas (§5)
@@ -125,11 +125,14 @@ plugin/sub-human/
     deliver.ts       (input, member, state) → none | context | notice | wake | draw; relevance (R15c), overlap (R15d),
                      the token cap, the wake rule, its budget and the command/URL rule
     plans.ts         CAS edit, ask, answer, decide, send, accept; owners on parts → tasks
-    tasks.ts         add, claim, release, done, blockedBy; the bridge tag and its mapping
+    tasks.ts         add, claim, release, done, blockedBy (applyTask); the bridge tag and its mapping
+    join.ts          member names (nameFrom) and which room a bare join takes (pick, newCode)
+    host-rules.ts    the host's limits: invite and card times, connection caps, the rate window, address rules
+    clock.ts         the one injected clock; chains.ts calls run one at a time per key
     activity.ts      tool result → activity document or event; secrets.ts (+ data/secret-patterns.ts) the filter
     brief.ts         RoomState → catch-up text (R16), size-bounded
     mechanics.ts     the injected mechanics text (R42)
-    text.ts          one clean line and the datamark; hash.ts SHA-256 through crypto.subtle
+    text.ts          one clean line, why() and the datamark; hash.ts SHA-256 through crypto.subtle
     link-engine.ts   reconnect state machine (clock injected)
     protocol.ts      wire messages, version and caps
     cc/              contract.json (every Claude Code fact relied on) and its probe
@@ -159,9 +162,9 @@ plugin/sub-human/
   hooks/           hooks.json (the module, plus UserPromptExpansion, SessionStart, Notification, SessionEnd) and node.sh
   net/             the daemon only (the module can't load node:crypto or ws)
     daemon.ts        one per home: the socket server, its lifetime; daemon/ rooms.ts (the store writes and the rules),
-                     pointers.ts (session pointers, handoffs), open.ts (which room a bare join takes), net.ts (host
-                     and links), client.ts (node's side of the socket)
-    channel.ts       Noise XK over any Duplex (the POC's noise.ts, kept; vectors in CI)
+                     pointers.ts (session pointers, handoffs), net.ts (host and links), client.ts (node's side of
+                     the socket)
+    channel.ts       Noise XK over any Duplex (kept from the POC; vectors in CI)
     pathways/        tailscale.ts (Funnel | Serve, WebSocket), ssh.ts (ssh -W), pipe.ts (tests)
     host.ts          host side: accept, PROXY v2 (proxy-v2.ts), handshake, admission, serve ops, rate limits
     link.ts          joiner side: one link per room hosted elsewhere, running link-engine
@@ -170,7 +173,7 @@ plugin/sub-human/
   cli.ts           the one node entry for command hooks, and doctor and help in a terminal
   keys.ts          the machine key; home.ts where files live (~/.sub-human); config.ts the knobs (§10)
   resolve-ts.ts    node's resolve hook: `./x.js` → `x.ts`
-  test/            scenes/, net/, support/ (seed-room, two-homes, fake daemon), fixtures/ (cc/2.1.330 recordings);
+  test/            scenes/, net/, support/ (seed-room, two-homes, fake daemon, memory-store), fixtures/ (cc/2.1.330 recordings);
                    unit tests sit beside the code they test
 ```
 
@@ -201,14 +204,13 @@ plugin/sub-human/
 **Documents** are current state, latest-wins: overwritten rather than appended. They never wake anyone, and while the host is away a mirror keeps its own member's documents and re-sends them on reconnect (R12, R32):
 - `presence/NAME@MACHINE.json`: working, idle or away on one machine, plus a best-effort permission wait. A member is here on each machine whose presence isn't away, and their machines are those; "here" and "away" never come from the log. A room is open while any member is here;
 - `activity/NAME.json`: files edited since joining, coalesced;
-- `focus/NAME.json`: one-line focus, repo, branch;
-- `members.json`.
+- `focus/NAME.json`: one-line focus, repo, branch.
 
 **Plan text** lives in `plans/<hash>.md`, content-addressed.
 
 **Folding.** `RoomState = fold(snapshot, log after it, docs)` is the only reader logic. Every view is a function of `RoomState`: the status line, `/sub-human news`, the catch-up, `who`, delivery and the task list. There are no other caches.
 
-**The snapshot** (`snapshot.json`, P0) is written by the host every N entries, at a known `seq`. A joiner or a reconnecting mirror fetches the snapshot plus the entries after it, never the whole log. Older log segments can then be archived, so the log no longer grows without bound.
+**The snapshot** (`snapshot.json`, P0) is written by the host every N entries, at a known `seq`. A joiner or a reconnecting mirror fetches the snapshot plus the entries after it, never the whole log.
 
 ## 5. Processes
 
@@ -264,7 +266,7 @@ Native mid-turn interrupts are therefore never used for room members. Whether Cl
 2. Documents go to `store.putDoc`, and events go to `store.append`. On a mirror, the link carries them to the host, which applies them and streams them back to everyone. While offline, documents wait locally and are re-sent on reconnect.
 3. In every other session, `module/follow.ts` sees the change on its next poll and calls `deliver(entry, me, state)`:
    - `context` entries are only those that bear on my work (R15c) or overlap it (R15d). They queue for the next `prompt.submit` `context`, datamarked and capped at about 400 tokens. Claude Code's own limits (100k characters per entry, 200k in total) are far above this cap.
-   - An overlap heads-up (R15d) also reaches a Claude that is deep in a long tool loop. It goes in as a `$.session.append` note, or as the `context` on its next `tool.call` result, without starting a turn.
+   - An overlap heads-up (R15d) also reaches a Claude that is deep in a long tool loop. It rides as the `context` on its next `tool.call` result, without starting a turn (`$.session.append` is not used).
    - `notice` entries add one dim line through `ui.log`.
    - Every entry updates the `ui.status` count. The rest waits for `read` or `/sub-human news`.
 
@@ -279,7 +281,7 @@ Broadcasts never wake: a finding, a `post`, activity, a plan, a decision.
 
 How a wake is delivered:
 - It is debounced to one wake per question or sender burst, and counted against my hourly wake budget.
-- `module/wake.ts` calls `$.prompt.submit`, which runs once the session is idle. It retries if `turn.complete` reports `isAborted`, for example after Esc. It is skipped when `$.session.surfaces()` is empty (`-p`). The message is framed as `bob's Claude asks: …` and marked as data.
+- `module/wake.ts` calls `$.prompt.submit`, which runs once the session is idle. It retries if `turn.complete` reports `isAborted`, for example after Esc. It is skipped when `$.session.surfaces()` is empty (`-p`). The message is `[room CODE · bob's Claude, to you] …`, datamarked, followed by one framing line (`FRAME` in `core/deliver.ts`): a colleague's request, as data; answer only facts you are sure of and change only your own work.
 - In every mode, a direct message containing a command or URL to run is drawn for the person instead of submitted. The module can't read the permission mode, so the rule doesn't depend on it.
 - It never touches the permission mode.
 
@@ -317,13 +319,13 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 
 ## 8. Network
 
-- **Pathway interface.** One interface, `{dial(line): Promise<Duplex>, listen?(port): Stop}`. Pathways only produce byte streams; everything above them is shared.
+- **Pathway interface.** As built, a pathway is one function on the joiner's side, `Dial = (address, code) => Promise<Duplex>` (`net/link.ts`); on the host's side every pathway reaches the one loopback listener (`net/host.ts`), and a test's `pipe` hands its stream to `Net.accept(stream, source)`. Pathways only produce byte streams; everything above them is shared.
   - `tailscale` runs `tailscale funnel` (public) or `tailscale serve` (tailnet) with `--tls-terminated-tcp=PORT --proxy-protocol=2 tcp://127.0.0.1:LISTENER`. tailscaled ends TLS for the host's `ts.net` name and forwards plain TCP, each connection led by a PROXY v2 header naming the joiner's address. Only TCP forwarders (`--tcp`, `--tls-terminated-tcp`) carry that header; an `--https` web forward carries none, so it isn't used. Such a forward takes a whole port, and Funnel offers 443, 8443 and 10000: the first one free is taken, one of ours already there is kept (refused, in one line, if it lacks the header), and turning ours off leaves every other forward alone.
   - The listener reads the PROXY header, then speaks HTTP and upgrades to a WebSocket (`ws`); one WebSocket message carries one Noise frame, so `maxPayload` is a frame plus its 2-byte length (65,537 bytes). The joiner dials `wss://NODE.ts.net[:PORT]/CODE`, through `HTTPS_PROXY` (an HTTP CONNECT, with the proxy URL's user and password) when it is set. The raw-TCP spike stays unmerged (Q2).
   - A connection with no PROXY header is an `ssh -W` one and carries Noise frames as they are; an HTTP request without the header, or a header naming a loopback source, is refused.
   - `ssh` runs `ssh -W 127.0.0.1:PORT HOST` through any account the joiner has on the host machine. That reaches the same listener, with no shim and no login as the host. It needs `AllowTcpForwarding`, which `doctor` checks.
   - `pipe` is for tests.
-- **Channel.** `net/channel.ts` runs Noise XK (`Noise_XK_25519_ChaChaPoly_SHA256`) on every pathway's stream (R29c). It is the POC's `noise.ts`: `node:crypto` primitives only, no dependencies, checked against the published vectors in CI.
+- **Channel.** `net/channel.ts` runs Noise XK (`Noise_XK_25519_ChaChaPoly_SHA256`) on every pathway's stream (R29c). Kept from the POC: `node:crypto` primitives only, no dependencies, checked against the published vectors in CI.
   - The joiner already knows the host's key from the invite. Only that key can complete the handshake, so the secret is never sent to anyone else.
   - The joiner proves its own key in the third message, and that key becomes the link's identity, so a link is a key, not a token.
   - On the stream, each Noise message is a frame: a 2-byte length, then at most 64 KB. After the handshake, each frame's plaintext starts with a continuation byte (1: the message goes on in the next frame), so a message can be up to 8 MB.
@@ -354,8 +356,8 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 - Claude-to-Claude messages are caught at the sender's `session.send`, because `session.receive` carries no sender.
 - A wake uses `$.prompt.submit`, which waits until the session is idle, and is retried when `turn.complete` reports `isAborted`.
 - The command/URL rule applies in every mode, because the module can't read the mode.
-- The branch comes from `git` (or `$.vcs.detect`, which is experimental).
-- Mid-loop notes use `$.session.append` and `tool.call` `context`.
+- The repo and branch come from `$.vcs.detect`, which is marked experimental.
+- Mid-loop notes ride a `tool.call` result's `context`; `$.session.append` is not used.
 - The module has no Node and no safe write, so writes, `ws` and Noise run only in the daemon.
 
 **Status legend:** "typed" means it is in the module typings; "documented" means it is in Claude Code's docs but not the typings.
@@ -366,7 +368,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 | Native task mirror | TaskCreate `{task:{id,subject,description?}}`, TaskUpdate `statusChange` | typed |
 | Whether the session has native task tools | `$.tool.list` | typed; *why* they are off (the env var and model list) is internal |
 | Context on the next turn | `prompt.submit` hook `context`: 100k characters per entry, 200k in total. **Not `prompt.context`**, which fires once per conversation. **Not `$.state`**, which is render state. | typed. It also fires for peer and plugin prompts. |
-| Notes inside a long tool loop | `$.session.append` notes; `tool.call` result `context` | typed |
+| Notes inside a long tool loop | `tool.call` result `context` | typed |
 | Status line, dim line | `ui.status`, `ui.log` (2,000 characters drawn) | typed |
 | Let in / Refuse; keep / room / send; plan review | `ui.ask`, answered with a label or Other text | typed; it rejects when dismissed or in `-p` |
 | Full plan, scrollable | `$.ui.open` pane; Pane bodies scroll (`ui.scroll`) | typed. An unasked pane only places from 144 columns, so it opens from the card. |
@@ -406,21 +408,21 @@ Timings are constants in `config.ts`. Tests pass their own values in through par
 
 ## 11. Size budget
 
-Lines of code, comments and blank lines left out, as `node scripts/budget.ts` counts them (`--final` also holds tests
-to no more than the runtime). Built, 2.0.0:
+Lines of code, comments and blank lines left out, as `node scripts/budget.ts` counts them; it prints the built count
+of each area beside its cap (`--final` also holds tests to no more than the runtime).
 
-| Area | Lines (max) | Built |
-|---|---|---|
-| `core/` | 2,500 | 1,842 |
-| `store/` | 800 | 543 |
-| `module/` (including tools, 400) | 1,900 | 1,372 (tools 137) |
-| `commands/` | 700 | 464 |
-| `net/` (channel 300, pathways 600, host, link, invite) | 2,300 | 2,113 (channel 285, pathways 173) |
-| keys, home, config, CLI | 1,000 | 207 |
-| **Total** | **9,000** (`vendor/` not counted) | **6,541** |
-| Tests (PRD Q-3: no more than the runtime) | 6,541 | 8,246: over |
+| Area | Lines (max) |
+|---|---|
+| `core/` | 2,500 |
+| `store/` | 800 |
+| `module/` (including tools, 400) | 1,900 |
+| `commands/` | 700 |
+| `net/` (channel 300, pathways 600, host, link, invite) | 2,300 |
+| keys, home, config, CLI | 1,000 |
+| **Total** | **9,000** (`vendor/` not counted) |
+| Tests (PRD Q-3) | no more than the runtime |
 
-The test ratio is over PRD Q-3's 1:1 at the cutover; the owner decides whether to relax it, and no test is deleted to
+The tests are over PRD Q-3's 1:1 at the cutover; the owner decides whether to relax it, and no test is deleted to
 fit. A pull request that pushes an area over its line is either split or comes with a deletion.
 
 ## 12. Testing
@@ -438,7 +440,6 @@ The full plan is `docs/TESTING.md`: its layers, the test kit pattern, fixtures, 
 - **Requirements trace.** `docs/TESTING.md` §12 maps every P0 and P1 requirement to the tests that name it.
 - **Live gate.** One scripted run per release with real Claude sessions, in each permission mode, covering a no-plan pairing, a plan-then-build, a non-code task and an injection scene (PRD Q-2). It records tokens per hour (Q9), colleague context per turn (R15a) and lines per person.
 - **Canary.** Nightly, against Claude Code `latest` and `next`: the contract probe plus a typings diff (C1).
-- **Ratio.** Test code no larger than runtime code.
 
 ## 13. Build order
 

@@ -29,17 +29,17 @@ Code's hooks modules, which are on by default. It was tested on Claude Code 2.1.
 ## Commands
 
 ```
-/sub-human [NAME]    join the room open here, or open one (as NAME)
-/sub-human invite    bring in someone from another machine
-/sub-human who       who is here and what each is doing
-/sub-human tasks     the room's tasks
-/sub-human leave     leave the room; your session keeps going
+/sub-human [NAME]            join the room open here, or open one (as NAME)
+/sub-human invite NAME       bring in NAME from another machine
+/sub-human join LINE [NAME]  join a room on another machine, from the line its host sent
+/sub-human who               who is here and what each is doing
+/sub-human tasks             the room's tasks
+/sub-human leave             leave the room; your session keeps going
 ```
 
 Also:
 - `/sub-human ROOM` joins that room by its code (`vole-8126`); `NAME` and `ROOM` may come in either order. With
   several rooms open, a bare `/sub-human` lists them.
-- `/sub-human join LINE` joins a room on another machine, from the line its host sent you.
 - `/sub-human news` opens what each colleague changed and found since you last looked, and clears the count.
 - `/sub-human kick NAME` removes a member for good; `/sub-human doctor` checks this machine; `/sub-human help` lists
   the commands.
@@ -76,9 +76,8 @@ Claude Code:
 
 Jess sees a short check string at once, to tell you. You get a card naming jess, her machine and the same check
 string, with **Let in** and **Refuse**: compare the two, then answer. Once you let her in, her session takes its place
-in the room by itself, and she sees one line saying so. If someone
-else uses the line too, nobody gets in with it and you are told, with a one-key removal if it had already let someone
-in.
+in the room by itself, and she sees one line saying so. If someone else uses the line too, nobody gets in with it and
+you are told, with a one-key removal if it had already let someone in.
 
 **Over Tailscale.** Only the host needs Tailscale. A public line (Tailscale Funnel) works for a joiner with nothing
 but the plugin: no Tailscale and no account. A tailnet line (Tailscale Serve) works only on your tailnet. The
@@ -143,8 +142,8 @@ permission mode.
 ## Tasks
 
 The room has a small task list. Anyone adds a task; you claim one for yourself (refused while someone else has it);
-only its owner releases it or marks it done. A task can wait on others, and when one you're waiting on is done or released,
-your Claude hears of it. `/sub-human tasks` lists them, and your Claude has a task tool.
+only its owner releases it or marks it done. A task can wait on others, and when one you're waiting on is done or
+released, your Claude hears of it. `/sub-human tasks` lists them, and your Claude has a task tool.
 
 Your own native task list stays yours and works as it does alone. If you launch Claude Code with
 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (Claude Code's own setting, which sub-human never sets), two more things happen: your
@@ -167,9 +166,8 @@ good.
 their Claude) honestly, but that is a label, not a security boundary. Text planted in a repo could reach your Claude
 through a colleague's; the framing, the rule on commands and URLs, and an hourly wake budget limit what it can do,
 but don't make it impossible. Invite only people you'd let work on your project. No hook of sub-human's ever answers a
-permission check for you: every permission decision stays yours.
-
-The host holds the room's history and applies every write, so everyone who joins trusts the host.
+permission check for you: every permission decision stays yours. The host holds the room's history and applies every
+write, so everyone who joins trusts the host.
 
 ## When the hooks module is off
 
@@ -185,7 +183,7 @@ sessions run), every room's history, sshd's TCP forwarding, and Tailscale. A set
 
 ## Settings
 
-All optional, as environment variables:
+All optional, as environment variables; sub-human never writes your Claude Code settings files and never pins a model.
 
 | Variable | What it does |
 |---|---|
@@ -195,8 +193,6 @@ All optional, as environment variables:
 | `SUB_HUMAN_PORT` | the local port the host listens on (one is picked if unset) |
 | `SUB_HUMAN_HOME` | where sub-human keeps its files (default `~/.sub-human`) |
 | `SUB_HUMAN_CC_OFF` | `wake`, `messages` or `tasks-bridge` (comma-separated) off, if a Claude Code release breaks it |
-
-sub-human never writes your Claude Code settings files and never pins a model.
 
 ## More
 

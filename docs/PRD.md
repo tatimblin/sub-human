@@ -318,7 +318,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
   **The module has no Node and no `import()`.** It imports only its own files by relative path. So:
   - `ws` and Noise run in node children only;
   - the module talks to them over `$.http.fetch` to loopback, or through files;
-  - `$.process.spawn` children die when the module unloads, so a daemon that must outlive the session (the listener, a link daemon) detaches itself.
+  - `$.process.spawn` children die when the module unloads, so the one daemon per home, which must outlive the session, detaches itself.
 
   **Managed machines.** On Team or Enterprise logins, or wherever managed settings exist, Claude Code's guard never runs a user-installed module's `classic.*`, `prompt.context`, `prompt.attachment` or `session.compact` hooks. Policy can also turn modules off entirely. So the hooks v2 can't lose are command hooks in `hooks.json`, which the guard leaves alone:
   - the `/sub-human` expansion;

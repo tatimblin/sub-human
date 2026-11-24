@@ -51,7 +51,7 @@
 // An append to a room hosted elsewhere while its host is away answers seq 0 for a person's post, queued for a while
 // under its id; every other write there fails at once.
 //
-// Every request keeps the daemon up; it exits after a minute with none.
+// Every request keeps the daemon up; it exits after IDLE_MS (120 s, net/daemon.ts) with none.
 import * as v from '../vendor/valibot.mjs';
 import type { Acceptance, ActivityDoc, Answer, AppendDraft, By, DocKind, FocusDoc, LogState, PlanScope, PresenceDoc } from './entries.js';
 import { DOC_KINDS, LIMITS } from './entries.js';
