@@ -4,6 +4,7 @@
 // a turn already running, never starting one. The session's NAME.CODE title (R6) is set on every prompt (a no-op when
 // unchanged), and cleared after a leave. A /sub-human command takes no context, and has follow.ts read the pointer again.
 import type { On } from 'claude-code';
+import { CODE } from '../core/api.js';
 import { context } from '../core/deliver.js';
 import { mechanics } from '../core/mechanics.js';
 import { COMMAND, session } from './session.js';
@@ -15,7 +16,7 @@ export function registerContext(on: On): void {
     if (e.turnId === undefined && e.origin.kind !== 'plugin') session.turns.ended = Math.max(session.turns.ended, session.turns.started);
     if (e.command) {
       if (COMMAND.test(e.command.name)) {
-        session.joining = /^\s*join\s/.test(e.command.args) ? (/\/([a-z]+-\d{4})(?=[?#/]|$)/.exec(e.command.args)?.[1] ?? null) : null;
+        session.joining = /^\s*join\s/.test(e.command.args) ? (e.command.args.split(/[/?#\s]/).find(p => CODE.test(p)) ?? null) : null;
         const out = await next(e);
         session.recheck = true; // a join, leave or kick may have moved this session's pointer
         return out;

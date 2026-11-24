@@ -3,9 +3,9 @@
 // BatchMode, since the daemon has no terminal to ask a password on. Needs AllowTcpForwarding on the host's sshd.
 import { spawn } from 'node:child_process';
 import { Duplex, PassThrough } from 'node:stream';
-import type { Pathway } from '../invite.js';
+import type { Address } from '../invite.js';
 
-type Ssh = Extract<Pathway, { kind: 'ssh' }>;
+type Ssh = Extract<Address, { kind: 'ssh' }>;
 
 export function sshArgs(via: Ssh): string[] {
   return [

@@ -1,6 +1,5 @@
 // `/sub-human leave`: this session leaves its room and keeps going (R3). Ending the session only marks it away.
-import type { Membership } from './membership.js';
-import type { Ctx, Verb } from './types.js';
+import type { Ctx, Membership, Verb } from './types.js';
 import { refused, say } from './types.js';
 import type { Result } from '../core/result.js';
 import { ok } from '../core/result.js';

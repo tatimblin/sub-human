@@ -1,12 +1,13 @@
 // `/sub-human invite NAME [--public|--tailnet|--ssh]` (R30): one line for NAME to type on their machine, by Tailscale
 // Funnel (public, the default unless SUB_HUMAN_INVITE says otherwise), Serve (tailnet only) or the joiner's own ssh
 // login. The line works once, for a short while, and the host is asked to let them in when they type it.
-import type { Via } from '../core/api.js';
-import { nameFrom } from './membership.js';
+import type { Pathway } from '../core/api.js';
+import { INVITE_TTL_MS } from '../core/host-rules.js';
+import { nameFrom } from '../core/join.js';
 import type { Verb } from './types.js';
 import { refused, say } from './types.js';
 
-const FLAGS: Readonly<Record<string, Via>> = { '--public': 'public', '--tailnet': 'tailnet', '--ssh': 'ssh' };
+const FLAGS: Readonly<Record<string, Pathway>> = { '--public': 'public', '--tailnet': 'tailnet', '--ssh': 'ssh' };
 
 export const invite: Verb = async (args, ctx) => {
   const mine = await ctx.sessions.get(ctx.session);
@@ -18,5 +19,5 @@ export const invite: Verb = async (args, ctx) => {
   if (name === null || flags.length > 1 || via === undefined) return refused('No invite was made. Type /sub-human invite NAME, with --public, --tailnet or --ssh.');
   const r = await ctx.daemon.invite(mine.code, mine.name, name, via);
   if (!r.ok) return refused(`No invite was made: ${r.error}`);
-  return say(`Send ${name} this line to type in Claude Code; it works once, for 15 minutes, and you'll be asked to let them in:\n/sub-human join ${r.value.line}`);
+  return say(`Send ${name} this line to type in Claude Code; it works once, for ${INVITE_TTL_MS / 60_000} minutes, and you'll be asked to let them in:\n/sub-human join ${r.value.line}`);
 };

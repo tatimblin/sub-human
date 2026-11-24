@@ -1,9 +1,11 @@
 // The six knobs (ARCHITECTURE §10), read here and nowhere else, and the timings, which are constants: tests pass
 // their own values in through parameters, never through the environment. A knob set to a value it can't take keeps
 // its default, and `problems` says which, for doctor.
+import type { Pathway } from './core/api.js';
+import { PATHWAYS } from './core/api.js';
+import { parsePort } from './core/host-rules.js';
 import { homeDir } from './home.js';
 
-export type Pathway = 'public' | 'tailnet' | 'ssh';
 /** The features SUB_HUMAN_CC_OFF can turn off: the module's parts that rest on a Claude Code surface a release may break. */
 export const GATED = ['wake', 'messages', 'tasks-bridge'] as const;
 export type Gated = (typeof GATED)[number];
@@ -29,7 +31,6 @@ export const TIMINGS = {
   run: 3_000,
 } as const;
 
-const PATHWAYS: readonly Pathway[] = ['public', 'tailnet', 'ssh'];
 const isPathway = (s: string): s is Pathway => PATHWAYS.some(p => p === s);
 const isGated = (s: string): s is Gated => GATED.some(f => f === s);
 
@@ -41,9 +42,8 @@ export function readConfig(env: Env, userHome: string): Config {
   if (!isPathway(invite)) problems.push(`SUB_HUMAN_INVITE=${invite} is not public, tailnet or ssh; public is used`);
 
   const portText = set('SUB_HUMAN_PORT') ?? '0';
-  const port = /^\d{1,5}$/.test(portText) ? Number(portText) : NaN;
-  const portOk = port >= 0 && port <= 65_535;
-  if (!portOk) problems.push(`SUB_HUMAN_PORT=${portText} is not a port; one is picked`);
+  const port = parsePort(portText);
+  if (port === null) problems.push(`SUB_HUMAN_PORT=${portText} is not a port; one is picked`);
 
   const off = (set('SUB_HUMAN_CC_OFF') ?? '').split(',').map(s => s.trim()).filter(s => s !== '');
   for (const f of off) if (!isGated(f)) problems.push(`SUB_HUMAN_CC_OFF names ${f}; only ${GATED.join(', ')} can be turned off`);
@@ -55,7 +55,7 @@ export function readConfig(env: Env, userHome: string): Config {
     ...(name !== undefined && { name }),
     invite: isPathway(invite) ? invite : 'public',
     ...(sshAddr !== undefined && { sshAddr }),
-    port: portOk ? port : 0,
+    port: port ?? 0,
     off: off.filter(isGated),
     problems,
   };

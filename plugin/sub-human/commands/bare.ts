@@ -2,7 +2,7 @@
 // cwd last used while a member, else the one room open here, else a new one; several open, it lists them and joins
 // none. The daemon decides (net/daemon/open.ts).
 import { CODE } from '../core/api.js';
-import { nameFrom } from './membership.js';
+import { nameFrom } from '../core/join.js';
 import type { Ctx, Verb } from './types.js';
 import { refused, say } from './types.js';
 

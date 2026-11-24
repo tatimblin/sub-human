@@ -1,10 +1,9 @@
 // What every /sub-human verb is handed and answers. The verbs write nothing themselves: each write is one call to the
 // daemon (Daemon), and reads go through Rooms and Sessions, so a test hands them in over memory stores.
 import type { Config } from '../config.js';
-import type { Answers, Joining, Pointer, Request, Via } from '../core/api.js';
+import type { Answers, Joining, Pathway, Pointer, Request } from '../core/api.js';
 import type { DocKinds, RoomState } from '../core/entries.js';
 import type { Result } from '../core/result.js';
-import type { Membership } from './membership.js';
 
 /** One line, or a few for help, who and doctor. A refusal says what didn't happen and one thing to do (R43). */
 export type Answer = { readonly kind: 'say' | 'refused'; readonly text: string };
@@ -30,7 +29,7 @@ export interface Daemon {
   /** `claim`: that next session takes a fresh handoff as its own pointer, or there is none. */
   claim(id: string, cwd: string): Promise<Result<Pointer | null>>;
   /** `invite`: a line for `name`, by `via`; the daemon starts the listener and its forward. */
-  invite(code: string, from: string, name: string, via: Via): Promise<Result<Answers['invite']>>;
+  invite(code: string, from: string, name: string, via: Pathway): Promise<Result<Answers['invite']>>;
   /** `dial`: proves an invite line to its host; once the host lets it in, the daemon joins `session` to the room. */
   dial(line: string, name: string, session: Joining): Promise<Result<Answers['dial']>>;
   /** `link`: how this machine's link to a room hosted elsewhere is doing, or null. */
@@ -40,6 +39,9 @@ export interface Daemon {
   /** How many sessions' modules have pinged it, and the Claude Code versions they run. */
   status(): Promise<Result<{ readonly sessions: number; readonly cc: readonly string[] }>>;
 }
+
+/** A session in a room: its id (the pointer file's name) and what the pointer holds. */
+export interface Membership extends Pointer { readonly id: string }
 
 /** The rooms this home holds, read straight from the store. */
 export interface Rooms {

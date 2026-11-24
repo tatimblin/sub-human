@@ -21,6 +21,8 @@ export async function fileKey(name: string): Promise<string> {
 
 /** `key` is a fileKey; a room's is never of an empty code. */
 export function roomDir(home: string, key: string): string { return `${home}/rooms/${key}`; }
+/** This machine's record of its link to a room hosted elsewhere. */
+export function linkFile(home: string, key: string): string { return `${home}/links/${key}.json`; }
 export function logFile(room: string): string { return `${room}/log.jsonl`; }
 export function lockFile(room: string): string { return `${room}/log.lock`; }
 export function tailFile(room: string): string { return `${room}/tail.json`; }

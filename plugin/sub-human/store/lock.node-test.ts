@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { REAL_CLOCK, breakStale, withLock } from './lock.js';
+import { REAL_CLOCK } from '../core/clock.js';
+import { breakStale, withLock } from './lock.js';
 import type { LockClock, LockOptions, Seen } from './lock.js';
 
 async function lockPath(): Promise<string> {

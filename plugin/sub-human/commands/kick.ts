@@ -1,6 +1,6 @@
 // `/sub-human kick NAME`: the host ends that member's access to this room, at once and for good (R31). Whether this
 // machine hosts the room is the daemon's to check: it refuses a kick from anywhere else.
-import { nameFrom } from './membership.js';
+import { nameFrom } from '../core/join.js';
 import type { Verb } from './types.js';
 import { refused, say } from './types.js';
 

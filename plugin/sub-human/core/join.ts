@@ -1,10 +1,30 @@
-// Which room a bare /sub-human joins (core/api.ts join), as a pure rule over the rooms here: the room asked for; else
-// the room this cwd last used, while the person is a member; else the one open room (a member present); else, with
-// several open, none (they are listed); else a new code.
-import type { RoomState } from '../../core/entries.js';
-import type { Result } from '../../core/result.js';
-import { err, ok } from '../../core/result.js';
-import { isHere } from '../../core/entries.js';
+// The rules a join follows, pure: a person's member name, and which room a bare /sub-human joins (core/api.ts join):
+// the room asked for; else the room this cwd last used, while the person is a member; else the one open room (a member
+// present); else, with several open, none (they are listed); else a new code.
+import type { RoomState } from './entries.js';
+import { isHere } from './entries.js';
+import type { Result } from './result.js';
+import { err, ok } from './result.js';
+
+/** The /sub-human verbs, by their first word (commands/index.ts loads one file per verb). */
+export const VERBS: readonly ['who', 'tasks', 'leave', 'kick', 'help', 'doctor', 'news', 'invite', 'join'] =
+  ['who', 'tasks', 'leave', 'kick', 'help', 'doctor', 'news', 'invite', 'join'];
+export type VerbName = (typeof VERBS)[number];
+
+/** A member name: one lowercase word, so `NAME.CODE` reads one way. */
+export const NAME: RegExp = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+/** Names that would read as a verb or as the room itself. */
+export const RESERVED: ReadonlySet<string> = new Set(['room', 'all', 'claude', 'system', 'host', ...VERBS]);
+
+/**
+ * A person's own name as a member name: the first word, lowercased, accents and other marks dropped. A name ending in
+ * `-<digits>` is none: that is how a second session's title reads (core/api.ts titleFor).
+ */
+export function nameFrom(text: string): string | null {
+  const first = text.trim().split(/\s+/)[0] ?? '';
+  const n = first.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9_-]/g, '').replace(/^[_-]+/, '').slice(0, 32);
+  return NAME.test(n) && !RESERVED.has(n) && !/-\d+$/.test(n) ? n : null;
+}
 
 export type Pick = { readonly code: string; readonly fresh: boolean } | { readonly rooms: readonly string[] };
 

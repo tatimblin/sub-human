@@ -1,8 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CODE } from '../core/api.js';
-import { newCode } from '../net/daemon/open.js';
-import { nameFrom } from './membership.js';
+import { CODE } from './api.js';
+import { nameFrom, newCode } from './join.js';
 
 test('nameFrom: the first word, lowercased, marks dropped; reserved words, -digits names and nothing left are no name', () => {
   for (const [text, want] of [

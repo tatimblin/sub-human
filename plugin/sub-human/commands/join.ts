@@ -2,7 +2,7 @@
 // the joiner reads to the host. Once the host lets this machine in and the room has synced, the daemon takes this
 // session into the room itself, and the module draws the line saying so (module/follow.ts).
 import { MODULES_OFF, defaultName } from './bare.js';
-import { nameFrom } from './membership.js';
+import { nameFrom } from '../core/join.js';
 import type { Verb } from './types.js';
 import { refused, say } from './types.js';
 

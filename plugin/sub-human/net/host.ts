@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import type { Duplex } from 'node:stream';
 import * as v from '../vendor/valibot.mjs';
-import type { Ask, RoomRequest, Via } from '../core/api.js';
+import type { Ask, Pathway, RoomRequest } from '../core/api.js';
 import { decodeRequest } from '../core/api.js';
 import type { LogLine } from '../core/entries.js';
 import type { ByeReason, ToLink } from '../core/protocol.js';
@@ -22,26 +22,14 @@ import { writeAtomic } from '../store/atomic.js';
 import type { Channel, KeyPair } from './channel.js';
 import { HANDSHAKE_MS, accept } from './channel.js';
 import type { Rooms } from './daemon/rooms.js';
-import type { InviteRecord, Pathway } from './invite.js';
+import type { Address, InviteRecord } from './invite.js';
 import { mint, verify } from './invite.js';
-import { nameFrom } from '../commands/membership.js';
+import { nameFrom } from '../core/join.js';
 import { LIMITS, isMember } from '../core/entries.js';
+import type { Rated, Window } from '../core/host-rules.js';
+import { ADMIT_MS, INVITE_TTL_MS, RATES, allow, fits, isLoopback, perNet, sshAddress } from '../core/host-rules.js';
 import { parseProxy } from './proxy-v2.js';
 import { acceptWs } from './pathways/tailscale.js';
-
-export const INVITE_TTL_MS: number = 15 * 60_000;
-export const ADMIT_MS: number = 5 * 60_000;
-export const SOURCE_MAX: number = 8;
-/** Every ssh -W connection is the one source `local`, so it has a cap of its own, well under the total. */
-export const LOCAL_MAX: number = 32;
-/** Connections not yet closed from every source together, so many made-up sources still hold little. */
-export const TOTAL_MAX: number = 64;
-/** Of those, what only local connections (ssh -W, which come with no PROXY header) may take: so public sources can't
- *  lock out ssh joiners. */
-export const LOCAL_RESERVE: number = 8;
-type Rated = 'append' | 'put_blob' | 'put_doc' | 'message' | 'subscribe';
-/** Per link and minute (R40); a plan or task call counts as an append. */
-export const RATES: Readonly<Record<Rated, number>> = { append: 120, put_blob: 30, put_doc: 240, message: 120, subscribe: 6 };
 
 /** A machine let into a room: its link key, the member it writes as, the invite it came in on. */
 interface LinkRecord { key: string; code: string; name: string; machine: string; invite: string; kicked: boolean }
@@ -85,7 +73,7 @@ const stateSchema = v.object({
 
 interface Live {
   readonly ch: Channel; readonly link: LinkRecord; out: Promise<void>; stop?: () => void; closing?: true;
-  readonly used: Map<string, { at: number; n: number }>;
+  readonly used: Map<Rated, Window>;
 }
 /** How long a link told bye has to close before the host closes it, so the bye is read first. */
 const BYE_MS = 1000;
@@ -161,17 +149,17 @@ export class Host {
   }
 
   /** One line for NAME by the chosen pathway, recorded in the room (never its secret). */
-  async invite(req: { code: string; from: string; name: string; via: Via }): Promise<Result<{ line: string }>> {
+  async invite(req: { code: string; from: string; name: string; via: Pathway }): Promise<Result<{ line: string }>> {
     const st = await this.o.rooms.state(req.code);
     if (!st.ok) return st;
     if (!isMember(st.value, req.from)) return err(`${req.from} is not in ${req.code}; no invite was made`);
     if (st.value.members.some(m => m.name === req.name && m.kicked)) return err(`${req.name} was removed from ${req.code}; no invite was made`);
     const port = await this.listen();
-    let via: Pathway;
+    let via: Address;
     if (req.via === 'ssh') {
-      const m = /^(?:([A-Za-z0-9_][A-Za-z0-9._-]*)@)?([A-Za-z0-9][A-Za-z0-9.-]*)(?::(\d{1,5}))?$/.exec(this.o.sshAddr);
-      if (!m?.[2]) return err(`"${this.o.sshAddr}" is not an ssh address; no invite was made. Set SUB_HUMAN_SSH_ADDR to [user@]host`);
-      via = { kind: 'ssh', host: m[2], user: m[1] ?? null, sshPort: m[3] ? Number(m[3]) : null, port };
+      const a = sshAddress(this.o.sshAddr);
+      if (!a) return err(`"${this.o.sshAddr}" is not an ssh address; no invite was made. Set SUB_HUMAN_SSH_ADDR to [user@]host`);
+      via = { kind: 'ssh', ...a, port };
     } else {
       let f = this.forwards.get(req.via);
       if (!f) {
@@ -241,8 +229,7 @@ export class Host {
   /** Counts a connection against its source's cap and the total until it closes; false (and closed) when either is full. */
   private take(stream: Duplex, source: string): boolean {
     const n = this.sources.get(source) ?? 0;
-    const cap = source === 'local' ? TOTAL_MAX : TOTAL_MAX - LOCAL_RESERVE;
-    if (n >= (source === 'local' ? LOCAL_MAX : SOURCE_MAX) || this.total >= cap) { stream.destroy(); return false; }
+    if (!fits(source, n, this.total)) { stream.destroy(); return false; }
     this.sources.set(source, n + 1);
     this.total++;
     stream.once('close', () => {
@@ -274,7 +261,7 @@ export class Host {
         clearTimeout(quiet);
         sock.off('data', first);
         // tailscaled names the joiner's own address; a loopback one is a local peer claiming to be the forward
-        if (p.kind === 'bad' || /^(127\.|0:0:0:0:0:0:0:1$|0:0:0:0:0:ffff:7f)/.test(p.source)) { sock.destroy(); return; }
+        if (p.kind === 'bad' || isLoopback(p.source)) { sock.destroy(); return; }
         if (this.take(sock, perNet(p.source))) void acceptWs(sock, p.rest).then(d => { if (d) this.handshake(d); else sock.destroy(); });
         return;
       }
@@ -450,9 +437,9 @@ export class Host {
   }
 
   private allow(l: Live, op: Rated): boolean {
-    const now = this.o.now(), w = l.used.get(op);
-    if (!w || now - w.at >= 60_000) { l.used.set(op, { at: now, n: 1 }); return true; }
-    return ++w.n <= (this.o.rates?.[op] ?? RATES[op]);
+    const r = allow(l.used.get(op), this.o.now(), this.o.rates?.[op] ?? RATES[op]);
+    l.used.set(op, r.window);
+    return r.ok;
   }
 
   private awake(): void {
@@ -470,6 +457,3 @@ export class Host {
     return this.saving;
   }
 }
-
-/** A source as its cap counts it: an IPv4 address, or an IPv6 one's /64, which one joiner holds whole. */
-const perNet = (s: string): string => (s.includes(':') ? `${s.split(':').slice(0, 4).join(':')}::/64` : s);

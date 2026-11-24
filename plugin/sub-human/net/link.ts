@@ -12,6 +12,8 @@ import type { AppendDraft, Answers, LinkStatus, Op, RoomRequest } from '../core/
 import { HOST_AWAY as AWAY, decodeAppendDraft, readAnswer } from '../core/api.js';
 import type { RoomState } from '../core/entries.js';
 import { DOC_KINDS } from '../core/entries.js';
+import type { Clock as FullClock } from '../core/clock.js';
+import { REAL_CLOCK } from '../core/clock.js';
 import { fold } from '../core/fold.js';
 import type { LinkEffect, LinkEvent, LinkState, Timer, Timings } from '../core/link-engine.js';
 import { initial, step } from '../core/link-engine.js';
@@ -20,36 +22,33 @@ import { decodeToLink, encode, hello, negotiate, skewLine } from '../core/protoc
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { decodeDoc, parseJson } from '../core/schema.js';
-import { fileKey, roomDir } from '../home.js';
+import { fileKey, linkFile, roomDir } from '../home.js';
 import { writeAtomic } from '../store/atomic.js';
 import { MirrorStore } from '../store/mirror-store.js';
 import type { Draft } from '../store/store.js';
 import type { Channel, KeyPair } from './channel.js';
 import { NoiseError, connect } from './channel.js';
 import type { Rooms } from './daemon/rooms.js';
-import type { Pathway } from './invite.js';
+import type { Address } from './invite.js';
 import { mac, parse } from './invite.js';
 
 /** A pathway's one job: a byte stream to the host the line names. */
-export type Dial = (via: Pathway, code: string) => Promise<Duplex>;
-export interface Clock { now(): number; after(ms: number, fn: () => void): () => void }
-export const REAL_CLOCK: Clock = {
-  now: () => Date.now(),
-  after: (ms, fn) => { const t = setTimeout(fn, ms); t.unref(); return () => { clearTimeout(t); }; },
-};
+export type Dial = (via: Address, code: string) => Promise<Duplex>;
+/** The link's part of the clock. */
+export type Clock = Pick<FullClock, 'now' | 'after'>;
 export const TIMINGS: Timings = { retryMs: 1000, retryMaxMs: 60_000, dialMs: 20_000, pingMs: 25_000, pongMs: 10_000, tickMs: 5000, postTtlMs: 10 * 60_000 };
 /** How long a write waits for the host's ack, and a join for the host's answer (its card waits five minutes). */
 const WRITE_MS = 15_000;
 const JOIN_MS = 6 * 60_000;
 
-const linkFile = v.object({
+const linkRecord = v.object({
   code: v.string(), name: v.string(), hostKey: v.string(), stopped: v.exactOptional(v.string()),
   via: v.variant('kind', [
     v.object({ kind: v.literal('https'), origin: v.string() }),
     v.object({ kind: v.literal('ssh'), host: v.string(), user: v.nullable(v.string()), sshPort: v.nullable(v.number()), port: v.number() }),
   ]),
 });
-type LinkFile = v.InferOutput<typeof linkFile>;
+type LinkFile = v.InferOutput<typeof linkRecord>;
 
 export interface LinkSetOptions {
   readonly home: string;
@@ -73,7 +72,7 @@ export class LinkSet {
     const dir = `${this.o.home}/links`;
     for (const n of await fs.readdir(dir).catch(() => [])) {
       if (!n.endsWith('.json')) continue;
-      const r = parseJson(linkFile, await fs.readFile(`${dir}/${n}`, 'utf8').catch(() => ''));
+      const r = parseJson(linkRecord, await fs.readFile(`${dir}/${n}`, 'utf8').catch(() => ''));
       // one unreadable file costs its own room's link, never the daemon's start
       if (r.ok) await this.add(r.value);
       else this.o.rooms.note(`sub-human: could not read its record of a room joined elsewhere (${n}: ${r.error}); that room stays closed here`);
@@ -93,7 +92,7 @@ export class LinkSet {
   async forget(code: string): Promise<void> {
     this.links.get(code)?.close();
     this.links.delete(code);
-    await fs.rm(`${this.o.home}/links/${await fileKey(code)}.json`, { force: true });
+    await fs.rm(linkFile(this.o.home, await fileKey(code)), { force: true });
   }
   status(code: string): LinkStatus | null { return this.links.get(code)?.status ?? this.joining.get(code) ?? null; }
 
@@ -126,7 +125,7 @@ export class LinkSet {
       ch.close();
       if (why !== null) { this.joining.set(code, { phase: 'stopped', why }); return; }
       const file: LinkFile = { code, name, hostKey: hostKey.toString('base64url'), via };
-      await writeAtomic(`${this.o.home}/links/${await fileKey(code)}.json`, JSON.stringify(file));
+      await writeAtomic(linkFile(this.o.home, await fileKey(code)), JSON.stringify(file));
       await this.add(file);
       this.joining.delete(code);
     };
@@ -287,7 +286,7 @@ class Link {
   private async finish(why: string): Promise<void> {
     this.close();
     this.status = { phase: 'stopped', why };
-    await writeAtomic(`${this.o.home}/links/${await fileKey(this.file.code)}.json`, JSON.stringify({ ...this.file, stopped: why }));
+    await writeAtomic(linkFile(this.o.home, await fileKey(this.file.code)), JSON.stringify({ ...this.file, stopped: why }));
   }
 
   private async dial(conn: number): Promise<void> {

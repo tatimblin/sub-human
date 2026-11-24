@@ -6,23 +6,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
+import type { Clock } from '../core/clock.js';
+import { REAL_CLOCK } from '../core/clock.js';
 
-/** The lock's time: injected, so tests run it on mock timers (ARCHITECTURE §2, principle 4). */
-export interface LockClock {
-  now(): number;
-  sleep(ms: number): Promise<void>;
-  /** Calls fn every ms until the returned stop; never keeps the process alive by itself. */
-  every(ms: number, fn: () => void): () => void;
-}
-export const REAL_CLOCK: LockClock = {
-  now: () => Date.now(),
-  sleep: ms => new Promise(r => { setTimeout(r, ms); }),
-  every: (ms, fn) => {
-    const t = setInterval(fn, ms);
-    t.unref();
-    return () => { clearInterval(t); };
-  },
-};
+/** The lock's part of the clock. */
+export type LockClock = Pick<Clock, 'now' | 'sleep' | 'every'>;
 export interface LockOptions { readonly waitMs?: number; readonly staleMs?: number; readonly clock?: LockClock }
 /** What a waiter saw at the lock path. */
 export interface Seen { readonly token: string; readonly mtimeMs: number }

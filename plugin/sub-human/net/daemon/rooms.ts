@@ -10,7 +10,7 @@ import { API_VERSION, CODE, HOST_AWAY, SESSION_ID, pingedFile, refusedAppend, se
 import { sha256 } from '../../core/hash.js';
 import { Pointers } from './pointers.js';
 import { asRoom, fold } from '../../core/fold.js';
-import { pick } from './open.js';
+import { pick } from '../../core/join.js';
 import type { Docs, Draft, Kind, LogLine, RoomState, Snapshot } from '../../core/entries.js';
 import { applyPlan, decide, latestVersion } from '../../core/plans.js';
 import type { Texts } from '../../core/plans.js';

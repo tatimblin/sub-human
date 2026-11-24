@@ -12,21 +12,22 @@
 import crypto from 'node:crypto';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
+import { CODE } from '../core/api.js';
+import { parsePort } from '../core/host-rules.js';
 
 const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
 const LOOKALIKE: Readonly<Record<string, string>> = { i: '1', l: '1', o: '0' };
 const KEY_BYTES = 32, SECRET_BYTES = 16, BYTES = KEY_BYTES + SECRET_BYTES;
 const WORD_LEN = Math.ceil((BYTES * 8) / 5);
 const WORD = new RegExp(`^[${ALPHABET}]{${WORD_LEN}}$`);
-const CODE = /^[a-z][a-z0-9-]{1,39}$/;
 const HOST = /^[A-Za-z0-9][A-Za-z0-9.-]*$/; // never an ssh option: no leading '-'
 const USER = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 
-export type Pathway =
+export type Address =
   | { kind: 'https'; origin: string }
   | { kind: 'ssh'; host: string; user: string | null; sshPort: number | null; port: number };
 
-export interface Invite { code: string; hostKey: Buffer; secret: Buffer; via: Pathway }
+export interface Invite { code: string; hostKey: Buffer; secret: Buffer; via: Address }
 
 /** open → pending (dialled, waiting on the host's answer) → used; refused or expired is dead. */
 export type InviteState = 'open' | 'pending' | 'used' | 'dead';
@@ -79,7 +80,7 @@ export function format(invite: Invite): string {
 }
 
 /** A new line bound to the expected name and this host's key, and the host's record of it. */
-export function mint(o: { code: string; name: string; hostKey: Buffer; via: Pathway; now: number; ttlMs: number }): {
+export function mint(o: { code: string; name: string; hostKey: Buffer; via: Address; now: number; ttlMs: number }): {
   line: string;
   record: InviteRecord;
 } {
@@ -95,12 +96,12 @@ export function mint(o: { code: string; name: string; hostKey: Buffer; via: Path
 }
 
 const port = (s: string | null): number | null => {
-  const n = s !== null && /^\d{1,5}$/.test(s) ? Number(s) : 0;
-  return n >= 1 && n <= 65535 ? n : null;
+  const n = s === null ? null : parsePort(s);
+  return n === null || n === 0 ? null : n;
 };
 const unescape = (s: string): string | null => { try { return decodeURIComponent(s); } catch { return null; } };
 
-function pathwayOf(url: URL): Result<Pathway> {
+function pathwayOf(url: URL): Result<Address> {
   if (url.protocol === 'https:') {
     if (url.username || url.password || url.search) return err('an https invite has no user or query');
     return ok({ kind: 'https', origin: url.origin });

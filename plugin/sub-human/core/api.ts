@@ -138,7 +138,9 @@ export type TaskAct =
   | { readonly act: 'done'; readonly n: number; readonly note?: string };
 interface Writer { readonly code: string; readonly from: string }
 /** How an invite line reaches this machine: Tailscale Funnel, Tailscale Serve, or the joiner's own ssh login. */
-export type Via = 'public' | 'tailnet' | 'ssh';
+/** How a joiner reaches the host: Funnel, Serve, or the joiner's own ssh login. */
+export const PATHWAYS: readonly ['public', 'tailnet', 'ssh'] = ['public', 'tailnet', 'ssh'];
+export type Pathway = (typeof PATHWAYS)[number];
 /**
  * A dial for the host: a joiner to let in (admit); or a line dialled a second time, both dials refused: before anyone
  * was let in with it (again), or after `name` was (leaked, and the card offers to kick them).
@@ -180,7 +182,7 @@ export type Request =
   | { readonly op: 'message'; readonly code: string; readonly to: string; readonly from: string; readonly text: string }
   | { readonly op: 'inbox'; readonly session: string }
   | { readonly op: 'status'; readonly session?: string }
-  | ({ readonly op: 'invite'; readonly name: string; readonly via: Via } & Writer)
+  | ({ readonly op: 'invite'; readonly name: string; readonly via: Pathway } & Writer)
   | { readonly op: 'asks'; readonly session: string }
   | { readonly op: 'admit'; readonly session: string; readonly code: string; readonly id: string; readonly answer: 'let_in' | 'refuse' | 'kick' }
   | ({ readonly op: 'kick'; readonly name: string } & Writer)
@@ -262,7 +264,7 @@ const request = v.variant('op', [
   v.object({ op: v.literal('message'), code: name, to: name, from: name, text }),
   v.object({ op: v.literal('inbox'), session }),
   v.object({ op: v.literal('status'), session: opt(sessionId) }),
-  v.object({ op: v.literal('invite'), ...writer, name, via: v.picklist(['public', 'tailnet', 'ssh']) }),
+  v.object({ op: v.literal('invite'), ...writer, name, via: v.picklist(PATHWAYS) }),
   v.object({ op: v.literal('asks'), session }),
   v.object({ op: v.literal('admit'), session, code: name, id: name, answer: v.picklist(['let_in', 'refuse', 'kick']) }),
   v.object({ op: v.literal('kick'), ...writer, name }),

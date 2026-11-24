@@ -8,8 +8,7 @@ import type { Config } from '../config.js';
 import { TIMINGS } from '../config.js';
 import { CODE, SESSION_ID, decodePointer, sessionFile } from '../core/api.js';
 import { err, ok } from '../core/result.js';
-import type { Membership } from './membership.js';
-import type { Ctx, Daemon, Rooms, Run, Sessions } from './types.js';
+import type { Ctx, Daemon, Membership, Rooms, Run, Sessions } from './types.js';
 
 const PLUGIN = fileURLToPath(new URL('..', import.meta.url));
 

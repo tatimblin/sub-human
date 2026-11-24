@@ -4,14 +4,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { mac, mint, parse, verify } from './invite.js';
-import type { InviteRecord, Pathway } from './invite.js';
+import type { InviteRecord, Address } from './invite.js';
 
 const hostKey = crypto.randomBytes(32), joinerKey = crypto.randomBytes(32);
 const NOW = 1_000_000, TTL = 15 * 60_000;
-const lineFor = (via: Pathway) => mint({ code: 'vole-8126', name: 'jess', hostKey, via, now: NOW, ttlMs: TTL });
+const lineFor = (via: Address) => mint({ code: 'vole-8126', name: 'jess', hostKey, via, now: NOW, ttlMs: TTL });
 
 test('mint and parse: https (Funnel or Serve) and ssh lines carry the code, the host key and the secret', () => {
-  const cases: [Pathway, RegExp][] = [
+  const cases: [Address, RegExp][] = [
     [{ kind: 'https', origin: 'https://devbox.tail1234.ts.net' }, /^https:\/\/devbox\.tail1234\.ts\.net\/vole-8126#[0-9a-hjkmnp-tv-z]{77}$/],
     [{ kind: 'https', origin: 'https://devbox.tail1234.ts.net:8443' }, /^https:\/\/devbox\.tail1234\.ts\.net:8443\/vole-8126#/],
     [{ kind: 'ssh', host: 'devbox', user: null, sshPort: null, port: 7311 }, /^ssh:\/\/devbox\/vole-8126\?port=7311#/],
@@ -99,6 +99,6 @@ test('parse never throws: a bad escape, a hex or exponent port, and 200k random 
 });
 
 test('mint refuses a host key of the wrong length', () => {
-  const via: Pathway = { kind: 'https', origin: 'https://h.ts.net' };
+  const via: Address = { kind: 'https', origin: 'https://h.ts.net' };
   assert.throws(() => mint({ code: 'vole-8126', name: 'jess', hostKey: Buffer.alloc(31), via, now: NOW, ttlMs: TTL }), TypeError);
 });
