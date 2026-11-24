@@ -66,7 +66,7 @@ Existing options are:
 | Across repos | A front-end dev in the web repo and a back-end dev in the API repo | One room spanning both repos. The front-end Claude learns of an API change as it lands, and can ask the back-end Claude about an endpoint |
 | Friend on another machine | Joining from anywhere. Few people can ssh into a friend's machine | Open one URL the host sent and be in. Nothing to install beyond the plugin; only the host runs Tailscale (Funnel) |
 | Coworker on a corporate network | Tailscale is blocked, but ssh to the host works | The same one-line join over their own ssh login |
-| Solo, two machines | One person on a laptop and a dev box | The same room across both, counted as one person for agreement |
+| Solo, two machines | One person on a laptop and a dev box | The same room across both. The second machine joins under its own name (`tristan2` if it asks for `tristan`), so each shows the other |
 | Non-code collaborators | Writing a doc, planning, research | Nothing in the flow assumes code ("Ready to code?", evidence on done) |
 
 **Core stories:**
@@ -94,7 +94,7 @@ Priority: **P0** = v2.0 ships with it; **P1** = v2.0 if cheap, else v2.1; **P2**
 - **R2 (P0)** A room has a short human-readable code (e.g. `vole-8126`). Each member is addressed `NAME.CODE`.
 - **R3 (P0)** `/room leave` leaves the room and keeps the session. Ending the session doesn't leave: the member shows as away until a session of theirs comes back. A room with nobody left closes, and its data is deleted after a fixed retention period.
 - **R4 (P0)** `/room who` lists the members, their machines and their state. `/room help` lists every command.
-- **R5 (P1)** One person seated from two sessions or two machines counts once for agreement.
+- **R5 (P1)** One person seated from two sessions on one machine counts once for agreement. A name is one machine's: a second machine that joins under a name already in the room is let in as the first free `NAME2`, `NAME3`, … and told so.
 
 ### 6.2 Live updates from the work
 This is the product. Everything else supports it. The POC scored itself 1/5 here.

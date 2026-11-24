@@ -284,6 +284,28 @@ test('a join that fails after Let in is the link\'s one stopped answer; the bare
   assert.deepEqual((await hostLog(h)).at(-1), 'joined');
 });
 
+test('the last session here to leave drops the link and the copy; the line\'s room can be joined again; another session in it keeps the link (R3)', async t => {
+  const h = await twoHomes(t);
+  await joinBob(h);
+  for (const id of ['sb', 'sc']) await h.joiner.ok({ op: 'join', id, cwd: `/w/${id}`, name: 'bob', leave: crypto.randomUUID(), code: CODE });
+  const there = async (f: string): Promise<boolean> => fs.access(f).then(() => true, () => false);
+  const files = async (): Promise<boolean[]> => [await there(`${h.joiner.home}/links/${CODE}.json`), await there(roomDir(h.joiner.home, await fileKey(CODE)))];
+  await h.joiner.ok({ op: 'leave', id: 'sc' });
+  assert.equal((await h.joiner.ok({ op: 'link', code: CODE }))?.phase, 'online', 'sb is still in the room');
+  assert.deepEqual(await files(), [true, true]);
+  await h.joiner.ok({ op: 'leave', id: 'sb' });
+  assert.equal(await h.joiner.ok({ op: 'link', code: CODE }), null);
+  assert.deepEqual(await files(), [false, false]);
+  assert.equal((await hostLog(h)).at(-1), 'left');
+  const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
+  const leave = crypto.randomUUID();
+  await h.joiner.ok({ op: 'dial', line, name: 'bob', session: { id: 'sd', cwd: '/w/sd', leave } });
+  await linkIs(h, 'online');
+  const pointer = await until('the new session\'s pointer', () => fs.readFile(sessionFile(h.joiner.home, 'sd'), 'utf8').then(decodePointer, () => null));
+  assert.deepEqual(pointer, { code: CODE, name: 'bob', title: `bob.${CODE}`, leave });
+  assert.equal((await hostLog(h)).at(-1), 'joined');
+});
+
 test('a copy the sweep deletes loses its link for good: closed, and its file gone (R3)', async t => {
   const h = await twoHomes(t);
   await joinBob(h);

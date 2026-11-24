@@ -10,6 +10,7 @@ export const doctor: Verb = async (_args, ctx) => {
   const lines: Line[] = [
     node(ctx.nodeVersion),
     socket(ctx.config.home),
+    ...await writable(ctx),
     await moduleOn(ctx),
     await claudeCode(ctx),
     await rooms(ctx),
@@ -27,6 +28,13 @@ export function nodeRuns(version: string): boolean {
 }
 function node(version: string): Line {
   return nodeRuns(version) ? ['ok', `node ${version}`] : ['fix', `node ${version} can't run sub-human; install Node 22.18+ or 24.3+ and restart claude`];
+}
+
+/** A daemon that can't write to the home is ended by the next command that writes (net/daemon/client.ts ensure). */
+async function writable(ctx: Ctx): Promise<Line[]> {
+  const s = await ctx.daemon.status();
+  const why = s.ok ? s.value.unwritable : undefined;
+  return why === undefined ? [] : [['fix', `sub-human can't write to ${ctx.config.home} (${why}); the next /room command starts it again`]];
 }
 
 async function moduleOn(ctx: Ctx): Promise<Line> {

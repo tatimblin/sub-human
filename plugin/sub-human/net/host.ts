@@ -3,8 +3,10 @@
 // `ssh -W` (Noise's frames as they are). A connection is capped per source (the PROXY header's, counted as soon as it
 // parses) and in all, and the handshake's third message must carry a known link key for its room or an open invite's
 // MAC before a card is shown or a record touched. Another machine dialling a line already pending or used refuses both
-// dials and alerts the host. Once a link is up, each write's `from` must be the link's member, the host's own kinds are
-// refused (Rooms), and every write and subscribe is rate-limited per link.
+// dials and alerts the host. A name in the room from another machine is let in as NAME2 (the first free), and the
+// host's hello tells the joiner the name it got; a removed machine with a new invite is told so. Once a link is up,
+// each write's `from` must be the link's member, the host's own kinds are refused (Rooms), and every write and
+// subscribe is rate-limited per link.
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -12,7 +14,7 @@ import type { Duplex } from 'node:stream';
 import * as v from '../vendor/valibot.mjs';
 import type { Ask, Pathway, RoomRequest } from '../core/api.js';
 import { decodeRequest } from '../core/api.js';
-import type { LogLine } from '../core/entries.js';
+import type { LogLine, RoomState } from '../core/entries.js';
 import type { ByeReason, ToLink } from '../core/protocol.js';
 import { decodeToHost, encode, hello, negotiate } from '../core/protocol.js';
 import { parseJson } from '../core/schema.js';
@@ -63,7 +65,10 @@ const payload = v.object({
   name: v.pipe(v.string(), v.maxLength(LIMITS.name), v.check(n => nameFrom(n) === n)),
   machine: v.pipe(v.string(), v.regex(/^[A-Za-z0-9.-]{1,64}$/)),
   mac: v.exactOptional(short),
+  // what the joiner can take: 'named', a name other than its own, which the host's hello gives
+  caps: v.exactOptional(v.array(short)),
 });
+type Payload = v.InferOutput<typeof payload>;
 const stateSchema = v.object({
   invites: v.array(v.object({ id: v.string(), code: v.string(), name: v.string(), macKey: v.string(), expiresAt: v.number(), state: v.picklist(['open', 'pending', 'used', 'dead']) })),
   links: v.array(v.object({ key: v.string(), code: v.string(), name: v.string(), machine: v.string(), invite: v.string(), kicked: v.boolean() })),
@@ -83,6 +88,8 @@ interface Waiting {
   ask: Ask; readonly shown: Set<string>; answer?: (yes: boolean) => void;
   readonly invite?: string; readonly key?: string; gen: number; decided?: Promise<boolean>;
 }
+/** The name for `n`'s kth (from 2) machine: a member name still (core/join.ts nameFrom), never a session's NAME-N title. */
+const suffixed = (n: string, k: number): string => `${n.slice(0, 32 - String(k).length)}${k}`;
 
 export class Host {
   private readonly o: HostOptions;
@@ -96,6 +103,8 @@ export class Host {
   private readonly waiting = new Map<string, Waiting>();
   /** The invites whose Let in is being written: uninvite refuses them. */
   private readonly admitting = new Set<string>();
+  /** The names being written into an admit, `code/name` → the machine: no other dial is given them meanwhile. */
+  private readonly claimed = new Map<string, string>();
   private readonly forwards = new Map<string, Forward>();
   private release: (() => void) | null = null;
 
@@ -257,9 +266,15 @@ export class Host {
   }
 
   private handshake(stream: Duplex): void {
-    let link: LinkRecord | null = null;
+    let link: LinkRecord | string | null = null;
     const admit = async (rk: Buffer, p: Buffer, check: string): Promise<boolean> => { link = await this.admit(rk, p, check); return link !== null; };
-    void accept(stream, { s: this.o.key, admit }).then(ch => { if (ch && link) this.serve(ch, link); }, () => undefined);
+    void accept(stream, { s: this.o.key, admit }).then(ch => {
+      if (!ch || link === null) return;
+      if (typeof link !== 'string') { this.serve(ch, link); return; }
+      // a refusal said, then closed once it has been read
+      ch.send(Buffer.from(encode({ t: 'refused', id: 'join', reason: link })));
+      setTimeout(() => { ch.close(); }, BYE_MS).unref();
+    }, () => undefined);
   }
 
   /** tailscaled's connections open with a PROXY v2 header and then a WebSocket; an ssh -W one with Noise's frames. */
@@ -291,18 +306,22 @@ export class Host {
     sock.on('data', first);
   }
 
-  /** The link a dial is admitted as, or null. A dial with neither a known key nor an invite's MAC touches nothing. */
-  private async admit(rk: Buffer, raw: Buffer, check: string): Promise<LinkRecord | null> {
+  /**
+   * The link a dial is admitted as, a refusal to tell it, or null. A dial with neither a known key nor an invite's MAC
+   * touches nothing; a known machine with a new invite under another name takes the invite's path, and its card.
+   */
+  private async admit(rk: Buffer, raw: Buffer, check: string): Promise<LinkRecord | string | null> {
     const r = parseJson(payload, raw.toString('utf8'));
     if (!r.ok) return null;
     const p = r.value, key = rk.toString('base64url');
     const known = this.s.links.find(l => l.key === key && l.code === p.code);
-    if (known) return known.kicked ? null : known;
+    if (known && !known.kicked && (p.mac === undefined || p.name === known.name)) return known;
     if (p.mac === undefined) return null;
     const proof = Buffer.from(p.mac, 'base64url');
     const judge = (): ReturnType<typeof verify> => verify(proof, this.o.key.pub, rk, this.s.invites, this.o.now());
     const first = judge();
     if (first.kind === 'none' || first.kind === 'dead') return null;
+    if (known?.kicked) return `the host removed this machine from ${p.code}`;
     const st = await this.o.rooms.state(first.record.code);
     // judged again after the wait: another dial of the same line may have made it pending meanwhile
     const verdict = judge();
@@ -317,7 +336,9 @@ export class Host {
       return this.decide(mine, ++mine.gen, p);
     }
     const member = st.ok && isMember(st.value, p.name);
-    const ask = { id: randomUUID(), code: rec.code, name: p.name, expected: rec.name, machine: p.machine, check, member };
+    const named = this.named(rec.code, st.ok ? st.value : null, p, key);
+    if (named && verdict.kind === 'open' && !p.caps?.includes('named')) return this.older(p);
+    const ask = { id: randomUUID(), code: rec.code, name: p.name, expected: rec.name, machine: p.machine, check, member, ...named };
     if (verdict.kind === 'again') {
       // a leaked line: the dial waiting on it is refused too; a member it already let in can be kicked from the card
       mine?.answer?.(false);
@@ -338,23 +359,54 @@ export class Host {
     return this.decide(w, 0, p);
   }
 
-  /** The host's answer for the dial `gen` of a joiner's ask: the link it is let in as, or null. */
-  private async decide(w: Waiting, gen: number, p: { name: string; machine: string }): Promise<LinkRecord | null> {
+  /**
+   * The name a dial of `p.name` is let in as when someone else holds it from another machine (a member, another key's
+   * link, another dial waiting or being let in): the first free NAME2, NAME3, …, so two people are never one member.
+   */
+  private named(code: string, st: RoomState | null, p: Payload, key: string): { as: string; holder: string } | null {
+    const waits = [...this.waiting.values()].filter(w => w.key !== undefined && w.key !== key && w.ask.code === code && w.ask.kind === 'admit');
+    const holders = (n: string): string[] => [
+      ...(st?.members ?? []).flatMap(m => (m.name === n && !m.kicked && m.machine !== undefined ? [m.machine] : [])),
+      ...this.s.links.filter(l => l.code === code && l.key !== key && !l.kicked && l.name === n).map(l => l.machine),
+      ...waits.filter(w => (w.ask.as ?? w.ask.name) === n).map(w => w.ask.machine),
+      ...[this.claimed.get(`${code}/${n}`)].filter(m => m !== undefined),
+    ];
+    const holder = holders(p.name).find(m => m !== p.machine);
+    if (holder === undefined) return null;
+    let k = 2;
+    while (holders(suffixed(p.name, k)).length || st?.members.some(m => m.name === suffixed(p.name, k))) k++;
+    return { as: suffixed(p.name, k), holder };
+  }
+  /** A joiner too old to be told another name is refused, and told why. */
+  private older(p: Payload): string {
+    return `${p.name} is already in ${p.code} from another machine; update sub-human or join under another name`;
+  }
+
+  /** The host's answer for the dial `gen` of a joiner's ask: the link it is let in as, a refusal to tell it, or null. */
+  private async decide(w: Waiting, gen: number, p: Payload): Promise<LinkRecord | string | null> {
     const yes = await w.decided;
     const { invite = '', key = '' } = w, code = w.ask.code;
     if (gen !== w.gen) return null; // a later dial of the same machine took this one's place
+    if (!yes) { this.waiting.delete(w.ask.id); await this.setInvite(invite, 'dead'); return null; }
+    // the name picked again now (the dial still waiting, so its name counts for every other one meanwhile), and
+    // claimed before the next await: two dials let in at once never get the same one
+    const st = await this.o.rooms.state(code);
+    if (gen !== w.gen) return null;
     this.waiting.delete(w.ask.id);
-    const admit = { kind: 'admit', invite, name: p.name, link: key.slice(0, 16), from: p.name, by: 'system' } as const;
+    const named = this.named(code, st.ok ? st.value : null, p, key);
+    if (named && !p.caps?.includes('named')) { await this.setInvite(invite, 'dead'); return this.older(p); }
+    const name = named?.as ?? p.name, claim = `${code}/${name}`;
+    this.claimed.set(claim, p.machine);
+    const admit = { kind: 'admit', invite, name, link: key.slice(0, 16), from: name, by: 'system' } as const;
     // the admit is written first: a link is saved only once the room records it
-    if (!yes) { await this.setInvite(invite, 'dead'); return null; }
     this.admitting.add(invite); // until the line is used: an uninvite meanwhile is refused
     try {
       const placed = await this.o.rooms.write(code, [admit]).catch(() => null);
       if (!placed?.ok) { await this.setInvite(invite, 'dead'); return null; }
-      const link = { key, code, name: p.name, machine: p.machine, invite, kicked: false };
+      const link = { key, code, name, machine: p.machine, invite, kicked: false };
       await this.save(s => ({ ...s, invites: s.invites.map(i => (i.id === invite ? { ...i, state: 'used' } : i)), links: [...s.links.filter(l => l.key !== key || l.code !== code), link] }));
       return link;
-    } finally { this.admitting.delete(invite); }
+    } finally { this.admitting.delete(invite); this.claimed.delete(claim); }
   }
 
   private serve(ch: Channel, link: LinkRecord): void {
@@ -364,7 +416,7 @@ export class Host {
     let chain = Promise.resolve();
     ch.onMessage(m => { chain = chain.then(() => this.on(l, m.toString('utf8'))).catch(() => { ch.close(); }); });
     ch.onClose(() => { l.stop?.(); this.live.delete(l); this.awake(); });
-    this.send(l, hello('', this.o.machine));
+    this.send(l, hello(link.name, this.o.machine)); // the name the joiner was let in as
   }
 
   private async on(l: Live, text: string): Promise<void> {

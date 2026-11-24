@@ -8,11 +8,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { err } from '../core/result.js';
 import { socketFile } from '../core/api.js';
 import { openFsStore } from '../store/fs-store.js';
+import { fileKey, roomDir } from '../home.js';
 import { withLock } from '../store/lock.js';
 import { startDaemon } from './daemon.js';
-import { call, ensure } from './daemon/client.js';
+import { call } from './daemon/client.js';
 import { must } from '../test/support/must.js';
 import { DAEMON, RESOLVE, gone, home, joined, linksOnly, pidOf, post, run, started, stop, until } from '../test/support/daemon.js';
+
 
 /** The pids of every daemon process of this home. */
 function daemons(h: string): number[] {
@@ -84,7 +86,7 @@ test('a request it cannot read is refused in one line', async t => {
   assert.ok(!r.ok && /^entry not understood: text/.test(r.error) && !r.error.includes('\n'));
 });
 
-test('idle: any request keeps it up, and it exits once none has come for the idle time (fake clock)', async t => {
+test('idle: any request keeps it up, and it exits once none has come for the idle time (fake clock); a failed request does not keep it up', async t => {
   const h = await home();
   let clock = 0;
   const d = await started(t, { home: h, idleMs: 1000, now: () => clock });
@@ -93,6 +95,8 @@ test('idle: any request keeps it up, and it exits once none has come for the idl
   clock = 999;
   await sleep(300);
   await call(h, { op: 'status' });
+  clock = 1500;
+  assert.ok(!(await call(h, { op: 'append', code: 'R6', draft: post('nobody', 'hi') })).ok);
   clock = 1998;
   await sleep(300);
   assert.equal(closed, false, 'a status call keeps it up');
@@ -191,11 +195,14 @@ test('a home too long for a socket is said in one line by the process the module
   assert.match(r.out, /^sub-human's home path is too long: [^\n]*\n$/);
 });
 
-test('ensure starts the daemon when nothing answers, and finds the running one after', async () => {
+test('a write one room\'s folder refuses (EACCES) is the ordinary line: the home still takes writes, so the daemon serves on', async t => {
   const h = await home();
-  const first = await ensure(h);
-  assert.ok(first.ok, first.ok ? '' : first.error);
-  assert.notEqual(first.value.pid, process.pid);
-  assert.deepEqual(await ensure(h), first);
-  await stop(first.value.pid);
+  await started(t, { home: h });
+  assert.ok((await call(h, { op: 'append', code: 'R8', draft: joined('alice') })).ok);
+  const dir = roomDir(h, await fileKey('R8'));
+  await fs.chmod(dir, 0o500);
+  t.after(() => fs.chmod(dir, 0o700));
+  const r = await call(h, { op: 'append', code: 'R8', draft: post('alice', 'hi') });
+  assert.ok(!r.ok && /^sub-human failed \(EACCES/.test(r.error), JSON.stringify(r));
+  assert.equal(await pidOf(h), process.pid);
 });

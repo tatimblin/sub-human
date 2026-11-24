@@ -3,10 +3,11 @@
 //
 //   node --import <plugin>/resolve-ts.ts <plugin>/net/daemon.ts <home> [--idle-ms N]
 //
-// Started so (by the module's `$.process.spawn`, which kills its child at unload), it checks the home, starts itself
-// again detached and exits 0 at once. The detached one binds the socket, or exits 0 when another daemon already
-// answers there. It exits once no request has come for the idle time. Quiet: it prints nothing, except one line on
-// stderr when it can't start.
+// Started so (by the command hooks, through net/daemon/client.ts ensure), it checks the home, starts itself again
+// detached and exits 0 at once. The detached one binds the socket, or exits 0 when another daemon already answers
+// there. It exits once no request has succeeded for the idle time, on SIGTERM (ensure replacing it), or after a write
+// the home refuses outright (store/atomic.ts fatal, the home's probe failing too). Quiet: it prints nothing, except one
+// line on stderr when it can't start.
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
@@ -16,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { LIVE_MS, MAX_BODY, SOCKET_MAX, decodeRequest, socketFile } from '../core/api.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
+import { fatal, probe } from '../store/atomic.js';
 import { withLock } from '../store/lock.js';
 import { Rooms } from './daemon/rooms.js';
 import type { Net } from './daemon/net.js';
@@ -65,7 +67,7 @@ export async function startDaemon(o: DaemonOptions): Promise<Result<Daemon | nul
   rooms.links = theNet.links; // net/ is made from the rooms, so the rooms reach it after
   const inflight = new Set<Promise<void>>();
   const server = http.createServer((q, s) => {
-    const p = serve(rooms, theNet, q, s);
+    const p = serve(rooms, theNet, q, s, { home, stop: () => { void close(); } });
     inflight.add(p);
     void p.finally(() => inflight.delete(p));
   });
@@ -125,7 +127,8 @@ function answers(sock: string): Promise<boolean> {
   });
 }
 
-async function serve(rooms: Rooms, net: Net, q: http.IncomingMessage, s: http.ServerResponse): Promise<void> {
+/** One request answered; `stop` shuts the daemon down once a write the home refuses is answered. */
+async function serve(rooms: Rooms, net: Net, q: http.IncomingMessage, s: http.ServerResponse, o: { home: string; stop: () => void }): Promise<void> {
   const send = (status: number, body: Result<unknown>): void => {
     s.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
   };
@@ -144,7 +147,11 @@ async function serve(rooms: Rooms, net: Net, q: http.IncomingMessage, s: http.Se
   if (!req.ok) { send(400, req); return; }
   const r = req.value;
   try { send(200, await (isNet(r) ? net.handle(r) : rooms.handle(r))); } catch (e) {
-    send(500, err(`sub-human failed (${msg(e)}); nothing was done`));
+    // a refusal is the home's only when the home itself refuses a new file now; one room's folder is not
+    const code = fatal(e) === null ? null : fatal(await probe(o.home));
+    if (code === null) { send(500, err(`sub-human failed (${msg(e)}); nothing was done`)); return; }
+    send(500, err(`sub-human can't write to ${o.home} (${code}), so it stopped; nothing was done. Try the command again`));
+    o.stop();
   }
 }
 

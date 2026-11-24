@@ -2,6 +2,24 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 1.0.1: fixes from issue #46
+
+Tested on Claude Code 2.1.331: the node, script and hooks-module tests, `npm run probe` and `claude plugin validate --strict`.
+
+### Fixed
+- **A sub-human that can no longer write is replaced.** One started by an earlier Claude Code session could lose the
+  right to create files when that session's sandbox went away, a read-only home or lost permissions did the same, and
+  an older one kept running after an update. Each kept answering, so `/room` failed until it was killed by hand. Now
+  the next `/room` command replaces it, `/room doctor` names it, and a home that really can't be written is one line.
+- **Two machines under one name no longer merge.** A second machine that joins under a name already in the room is
+  let in as `NAME2` (then `NAME3`) and told so; the Let in card shows the name it gets. Before, both machines became
+  one member, and each saw `Room empty`. A machine still on 1.0.0 is refused with a line to update or pick a name.
+- **Leaving lets you join again.** When the last session on a machine leaves a room hosted elsewhere, that machine
+  lets go of the room, so a new invite works under the same name or another. Before, every new line was refused with
+  "this machine is already in CODE".
+- **A machine you know, with a new invite, gets the card and its new name.** Before, the host let it in silently
+  under its old name and refused every write. A machine you removed is told so instead of hearing nothing.
+
 ## 1.0.0: a rebuild around sharing the work itself
 
 sub-human 1.0.0 rebuilds the 0.8 proof of concept on Claude Code's hooks module. Your work keeps your colleagues and

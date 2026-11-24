@@ -1,9 +1,10 @@
 // The host's Let in / Refuse card (R30): from an interactive session's start, while the session is in a room (follow.ts
 // fills that in) or has typed `/room invite`, the module asks the daemon every few seconds who waits to be let
 // into this session's rooms (`asks`: only rooms hosted here have any), shows each joiner once as a native question card
-// naming them, their machine, a name that is not the invite's and the check string both people compare, and posts the
-// answer (`admit`). So a host session started after the invite shows the knock too. A card dismissed is a Refuse. A
-// line dialled twice is one dim line; one that had let someone in offers their kick.
+// naming them, their machine, a name that is not the invite's, the name they get when theirs is in the room from
+// another machine, and the check string both people compare, and posts the answer (`admit`). So a host session
+// started after the invite shows the knock too. A card dismissed is a Refuse. A line dialled twice is one dim line;
+// one that had let someone in offers their kick.
 import type { On } from 'claude-code';
 import type { Ask } from '../core/api.js';
 import { readAnswer } from '../core/api.js';
@@ -18,7 +19,8 @@ export function card(a: Ask): { readonly question: string; readonly options: rea
   if (a.kind === 'again') return { line: `sub-human: someone else also used the invite for ${a.expected}; nobody got in with it` };
   if (a.kind === 'leaked') return { question: `Someone else also used the invite ${a.name} joined ${a.code} with. Remove ${a.name}?`, options: [`Remove ${a.name}`, 'Keep'] };
   const who = a.name === a.expected ? a.name : `${a.name} (the invite was for ${a.expected})`;
-  const already = a.member ? ` ${a.name} is already a member there.` : '';
+  const already = a.as !== undefined ? ` ${a.name} joins as ${a.as} (${a.name} is already in the room from ${a.holder ?? 'another machine'}).`
+    : a.member ? ` ${a.name} is already a member there.` : '';
   return { question: `Let ${who} on ${a.machine || 'another machine'} into ${a.code}?${already} Check ${a.check} matches theirs.`, options: ['Let in', 'Refuse'] };
 }
 

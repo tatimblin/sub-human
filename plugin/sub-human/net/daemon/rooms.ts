@@ -22,7 +22,7 @@ import type { FsStore } from '../../store/fs-store.js';
 import { openFsStore } from '../../store/fs-store.js';
 import { nextSnapshot } from '../../store/store.js';
 import { RETAIN_MS, dropOld, unused } from '../../store/retention.js';
-import { writeAtomic } from '../../store/atomic.js';
+import { fatal, probe, writeAtomic } from '../../store/atomic.js';
 import { fileKey, roomDir } from '../../home.js';
 import { isHere, isMember } from '../../core/entries.js';
 
@@ -36,6 +36,8 @@ export interface Links {
   state(code: string): Promise<RoomState | null>;
   /** R3: closes the room's link for good and deletes its file (the copy is the caller's to delete). */
   forget(code: string): Promise<void>;
+  /** Such a room's member name for this machine: the one its host let it in as. */
+  name?(code: string): string | undefined;
 }
 /** No links: every room is hosted here. */
 export const NO_LINKS: Links = {
@@ -60,6 +62,8 @@ const IDS_MAX = 10_000;
 const DAY_MS = 24 * 3600_000;
 /** The chain every join runs on. */
 const OPEN = '#open';
+/** How long status trusts its last write probe of the home. */
+const PROBE_MS = 5000;
 
 interface Placed { readonly seq: number; readonly hash: string }
 interface Room { readonly store: FsStore; snap: Snapshot; readonly ids: Map<string, Placed>; readonly followers: Set<Follower> }
@@ -84,7 +88,7 @@ export class Rooms {
   private readonly sessions = new Map<string, Session>();
   /** By session and code, so a session in two rooms keeps both. */
   private readonly inboxes = new Map<string, Message[]>();
-  /** When any request last came; the daemon's start counts as one. */
+  /** When a request last succeeded; the daemon's start counts as one. */
   lastSeen: number;
   /** Rooms hosted elsewhere: the daemon sets net/'s once it is made from these rooms. */
   links: Links;
@@ -94,6 +98,8 @@ export class Rooms {
   private readonly pinged = new Map<string, number>();
   /** Debug lines for the next ping to take (core/api.ts ping). */
   private notes: string[] = [];
+  /** The last write probe of the home: when (real time, so a test's clock never holds it), and the code it failed with. */
+  private probed: { readonly at: number; readonly why: string | null } | null = null;
 
   constructor(o: RoomsOptions) {
     this.o = o;
@@ -103,16 +109,28 @@ export class Rooms {
       home: o.home, now: o.now, pingedAt: id => this.pinged.get(id),
       left: p => this.handle({ op: 'append', code: p.code, draft: { kind: 'left', from: p.name, by: 'system', id: p.leave } }),
       away: p => this.handle({ op: 'put_doc', code: p.code, kind: 'presence', name: p.name, doc: { name: p.name, state: 'away', at: this.o.now() } }),
+      // the last session here left a room hosted elsewhere: its link and copy go, so its line can be joined again
+      // (checked again behind every join, then on the room's chain, so a session that joined meanwhile keeps it)
+      emptied: code => this.chains.run(OPEN, () => this.chains.run(code, async () => { if (this.links.hosts(code) && !(await this.pointers.holds(code))) await this.drop(code); })),
     });
   }
 
   /** A debug line for the next ping to take. */
   note(line: string): void { this.notes.push(line); }
 
-  /** `link` names the machine of a link a write came over; with none, it came from this machine. */
-  handle(req: RoomRequest, link?: { readonly machine: string }): Promise<Result<Answers[Op]>> {
+  /**
+   * `link` names the machine of a link a write came over; with none, it came from this machine. Only a request that
+   * succeeds keeps the daemon up.
+   */
+  async handle(req: RoomRequest, link?: { readonly machine: string }): Promise<Result<Answers[Op]>> {
+    const r = await this.act(req, link);
+    if (r.ok) this.lastSeen = this.o.now();
+    return r;
+  }
+
+  private act(req: RoomRequest, link?: { readonly machine: string }): Promise<Result<Answers[Op]>> {
     const { links } = this;
-    const now = (this.lastSeen = this.o.now());
+    const now = this.o.now();
     const machine = link?.machine ?? this.o.machine;
     switch (req.op) {
       case 'append': {
@@ -181,7 +199,8 @@ export class Rooms {
     if (SESSION_ID.test(req.session)) {
       const d = new Date(now);
       void fs.utimes(sessionFile(this.o.home, req.session), d, d).catch(() => undefined); // still alive: keep its pointer
-      if (!this.pinged.has(req.session)) await writeAtomic(pingedFile(this.o.home, req.session), '').catch(() => undefined);
+      // a home that takes no writes at all is the daemon's end (net/daemon.ts); any other failure only loses the marker
+      if (!this.pinged.has(req.session)) await writeAtomic(pingedFile(this.o.home, req.session), '').catch((e: unknown) => { if (fatal(e)) throw e; });
     }
     this.pinged.set(req.session, now);
     for (const [id, at] of this.pinged) if (now - at > DAY_MS) this.pinged.delete(id);
@@ -199,7 +218,16 @@ export class Rooms {
     const live = [...this.live()];
     const cc = [...new Set(live.flatMap(([, s]) => (s.cc === undefined ? [] : [s.cc])))].sort();
     const pinged = session === undefined ? {} : { pinged: this.pinged.has(session) || (await fs.access(pingedFile(this.o.home, session)).then(() => true, () => false)) };
-    return ok({ version: API_VERSION, pid: process.pid, sessions: live.length, cc, ...pinged });
+    const why = await this.writable();
+    return ok({ version: API_VERSION, pid: process.pid, sessions: live.length, cc, ...pinged, ...(why !== null && { unwritable: why }) });
+  }
+
+  /** Null when a file can be made in the home, else the code it failed with. */
+  private async writable(): Promise<string | null> {
+    if (this.probed && Date.now() - this.probed.at < PROBE_MS) return this.probed.why;
+    const e = await probe(this.o.home);
+    this.probed = { at: Date.now(), why: e === null ? null : fatal(e) };
+    return this.probed.why;
   }
 
   /**
@@ -212,13 +240,18 @@ export class Rooms {
       await this.chains.run(code, async () => {
         const dir = roomDir(this.o.home, await fileKey(code));
         if (!(await unused(dir, this.o.now()))) return;
-        this.rooms.delete(code);
-        await this.links.forget(code);
-        await fs.rm(dir, { recursive: true, force: true });
+        await this.drop(code);
         this.notes.push(`sub-human: deleted room ${code}: nobody had been in it for ${RETAIN_MS / DAY_MS} days`);
       });
     }
     await dropOld(`${this.o.home}/pinged`, this.o.now() - DAY_MS);
+  }
+
+  /** The room's link forgotten, then its folder removed. */
+  private async drop(code: string): Promise<void> {
+    this.rooms.delete(code);
+    await this.links.forget(code);
+    await fs.rm(roomDir(this.o.home, await fileKey(code)), { recursive: true, force: true });
   }
 
   private async codes(): Promise<string[]> {
@@ -292,6 +325,8 @@ export class Rooms {
     if (!p.ok) return p;
     if ('rooms' in p.value) return ok({ rooms: p.value.rooms });
     const { code, fresh } = p.value;
+    const as = this.links.hosts(code) ? this.links.name?.(code) : undefined; // a room hosted elsewhere: the name it let this machine in as
+    if (as !== undefined && as !== req.name) return this.join({ ...req, code, name: as });
     const state = rooms.get(code);
     const me = state?.members.find(m => m.name === req.name);
     if (me?.kicked) return err(`${req.name} was removed from ${code}.`);

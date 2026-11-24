@@ -33,6 +33,8 @@ export interface FakeHome {
   modules: boolean;
   /** The Claude Code versions its live sessions report. */
   cc: string[];
+  /** The code status says the home can't be written with, or null. */
+  unwritable: string | null;
   /** The daemon's clock. */
   now: number;
   /** The one room here (the first, by code). */
@@ -62,7 +64,7 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
   };
   const log = async (code: string): Promise<string> => logFile(roomDir(dir, await fileKey(code)));
   const home: FakeHome = {
-    calls: [], dir, down: null, failing: new Map(), linked: new Map(), sessions: 1, modules: true, cc: ['2.1.330'], now: Date.now(),
+    calls: [], dir, down: null, failing: new Map(), linked: new Map(), sessions: 1, modules: true, cc: ['2.1.330'], unwritable: null, now: Date.now(),
     daemon: {
       putDoc: async (code, d) => guard(`put ${code} ${d.kind} ${d.doc.name}`) ?? real.handle({ op: 'put_doc', code, kind: d.kind, name: d.doc.name, doc: d.doc }),
       kick: async (code, name, by) => {
@@ -95,7 +97,7 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
       dial: async (line, name, session) => guard(`dial ${name} ${session.id}`) ?? ok({ code: /\/([a-z]+-\d{4})/.exec(line)?.[1] ?? 'none', check: '1f2e-3d4c' }),
       link: async code => guard(`link ${code}`) ?? ok(home.linked.get(code) ?? null),
       pinged: () => Promise.resolve(home.down === null ? ok(home.modules) : err(home.down)),
-      status: () => Promise.resolve(home.down === null ? ok({ sessions: home.sessions, cc: home.cc }) : err(home.down)),
+      status: () => Promise.resolve(home.down === null ? ok({ sessions: home.sessions, cc: home.cc, ...(home.unwritable !== null && { unwritable: home.unwritable }) }) : err(home.down)),
     },
     rooms: fsRooms(dir),
     code: async () => must((await fsRooms(dir).codes())[0], 'a room'),

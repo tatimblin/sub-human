@@ -70,15 +70,22 @@ export function makeNet(rooms: Rooms, o: NetOptions): Net {
     if (!j || p !== 'online') return;
     // a join that fails after Let in is told to the joiner's module, as the link's last word (core/api.ts link)
     const fail = (why: string): void => { failed.set(code, `you were let in, but this session did not take its place (${why}); type /room ${code}`); };
-    void rooms.handle({ op: 'join', ...j, code }).then(r => { if (!r.ok) fail(r.error); }, (e: unknown) => { fail(String(e)); });
+    // the name the host let this machine in as: another, when the one asked for is in the room from another machine
+    const name = set?.name(code) ?? j.name;
+    const line = name === j.name ? null : { why: `${j.name} is already in ${code}, so you joined as ${name}`, joined: false };
+    if (line) renamed.set(code, line);
+    void rooms.handle({ op: 'join', ...j, name, code }).then(r => { if (r.ok && line) line.joined = true; else if (!r.ok) fail(r.error); }, (e: unknown) => { fail(String(e)); });
   };
   const failed = new Map<string, string>();
+  /** A join let in under another name: the line said with the link's status, until it is read once the join is done. */
+  const renamed = new Map<string, { why: string; joined: boolean }>();
   const links: Links = {
     hosts: code => set?.hosts(code) ?? false,
     forward: (code, req) => set?.forward(code, req) ?? Promise.resolve(err(HOST_AWAY)),
     relay: (code, to, from, text) => host?.relay(code, to, from, text) ?? false,
     state: code => set?.state(code) ?? Promise.resolve(null),
     forget: async code => { await set?.forget(code); },
+    name: code => set?.name(code),
   };
   return {
     links,
@@ -112,7 +119,11 @@ export function makeNet(rooms: Rooms, o: NetOptions): Net {
         }
         case 'link': { // a join that failed after Let in is said once, as the link stopped
           const why = failed.get(req.code);
-          return failed.delete(req.code) && why !== undefined ? ok({ phase: 'stopped', why }) : ok(set.status(req.code));
+          if (failed.delete(req.code) && why !== undefined) return ok({ phase: 'stopped', why });
+          const s = set.status(req.code), as = renamed.get(req.code);
+          if (s?.phase !== 'online' || !as) return ok(s);
+          if (as.joined) renamed.delete(req.code);
+          return ok({ ...s, why: as.why });
         }
       }
     },
