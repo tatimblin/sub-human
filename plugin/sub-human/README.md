@@ -8,7 +8,7 @@ happens. Nobody writes a status update, and nobody copies between chats.
 
 - Your Claude learns, by your next prompt, what a colleague changed that bears on your work: a file you touched, an
   interface a plan you're on names, a line that names you.
-- The dim line under your prompt ends with the room, who is in it and what each is doing, and the one thing that
+- The dim hint line under your prompt ends with the room, who is in it and what each is doing, and the one thing that
   needs you next:
 
   ```
@@ -16,19 +16,13 @@ happens. Nobody writes a status update, and nobody copies between chats.
   Room ◐ bob · plan "finish-webography" needs your review (+2)
   ```
 
-  Only the terminal draws that line; elsewhere there is none.
-
-  `●` working, `○` idle, `◐` waiting on a permission prompt, `◌` away. On the right, most urgent first: a plan waiting
-  on your review, a plan someone sent you, messages held for you (`/room news` shows them), a task of yours that
-  is now free to start; `(+N)` says how many more.
-- Your Claude can ask a colleague's Claude a question directly; the answer comes back after your turn, not in the
-  middle of it.
-- Plans you write in plan mode can be shared, agreed version by version, or sent to someone.
-- A room task list, with claims, sits beside your own native task list.
+  `●` working, `○` idle, `◐` waiting on a permission prompt, `◌` away; `Room empty` with nobody else in it. Then,
+  most urgent first: a plan waiting on your review, a plan sent to you, messages held for you (`/room news`), a task
+  of yours now free to start; `(+N)` says how many more. Only the terminal draws that line.
+- Your Claude can ask a colleague's Claude directly and hears back after your turn. Plans made in plan mode can be
+  shared, agreed version by version, or sent; a room task list sits beside your own.
 
 ## Install
-
-In Claude Code:
 
 ```
 /plugin marketplace add tatimblin/sub-human
@@ -36,7 +30,9 @@ In Claude Code:
 ```
 
 sub-human needs Node 22.18+ or 24.3+ on the machine (it runs TypeScript directly, with no build step) and Claude
-Code's hooks modules, which are on by default. It was tested on Claude Code 2.1.330.
+Code's hooks modules, which are on by default. It was tested on Claude Code 2.1.330. Then each person types `/room`
+in their own session: the first opens a room, and the others on that machine join it, whatever repo each is in. From
+then on your work is shared as you do it.
 
 ## Commands
 
@@ -49,25 +45,17 @@ Code's hooks modules, which are on by default. It was tested on Claude Code 2.1.
 /room leave             leave the room; your session keeps going
 ```
 
-Also:
 - `/room ROOM` joins that room by its code (`vole-8126`); `NAME` and `ROOM` may come in either order. With
   several rooms open, a bare `/room` lists them.
 - `/room news` opens what each colleague changed and found since you last looked, and clears the count.
-- `/room kick NAME` removes a member for good; `/room doctor` checks this machine; `/room help` lists
-  the commands.
-- `@room TEXT` at your prompt posts your exact words to the room as yours; your Claude never sees it, and one line
-  says it went. Start with a name (`@room bob, which port does the server use?`) to address one person: a line of
-  yours naming someone is the one thing you type that can start their Claude's turn. Nothing that looks like a secret
-  is sent.
+- `/room kick NAME` removes a member for good; `/room doctor` checks this machine; `/room help` lists the commands.
+- `@room TEXT` at your prompt posts your exact words to the room as yours; your Claude never sees it. Start with a
+  name (`@room bob, which port does the server use?`) to address one person: a line of yours naming someone is the
+  one thing you type that can start their Claude's turn. Nothing that looks like a secret is sent.
 
 Your name is your git name unless you give one. The others' Claudes reach yours as `NAME.CODE` (`bob.vole-8126`).
 Leaving keeps your session going. Ending a session doesn't leave: you show as away until a session of yours comes
 back. A room with nobody left in it closes, and one nobody has used for 30 days is deleted.
-
-## Working together on one machine
-
-Each person types `/room` in their own session. The first opens a room; the others join it, whatever repo each
-is in. That's all: from then on your work is shared as you do it.
 
 ## Inviting someone from another machine
 
@@ -92,10 +80,10 @@ in the room by itself, and she sees one line saying so. If someone else uses the
 you are told, with a one-key removal if it had already let someone in.
 
 **From the row above the prompt.** While you're the only one in a room you host, a row above the prompt reads
-`Room heron-2988. Invite: [ public ] [ tailnet ] [ ssh ]` (`… created.` right after you made it). Pick one and name the person: you get the same
-line as the command, with
-**copy** (`c`) and **cancel**, which takes the line back so it lets nobody in. The row goes once anyone else is here.
-Clicks work in fullscreen; otherwise ctrl+x then tab puts you in the row.
+`Room vole-8126 created. Invite: [ public ] [ tailnet ] [ ssh ]` (`created` only in the session that opened it).
+Pick one and name the person: the row then shows the line, the time it works until, **copy** (`c`) and **cancel**,
+which takes the line back so it lets nobody in. The row goes once anyone else is here. Clicks
+work in fullscreen; otherwise ctrl+x then tab puts you in the row.
 
 **Over Tailscale.** Only the host needs Tailscale. A public line (Tailscale Funnel) works for a joiner with nothing
 but the plugin: no Tailscale and no account. A tailnet line (Tailscale Serve) works only on your tailnet. The
@@ -119,40 +107,35 @@ Joining a room is the opt-in: what follows is shared while you're in one, and no
 - **Updates in your Claude's own words**: at the end of a turn that learned or changed something a colleague would
   want (an interface change, a cause found, a decision, work finished), your Claude may share one short line. It is
   always labelled as your Claude's, never as yours.
-- **Your focus**: one line your Claude keeps current, shown in `who`.
-- **Plans** you choose to share, and **room tasks**.
+- **Your focus** (one line your Claude keeps current, shown in `who`), **plans** you choose to share, and **tasks**.
 
-What is never shared:
-
-- anything that looks like a secret (a curated pattern list, from gitleaks), and secret-holding files (`.env*`,
-  `*.pem`, keys, credentials);
-- files your repo ignores (its top-level `.gitignore`), and files outside the repo;
-- file contents, beyond a short excerpt your Claude chose to quote.
-
-Messages between two Claudes are private to them: they never go into the room's history, on any machine.
+Never shared: anything that looks like a secret (a curated pattern list, from gitleaks); secret-holding files
+(`.env*`, `*.pem`, keys, credentials); files your repo's top-level `.gitignore` ignores, and files outside the repo;
+file contents, beyond a short excerpt your Claude chose to quote. Messages between two Claudes are private to them:
+they never go into the room's history, on any machine.
 
 **What reaches your Claude.** Only updates that bear on your work go to your Claude, beside your next prompt, marked
 as data from a named colleague and capped at about 400 tokens. The rest waits for `/room news`, or for your Claude to
-ask for the catch-up. Nothing in the room starts a turn by itself except
-three things: a person's line naming you, a colleague's Claude messaging yours directly, and an answer to your
-Claude's own question. Even then it waits for your turn to end and is framed as a colleague's request, and a message
-that carries a command or URL to run is shown to you instead of handed to your Claude.
+ask for the catch-up. Nothing in the room starts a turn by itself except three things: a person's line naming you, a
+colleague's Claude messaging yours directly, and an answer to your Claude's own question. Even then it waits for your
+turn to end and is framed as a colleague's request, and a message that carries a command or URL to run is shown to
+you instead of handed to your Claude.
 
 ## Plans
 
 Write plans in plan mode, as you do alone. When you approve one, you're asked once, **Share this plan?**:
 
 - **No**: keep it local; nothing is shared.
-- **Get agreement**: share it for input and approval. It's stored in the room, you pick who must agree, and your
-  Claude waits for them.
-- **Send to the room**: share it without waiting on approval. You pick who gets it (anyone here, or everyone in the
-  room; type a name under Other for someone not listed), and it goes, whole, with your branch, the files it names and
-  a note.
+- **Get agreement**: share it for input and approval. It's stored in the room, and a second card asks who should
+  agree (pick them, or type names under Other).
+- **Send to the room**: share it without waiting on approval. A second card asks who gets it (anyone here, or
+  everyone in the room; type a name under Other for someone not listed), and it goes, whole, with your branch, the
+  files it names and a note.
 
-A room plan is versioned. Every version is kept, and an edit made on an old version is refused so the two can be
+A room plan is versioned and named by the first three words of its heading that say something
+(`finish-webography-click`). Every version is kept, and an edit made on an old version is refused so the two can be
 merged. A part that names an owner (`## Store (owner: tristan)`, `- @jess the HTTP handler`) becomes a task once the
-plan is agreed, and each owner's Claude learns its part and who owns the rest. A plan is named by the first three
-words of its heading that say something (`finish-webography-click`).
+plan is agreed, and each owner's Claude learns its part and who owns the rest.
 
 **Waiting for agreement.** When you ask people to agree on a room plan, your Claude waits: it doesn't start building
 until the plan is decided. Once everyone agrees, it is woken to build its part. If someone asks for changes, it is
@@ -160,11 +143,11 @@ woken with their note, word for word, to revise the plan; when you approve the r
 again. A room plan with nobody asked, a kept plan and a sent plan wait for nothing.
 
 **Reviewing.** When someone asks you to agree, you see one line, and, at the end of your turn or right away if you are
-idle, a card with a summary of what changed since the version you last saw: **Agree**, **Ask for changes** (type your note), or **Read the full
-plan**, which opens a scrollable pane with the whole text and the diff. A plan sent to you opens the same way, with
-**Accept** (your Claude takes it as its plan) or **Dismiss**. Only your answer on the card counts; no Claude agrees
-for its person, and an answer applies to that one version. Reviewing never touches your own plan file or your
-permission mode.
+idle, a card with a summary of what changed since the version you last saw: **Agree**, **Ask for changes** (type your
+note), or **Read the full plan**, which opens a scrollable pane with the whole text and the diff. A plan sent to you
+opens the same way, with **Accept** (your Claude takes it as its plan) or **Dismiss**. Only your answer on the card
+counts; no Claude agrees for its person, and an answer applies to that one version. Reviewing never touches your own
+plan file or your permission mode.
 
 ## Tasks
 
@@ -172,41 +155,31 @@ The room has a small task list. Anyone adds a task; you claim one for yourself (
 only its owner releases it or marks it done. A task can wait on others, and when one you're waiting on is done or
 released, your Claude hears of it. `/room tasks` lists them, and your Claude has a task tool.
 
-Your own native task list stays yours and works as it does alone. If you launch Claude Code with
-`CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (Claude Code's own setting, which sub-human never sets), two more things happen: your
-native task changes are shared as activity, and a room task you claim goes onto your native list tagged
-`[room CODE#N]`, so completing or deleting it there completes or releases the room task. Without that variable the
-room list works on its own.
+Your native task list stays yours. With `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (Claude Code's own setting, which
+sub-human never sets), your native task changes are shared as activity, and a room task you claim goes onto your
+native list tagged `[room CODE#N]`, so completing or deleting it there completes or releases the room task.
 
 ## Privacy and threat model
 
 sub-human has **no server and no telemetry**. A room lives on its host's machine and on each joined machine's copy,
-and travels only over the connections you set up (Tailscale or ssh), inside an encrypted channel (Noise XK) keyed to
-the host's own key.
+and travels only over the connections you set up, inside an encrypted channel (Noise XK) keyed to the host's own key.
+The threat is **outsiders**: an invite line can't be guessed, is bound to one name, works once, soon expires and only
+reaches the real host; nobody gets in without the host's **Let in**, and `kick` ends a machine's access for good.
 
-The threat is **outsiders**: someone not in the room reading it, writing to it, or pretending to be the host. An
-invite line can't be guessed, is bound to one name, works once, soon expires, and only reaches the real host. Nobody
-gets in without the host's **Let in**. Each machine that joins proves a key of its own, and `kick` ends its access for
-good.
+**Inside a room, members and their Claudes are trusted collaborators.** Who wrote what (a person or their Claude) is
+an honest label, not a security boundary. Text planted in a repo could reach your Claude through a colleague's; the
+framing, the rule on commands and URLs, and an hourly wake budget limit what it can do, but don't make it impossible.
+Invite only people you'd let work on your project. No hook of sub-human's ever answers a permission check for you,
+and everyone who joins trusts the host, which applies every write. More in `SECURITY.md`.
 
-**Inside a room, members and their Claudes are trusted collaborators.** sub-human labels who wrote what (a person or
-their Claude) honestly, but that is a label, not a security boundary. Text planted in a repo could reach your Claude
-through a colleague's; the framing, the rule on commands and URLs, and an hourly wake budget limit what it can do,
-but don't make it impossible. Invite only people you'd let work on your project. No hook of sub-human's ever answers a
-permission check for you: every permission decision stays yours. The host holds the room's history and applies every
-write, so everyone who joins trusts the host.
+## When the hooks module is off, and doctor
 
-## When the hooks module is off
+Where hooks modules are off (a managed machine's policy, or an older Claude Code), nothing would be shared: `/room`
+and `/room join` join no room, they and `news` and `doctor` say so in one line, and the others never see you here.
 
-sub-human runs as a Claude Code hooks module. Where hooks modules are off (a managed machine's policy, or an older
-Claude Code), nothing would be shared, so `/room` and `/room join` join no room and say so in one line, and
-`/room news` and `/room doctor` say so too. The others never see such a session as here.
-
-## Doctor
-
-`/room doctor` checks this machine, one line each, `ok` or `fix` with what to do: Node, sub-human's home folder,
-the hooks module in your sessions, the Claude Code version sub-human was checked on (and any other version your
-sessions run), every room's history, sshd's TCP forwarding, and Tailscale. A setting with a bad value is listed too.
+`/room doctor` checks this machine, one line each, `ok` or `fix` with what to do: Node, sub-human's home folder, the
+hooks module in your sessions, the Claude Code version sub-human was checked on (and any other version your sessions
+run), every room's history, sshd's TCP forwarding, and Tailscale. A setting with a bad value is listed too.
 
 ## Settings
 

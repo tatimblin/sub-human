@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "sub-human",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Live, zero-effort sharing of work between Claude Code sessions: what each session learns, decides and changes reaches your colleagues and their Claudes as it happens.",
   "author": {
     "name": "Tristan Timblin",

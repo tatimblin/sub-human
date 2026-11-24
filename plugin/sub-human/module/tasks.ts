@@ -103,7 +103,7 @@ export function bridgeCall(answered: unknown, m: Native, room: InRoom, state: Ro
 export function registerTasks(on: On): void {
   on('tool.run', { tool: toolName('task') }, async ($, e) => {
     const room = session.room;
-    if (!room) return { deny: 'This session is in no room; no task was changed. Your person can join one with /sub-human.' };
+    if (!room) return { deny: 'This session is in no room; no task was changed. Your person can join one with /room.' };
     const tools = e.op === 'claim' ? await $.tool.list().catch(() => []) : [];
     const c = taskCall(e, room, session.state, tools.some(t => t.name === 'TaskCreate') && !off(session, 'tasks-bridge'));
     if (!c.ok) return { deny: c.error };

@@ -2,56 +2,47 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
-## 2.0.0: a rebuild around sharing the work itself
+## 1.0.0: a rebuild around sharing the work itself
 
-v2 rebuilds sub-human from the 0.8 proof of concept on the parts that held up and on Claude Code's documented hooks
-module. Your work keeps your colleagues and their Claudes up to date as you do it: there is nothing to type to share.
-0.8 rooms are not carried over; v2 starts clean. Tested on Claude Code 2.1.330: the node, script and hooks-module
-(kit) tests, `npm run probe`, `claude plugin validate --strict`, and the canary on `latest` with no model calls.
+sub-human 1.0.0 rebuilds the 0.8 proof of concept on Claude Code's hooks module. Your work keeps your colleagues and
+their Claudes up to date as you do it, with nothing to type to share. Tested on Claude Code 2.1.330: the node, script
+and hooks-module tests, `npm run probe`, `claude plugin validate --strict`, and the owner's live run in auto mode.
 
-### What v2 is
-- **Live updates from the work.** Each session shares, with no model call, the files it edits, its branch, commits
-  and pushes, test and build runs, and whether it is working or idle; its Claude may add one short update at the end
-  of a turn that learned or changed something, labelled as that Claude's. Nothing that looks like a secret, no
-  secret-holding or ignored file, and no file outside the repo is shared.
-- **Only what bears on your work reaches your Claude**, beside your next prompt, marked as data and capped at about
-  400 tokens: a change to a file you touched, an interface a plan you're on names, a line naming you, two people
-  editing one file. The rest is a count on the status line and `/sub-human news`.
-- **Claudes ask each other directly.** `SendMessage` to `NAME.CODE` is caught at the sender and carried to the
-  recipient, never into the room's history; it wakes the recipient's Claude after its turn ends, framed as a
-  colleague's request, under a burst rule and an hourly budget. Broadcasts never wake anyone, and a message that
-  carries a command or URL is shown to its person instead.
-- **`@room TEXT`** at your prompt posts your exact words to the room as yours, with no model turn; a line that names
-  someone (`@room bob, …`) is the one way a person's words wake a colleague's Claude.
-- **Plans** are written in plan mode as ever; at approval you keep one, make it a room plan, or send it. Room plans
-  are versioned under compare-and-swap, reviewed on a native card with the full text and diff in a scrollable pane,
-  and agreed per version; owned parts become tasks.
-- **Tasks.** A room task list with claims for oneself; with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, claimed room tasks go
-  onto your native task list and native changes are shared.
-- **Across machines.** One host per room; the others mirror it over Tailscale (a public Funnel URL, or tailnet-only
-  Serve; WebSocket over HTTPS, proxy-friendly) or `ssh -W` through the joiner's own account. One Noise XK channel on
-  both. An invite is one name-bound, single-use line, and the host lets the joiner in on a card with a check string.
-- **One daemon per machine** makes every write; the module only reads. `/sub-human doctor` checks Node, the module,
-  the Claude Code versions in use, every room's log, sshd's TCP forwarding and Tailscale.
+**Upgrading from 0.8:** rooms and homes from 0.8 aren't migrated. Everyone starts with a fresh room.
 
-### Gone from 0.8
-- **Room rows** in the agent panel (the chat row, its keeper, the hold row): who's here and the unread count are one
-  status line.
-- **The room's Claude** (the headless `claude --bg` room session) and the task files it held: the room task list is
-  the host's, and the native bridge goes through your own Claude's task tools.
-- **The MCP server and its tools**: Claude's tools (`share`, `read`, `plan`, `task`) are registered by the module.
-- **The PIN** and its throttling, the ssh shim and login as the host, `--forward`, and the old protocol: one invite
-  line plus Let in, on two pathways.
+### Removed
+- **The room row** in the agent panel (the chat row, its keeper, the hold row).
+- **The room Claude**, the headless `claude --bg` room session, and the task files it held.
+- **The MCP server and its tools.** Claude's tools (`share`, `read`, `plan`, `task`) are registered by the module.
+- **The PIN** and its throttling, along with the ssh shim, login as the host, `--forward` and the old protocol.
+
+### Added
+- **One daemon per home** makes every write; the module only reads.
+- **The hooks module** shares what each session does with no model call (files edited, branch, commits and pushes,
+  test and build runs, working or idle) and gives your Claude, beside your next prompt, only what bears on your work.
+  A Claude may ask another directly with `SendMessage` to `NAME.CODE`, which wakes the recipient after its turn ends.
+- **Invites over Tailscale** (a public Funnel line, or a tailnet-only Serve line) **or ssh** (the joiner's own
+  login): one name-bound, single-use line, and the host's Let in card with a check string.
+- **Plans that wait for agreement.** At approval: Share this plan? No, Get agreement, or Send to the room. With
+  people asked, your Claude waits until the plan is decided, then builds its part or revises from the note.
+- **The `/room` command** (`/room`, `invite`, `join`, `who`, `tasks`, `leave`, `news`, `kick`, `doctor`, `help`).
+- **The status line on the prompt hint**: `Room ● bob ○ carol · plan "x" needs your review (+2)`, or `Room empty`.
+- **The invite band** while you're alone in a room you host: `Room CODE created. Invite: [ public ] [ tailnet ] [ ssh ]`.
+- **`@room TEXT`** posts your exact words, with no model turn; a line naming someone can wake their Claude.
+- **The native task bridge**: with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, a room task you claim goes onto your native
+  list, and native task changes are shared.
+- **The review card plus pane**: Agree, Ask for changes or Read the full plan, which opens the whole text and the
+  diff in a scrollable pane.
 
 ### Known items
-- **Merging two sent plans** (R22e) is not built: two people can each send a plan for the same work, but there is
-  no step that merges them into one room plan.
-- **The live gate is run by the owner** before release (three permission modes, an injection scene); it is not part
-  of CI, and its command-rule false positives on past-tense report lines are measured there.
-- **A real Funnel join** from a machine with no Tailscale is a manual check per release.
+- **The live gate** across all permission modes is run by the owner before release; auto mode has been run live.
+- **A real Funnel join** from a machine without Tailscale is a manual check.
 - **Lint override:** `.oxlintrc.json` keeps a `no-misused-promises` `checksVoidReturn.arguments` override until
-  oxlint-tsgolint 7.0.2007 or later can be taken (on or after 2026-11-26).
-- A room's data is not yet deleted after a retention period once it closes.
+  oxlint-tsgolint 7.0.2007 or later can be taken, on or after 2026-11-26.
+- **Merging two sent plans** (R22e) is not built.
+- **Nested `.gitignore` files** are not read; only the repo's top-level one is applied.
+- **A plan's wait after `--resume`** is rebuilt on the assumption that the session id is kept; if a resume gives a
+  new id, the wait is not rebuilt.
 
 ## 0.8.1: quieter start in auto mode, a one-line invite
 

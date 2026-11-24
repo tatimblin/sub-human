@@ -2,7 +2,7 @@
 
 A Claude Code plugin: several people each work in their own session while what each session learns, decides and
 changes reaches the others, and their Claudes, as it happens (live, zero-effort sharing of the work, not a chat). A
-room's host machine holds its log; others mirror it over Tailscale (Funnel or Serve) or ssh. v2.0.0 rebuilds the 0.8
+room's host machine holds its log; others mirror it over Tailscale (Funnel or Serve) or ssh. 1.0.0 rebuilds the 0.8
 proof of concept. User docs: `plugin/sub-human/README.md`.
 
 ## Design
@@ -22,6 +22,7 @@ proof of concept. User docs: `plugin/sub-human/README.md`.
     `memory-store.ts` (tests), `lock.ts`, `atomic.ts`.
   - `module/` the hooks module (`register.ts` wires the parts): capture, follow, context, status and news, messages,
     wake, plans (author, review, cards, pending, notes), tasks (tool and native bridge), tools, admit (Let in cards),
+    band (the invite row while alone),
     `bridge.ts` (the daemon's socket), `session.ts` (the parts' shared plain data).
   - `commands/` one file per `/room` verb, `hooks.ts` the four command hooks of `hooks/hooks.json`.
   - `net/` the daemon only: `daemon.ts` and `daemon/` (rooms, pointers, the net ops, client), `channel.ts` (Noise

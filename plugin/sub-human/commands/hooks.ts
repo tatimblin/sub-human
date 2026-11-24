@@ -51,7 +51,7 @@ export const HOOKS: Readonly<Record<Hook, Handler>> = {
     if (m) return named(m.title);
     if (!MOVES.has(p.source)) return NOTHING;
     const claimed = await c.daemon.claim(c.session, c.cwd);
-    if (!claimed.ok) return { err: `sub-human: this session didn't take its room back: ${claimed.error}. Type /sub-human.`, exit: 1 };
+    if (!claimed.ok) return { err: `sub-human: this session didn't take its room back: ${claimed.error}. Type /room.`, exit: 1 };
     return claimed.value ? named(claimed.value.title) : NOTHING;
   }),
   /**

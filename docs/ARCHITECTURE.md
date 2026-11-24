@@ -1,6 +1,6 @@
 # sub-human v2: Architecture
 
-How v2 is built, as of 2.0.0. It is the design for `docs/PRD.md`; requirement numbers (R…) and questions (Q…) refer to that document. The 0.8 proof of concept's architecture is archived in `docs/archive/ARCHITECTURE-0.8.md`.
+How v2 is built, as of 1.0.0. It is the design for `docs/PRD.md`; requirement numbers (R…) and questions (Q…) refer to that document. The 0.8 proof of concept's architecture is archived in `docs/archive/ARCHITECTURE-0.8.md`.
 
 ## 1. Shape in one paragraph
 
@@ -111,7 +111,7 @@ The room protocol and channel stay internal.
 
 ## 3. Layout
 
-As built in 2.0.0. Plugin files import each other as `./x.js` (validate refuses `.ts` paths); node loads them through
+As built in 1.0.0. Plugin files import each other as `./x.js` (validate refuses `.ts` paths); node loads them through
 `resolve-ts.ts`.
 
 ```
@@ -446,7 +446,7 @@ The full plan is `docs/TESTING.md`: its layers, the test kit pattern, fixtures, 
 
 ## 13. Build order
 
-All of M0–M4 is built in 2.0.0; M5 (relevance tuning) waits on real use, and M6's live gate is run by the owner.
+All of M0–M4 is built in 1.0.0; M5 (relevance tuning) waits on real use, and M6's live gate is run by the owner.
 
 | Milestone | Delivers | First proof |
 |---|---|---|

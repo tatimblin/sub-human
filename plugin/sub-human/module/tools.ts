@@ -132,7 +132,7 @@ export function readCall(input: unknown, room: InRoom, state: RoomState | null, 
 export function registerTools(on: On): void {
   on('tool.run', { tool: toolName('share') }, async ($, e) => {
     const room = session.room;
-    if (!room) return { deny: 'This session is in no room; nothing was shared. Your person can join one with /sub-human.' };
+    if (!room) return { deny: 'This session is in no room; nothing was shared. Your person can join one with /room.' };
     const c = shareCall(e, room, session.state, await $.clock.now(), crypto.randomUUID());
     if (!c.ok) return { deny: c.error };
     const q = request(c.value.req, room.home);

@@ -11,6 +11,7 @@
     {
       "name": "sub-human",
       "source": "./plugin/sub-human",
+      "version": "1.0.0",
       "description": "Live, zero-effort sharing of work between Claude Code sessions: what each session learns, decides and changes reaches your colleagues and their Claudes as it happens."
     }
   ]

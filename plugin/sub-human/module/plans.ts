@@ -154,7 +154,7 @@ export function registerPlans(on: On): void {
     // a save that didn't happen is an answer, never a red error (R19); other refusals deny, as share's do
     const refuse = (text: string) => (v.is(Save, e) ? { result: text } : { deny: text });
     const room = session.room;
-    if (!room) return refuse('This session is in no room; nothing was done. Your person can join one with /sub-human.');
+    if (!room) return refuse('This session is in no room; nothing was done. Your person can join one with /room.');
     const c = planCall(e, room);
     if (!c.ok) return refuse(c.error);
     const send = c.value.act === 'send';

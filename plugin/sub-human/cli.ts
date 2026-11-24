@@ -1,8 +1,8 @@
 // sub-human's one node entry, `node --import <plugin>/resolve-ts.ts <plugin>/cli.ts ...`:
 //   hook HOOK               a command hook (hooks/node.sh runs it): the payload on stdin, the Reply on stdout. On
 //                           success nothing goes to stderr; a throw is one stderr line (the person's only) and exit 1.
-//   doctor|help [--home D]  a person at a terminal, for when Claude Code can't run /sub-human. The other verbs act for
-//                           a session, so they run only as /sub-human.
+//   doctor|help [--home D]  a person at a terminal, for when Claude Code can't run /room. The other verbs act for
+//                           a session, so they run only as /room.
 // Each hook and verb loads only what it needs: the verbs and the store are imported where they run.
 import fs from 'node:fs';
 import os from 'node:os';
