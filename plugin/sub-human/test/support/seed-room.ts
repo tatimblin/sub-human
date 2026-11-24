@@ -9,7 +9,7 @@ import { blobFile, docFile, fileKey, logFile, roomDir, tailFile } from '../../ho
 import { MemoryStore } from './memory-store.js';
 import { tailText } from '../../store/store.js';
 import type { Answers, LinkStatus, Message, PlanAct, Request, TaskAct } from '../../core/api.js';
-import { decodeRequest, sessionFile, socketFile } from '../../core/api.js';
+import { decodeRequest, hostAway, sessionFile, socketFile } from '../../core/api.js';
 import { toolFixture } from './fixtures.js';
 import { kitReader } from './kit-fixtures.js';
 import { planRule, roomState } from './kit-plans.js';
@@ -216,6 +216,8 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     if (req.op === 'asks') return reply(200, { ok: true, value: { asks: [] } }); // nobody knocks
     if (req.op === 'link') return reply(200, { ok: true, value: result.link });
     if (req.op === 'append' && req.code === code) {
+      // a room whose host is away queues a person's post and answers seq 0, as the joiner's daemon does (core/api.ts)
+      if (hostAway(result.link?.phase) && req.draft.kind === 'post' && req.draft.by === 'person') return reply(200, { ok: true, value: { seq: 0, hash: '' } });
       const line = await store.append({ ...req.draft, at: now(), machine: 'my-laptop' });
       if (!line.ok) return reply(400, { ok: false, error: line.error });
       await tail();

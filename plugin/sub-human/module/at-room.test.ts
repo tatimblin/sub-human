@@ -26,5 +26,7 @@ test('@room posts my exact words to the room as mine, addressed when a member\'s
   ])
   expect(posts[0]?.to).toBeUndefined()
   expect((await $.prompt.submit(typed('@roomy is not a room line'))).text).toBe('@roomy is not a room line')
+  room.link = { phase: 'host_away', why: null } // a room hosted elsewhere whose host is away: the post is queued, not sent
+  expect(await $.prompt.submit(typed('@room bob, back soon'))).toEqual({ drop: `sub-human: queued for ${room.code}, to bob; its host is away, so it goes when they're back.` })
   await $.session.end(END)
 })

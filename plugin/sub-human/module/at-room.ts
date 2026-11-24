@@ -38,7 +38,9 @@ export function registerAtRoom(on: On): void {
     if (!line.ok) return { drop: `sub-human: ${line.error}` };
     const q = request({ op: 'append', code: room.code, draft: line.value }, room.home);
     const r = await $.http.fetch(q.url, q).then(x => readAnswer('append', x), (x: unknown) => err(why(x)));
-    const to = line.value.to;
-    return { drop: r.ok ? `sub-human: sent to ${room.code}${to ? `, to ${to}` : ''}.` : `sub-human didn't send that to ${room.code}: ${r.error}` };
+    const to = line.value.to ? `, to ${line.value.to}` : '';
+    if (!r.ok) return { drop: `sub-human didn't send that to ${room.code}: ${r.error}` };
+    // seq 0: the room's host is away, and the post waits here under its id until they're back (core/api.ts)
+    return { drop: r.value.seq === 0 ? `sub-human: queued for ${room.code}${to}; its host is away, so it goes when they're back.` : `sub-human: sent to ${room.code}${to}.` };
   });
 }

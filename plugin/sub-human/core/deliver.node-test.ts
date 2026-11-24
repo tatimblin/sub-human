@@ -237,6 +237,13 @@ test('plans, sent plans and tasks reach those they are about (R25)', () => {
   assert.ok(changes.kind === 'context' && changes.item.block && changes.line?.startsWith('bob: asked for changes on plan paging version 1. Their note, word for word: use a cursor: - opaque'));
   const told = context([changes.item, { at: 0, label: 'cat', text: 'later', value: 1 }], CODE);
   assert.equal(told, `[room ${CODE} · cat] later\n[room ${CODE} · bob]\nasked for changes on plan paging version 1. Their note, word for word:\n${note}`, 'the block last, whole');
+  // R15a: the two newest notes whole (an 8000-character one too), the others counted, to be read in the plan
+  const long = 'y'.repeat(8000);
+  const noteAt = (t: number, text: string): Item => ({ at: t, label: 'bob', text: `asked for changes on plan paging version 1. Their note, word for word:\n${text}`, value: 2, block: true });
+  const many = context([noteAt(1, 'oldest'), noteAt(2, 'older'), noteAt(3, 'newer'), noteAt(4, long)], CODE);
+  assert.ok(many.endsWith(`word for word:\n${long}`) && !many.includes('cut at'), 'a whole 8000-character note');
+  assert.ok(many.includes('newer') && !many.includes('older') && !many.includes('oldest'));
+  assert.ok(many.startsWith('sub-human: 2 more notes on plans: read the plan for each, word for word.\n'));
   const sentBack = v({ kind: 'plan_accept', from: 'bob', by: 'person', name: 'mine', version: 1, answer: 'changes', note: 'a\nb' });
   assert.ok(sentBack.kind === 'context' && sentBack.item.block && sentBack.item.text.endsWith('word for word:\na\nb'));
   assert.equal(v({ kind: 'plan_answer', from: 'bob', by: 'person', name: 'other', version: 1, answer: 'agree' }).kind, 'none');
