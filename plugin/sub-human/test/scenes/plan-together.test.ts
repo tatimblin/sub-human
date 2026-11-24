@@ -1,10 +1,11 @@
 // S-Plan together (R17–R22a): we write one shared plan in plan mode as we normally would, and it says who does what.
-// I make my approved plan a room plan and ask bob; his "ask for changes" note reaches my Claude word for word; my
-// revision is the next version, asked of him again with no question; once he agrees, the decision is recorded for
-// that exact version and my Claude knows its own part. At most 6 lines are drawn for me (R41).
+// I make my approved plan a room plan and ask bob, and my Claude waits for him (R21a); his "ask for changes" note wakes
+// my Claude word for word; my revision is the next version, asked of him again with no question; once he agrees, the
+// decision is recorded for that exact version and my Claude is woken to build its own part. At most 6 lines are drawn
+// for me (R41).
 import { expect, mock, test } from 'claude-code/testing'
 import * as v from '../../vendor/valibot.mjs'
-import { EXIT, planWorld, typed } from '../support/plan-cards.js'
+import { EXIT, TURN, planWorld, typed } from '../support/plan-cards.js'
 import { END, START, seedRoom } from '../support/seed-room.js'
 
 const V1 = '# Cursor paging\n\n## Store @alice\n- `listTasks(cursor)` returns `{items, next}`\n\n## Handler @bob\n- passes `next` on\n'
@@ -27,18 +28,24 @@ test('one shared plan, asked, changed, agreed for its exact version; then my Cla
 
   await room.as('bob').planAct({ act: 'answer', name: 'cursor-paging', version: 1, answer: 'changes', note: NOTE })
   await room.poll(clock)
-  const asked = await $.prompt.submit(typed('what did bob say?'))
-  expect(asked.context?.join('\n')).toContain(`[room ${room.code} · bob]\nasked for changes on plan cursor-paging version 1. Their note, word for word:\n${NOTE}`)
+  await room.poll(clock) // wake.ts submits on a tick once the session is idle
+  // the wiring: the note's wake submitted, its line drawn (core/deliver.node-test.ts pins their words)
+  expect(room.submitted).toHaveLength(1)
+  expect(room.submitted[0]?.text).toContain(NOTE)
+  expect(room.logs.filter(l => l.includes('asked for changes'))).toHaveLength(1)
 
   w.plan = V2 // my Claude revises it in plan mode; I approve
-  const revised = await $.tool.call(EXIT.input)
+  await $.tool.call(EXIT.input)
   expect(w.asked).toHaveLength(2) // no third question: a revision of a room plan
-  expect(revised.context?.at(-1)).toBe(`sub-human: this approved plan is room plan cursor-paging v2 in ${room.code}; asked bob to agree again.`)
-  expect(room.logs).toContain('sub-human: shared as cursor-paging v2; asked bob again')
+  expect(room.logs).toContain('sub-human: shared as "cursor-paging" v2; asked bob again')
 
+  await $.turn.complete(TURN) // the woken turn ends
   await room.as('bob').planAct({ act: 'answer', name: 'cursor-paging', version: 2, answer: 'agree' })
   await room.poll(clock)
+  await room.poll(clock)
   expect(log().filter(e => e.kind === 'decision')).toMatchObject([{ version: 1, changes: ['bob'] }, { version: 2, agreed: ['bob'], changes: [] }])
+  expect(room.submitted).toHaveLength(2) // the agreement's wake, the revision having waited again
+  expect(room.submitted[1]?.text).toContain(`[room ${room.code}#1]`)
   const go = await $.prompt.submit(typed('go'))
   expect(go.context?.join('\n')).toContain(`[room ${room.code} · plan cursor-paging v2]\nYour part: Store. The rest: bob: Handler.\n\n${V2}`)
   expect(w.writes).toEqual([])

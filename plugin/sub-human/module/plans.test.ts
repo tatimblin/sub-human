@@ -66,7 +66,8 @@ test('a room plan is stored, the people picked are asked, and the approval reach
   expect(entries(room, 'plan_ask')).toMatchObject([{ from: 'alice', name: 'cursor-paging', version: 1, people: ['bob', 'carol'] }])
   expect(r.result).toEqual({ plan: PAGING, filePath: PLAN_FILE, isAgent: false })
   expect(r.isError).toBeUndefined()
-  expect(r.context).toEqual([`sub-human: this approved plan is room plan cursor-paging v1 in ${room.code}; asked bob, carol to agree. Their answers reach you as room updates.`])
+  // people asked: Claude waits for their answer, told in one context line beside the approval (R21a)
+  expect(r.context).toEqual([`sub-human: this approved plan is room plan "cursor-paging" v1 in ${room.code}. Plan "cursor-paging" v1 is out for agreement with bob, carol. Don't start building it until it's decided; you'll be told.`])
   untouched(w)
   await $.session.end(END)
 })
@@ -83,9 +84,28 @@ test('the next version of a room plan this session stored asks nothing: one line
   expect(w.asked).toHaveLength(2)
   expect(entries(room, 'plan')).toMatchObject([{ version: 1 }, { name: 'cursor-paging', version: 2, base: 1, scope: 'group' }])
   expect(entries(room, 'plan_ask').at(-1)).toMatchObject({ version: 2, people: ['bob'] })
-  expect(room.logs).toEqual(['sub-human: shared as cursor-paging v2; asked bob again'])
-  expect(r.context?.at(-1)).toBe(`sub-human: this approved plan is room plan cursor-paging v2 in ${room.code}; asked bob to agree again.`)
+  expect(room.logs).toEqual(['sub-human: shared as "cursor-paging" v2; asked bob again'])
+  expect(r.context?.at(-1)).toContain('v2 is out for agreement with bob.') // the revision waits again
   untouched(w)
+  await $.session.end(END)
+})
+
+test('only the session whose person asked waits: its wait survives a restart; an ask made elsewhere wakes nothing here (R21a)', async ($, on) => {
+  const { clock, w, room, start } = await inRoom($, on, { others: ['bob', 'carol'] })
+  await start()
+  w.plan = PAGING
+  w.answer('Room plan', 'bob')
+  await $.tool.call(EXIT.input)
+  // my person's ask from another session of mine (its own tag)
+  await room.as('alice').planAct({ act: 'edit', name: 'errors', base: 0, text: '# Errors\n', scope: 'group' })
+  await room.as('alice').planAct({ act: 'ask', name: 'errors', version: 1, people: ['carol'], by: 'person', asker: 'another-session' })
+  await $.session.end(END)
+  await start() // a restart: the module's memory is gone, the log is not
+  await room.as('carol').planAct({ act: 'answer', name: 'errors', version: 1, answer: 'agree' })
+  await room.as('bob').planAct({ act: 'answer', name: 'cursor-paging', version: 1, answer: 'agree' })
+  await room.poll(clock)
+  await room.poll(clock)
+  expect(room.submitted.map(x => x.text.split('\n')[0])).toEqual([expect.stringMatching(/^sub-human: plan "cursor-paging" v1 is agreed/)])
   await $.session.end(END)
 })
 
@@ -113,7 +133,9 @@ test('a new plan never takes another person\'s plan name, and offers no new vers
   await room.poll(clock)
   w.plan = PAGING
   w.answer('Room plan', 'Nobody yet')
-  await $.tool.call(EXIT.input)
+  const r = await $.tool.call(EXIT.input)
+  // nobody asked: nothing to wait for (R21a)
+  expect(r.context).toEqual([`sub-human: this approved plan is room plan "cursor-paging-3" v1 in ${room.code}.`])
   expect(w.asked[0]?.options).toEqual(['Keep it', 'Room plan', 'Send to bob', 'Send to carol'])
   expect(entries(room, 'plan').at(-1)).toMatchObject({ from: 'alice', name: 'cursor-paging-3', version: 1, base: 0, scope: 'group' })
   untouched(w)
@@ -121,12 +143,14 @@ test('a new plan never takes another person\'s plan name, and offers no new vers
 })
 
 test('a session with nobody to answer (-p), and a subagent\'s plan, share nothing and ask nothing', async ($, on) => {
-  const { w, room, start } = await inRoom($, on, { interactive: false })
+  const { clock, w, room, start } = await inRoom($, on, { interactive: false })
   await start()
   w.plan = PAGING
   const r = await $.tool.call(EXIT.input)
   expect(r.context ?? []).toEqual([])
   await room.as('bob').plan('paging', PAGING, ['alice'])
+  await room.poll(clock)
+  await room.poll(clock) // idle, but nobody is here to answer a card
   await $.turn.complete(TURN)
   expect(w.asked).toEqual([])
   expect(room.requests.filter(q => q.op === 'plan')).toEqual([])
@@ -185,7 +209,7 @@ test('a plan I am asked about is a card at my turn\'s end; Agree is recorded, an
   await start()
   await room.as('bob').plan('paging', PAGING, ['alice'])
   await room.poll(clock)
-  expect(room.logs).toEqual(["bob's Claude asked you to agree on plan paging version 1."]) // one line for one ask
+  expect(room.logs).toEqual(['bob\'s Claude asked you to agree on plan "paging" version 1.']) // one line for one ask
   w.answer('Agree')
   await $.turn.complete(TURN)
   expect(w.asked).toEqual([{
@@ -224,7 +248,7 @@ test('ask for changes: text typed under Other is the note; the label asks for th
 })
 
 test('Read the full plan opens a pane with the diff and the whole text; taller than its window, and its button asks again (R21)', async ($, on) => {
-  const { w, room, start } = await inRoom($, on)
+  const { clock, w, room, start } = await inRoom($, on)
   await room.as('bob').plan('paging', PAGING, ['alice'])
   await room.as('bob').plan('paging', PAGING.replace('`{items, next}`', '`{items, cursor}`'), ['alice'])
   await start()
@@ -239,10 +263,18 @@ test('Read the full plan opens a pane with the diff and the whole text; taller t
   expect(text).toContain('+- `listTasks(cursor)` returns `{items, cursor}`')
   expect(text.slice(text.indexOf('The full plan:') + 1, text.indexOf('The full plan:') + 2)).toEqual(['# Cursor paging'])
   expect(text.length).toBeGreaterThan(PANE.scroll.bodyRows) // taller than the pane's window: its body scrolls
-  w.answer('Agree')
+  await room.poll(clock)
+  await room.poll(clock) // idle, but the person is reading: no card over the open pane
+  expect(w.asked).toHaveLength(1)
+  w.answer('Read the full plan')
   await pane.press({ key: 'answer' })
   expect(w.closed).toEqual([PLAN_PANE])
   expect(w.asked).toHaveLength(2)
+  w.escape(PLAN_PANE) // read again, then closed with Esc: the next idle moment asks again
+  w.answer('Agree')
+  await room.poll(clock)
+  await room.poll(clock)
+  expect(w.asked).toHaveLength(3)
   expect(entries(room, 'plan_answer')).toMatchObject([{ version: 2, answer: 'agree' }])
   untouched(w, { pane: true })
   await $.session.end(END)
@@ -270,7 +302,7 @@ test('a plan sent to me is one line, then a card; accepting it puts it, its bran
   await room.as('bob').planAct({ act: 'edit', name: 'api-store', base: 0, text: PAGING, scope: 'personal' })
   await room.as('bob').planAct({ act: 'send', name: 'api-store', to: 'alice', note: 'the store half is yours', branch: 'bob/paging', files: ['src/store.js'], by: 'person' })
   await room.poll(clock)
-  expect(room.logs).toEqual(['bob sent you plan api-store version 1.'])
+  expect(room.logs).toEqual(['bob sent you plan "api-store" version 1.'])
   w.answer('Accept')
   const r = await $.prompt.submit(typed('what next?'))
   expect(w.asked).toEqual([{
@@ -384,15 +416,26 @@ test('where the pane can\'t be placed, that is one line a session; the card goes
   await $.session.end(END)
 })
 
-test('a subagent\'s turn ending is no idle moment: no card until my own turn ends', async ($, on) => {
+test('an idle reviewer gets the card on the next poll; never while my turn runs, and a subagent\'s end is not mine (R21b)', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on)
+  on('turn.start', (_, e) => ({ turnId: e.turnId }))
   await start()
+  await $.turn.start({ text: 'go', turnId: 't1' }) // my turn runs
   await room.as('bob').plan('paging', PAGING, ['alice'])
   await room.poll(clock)
+  await room.poll(clock)
   await $.turn.complete({ ...TURN, agentId: 'helper-1' })
+  await room.poll(clock)
   expect(w.asked).toEqual([])
   w.answer('Agree')
   await $.turn.complete(TURN)
   expect(w.asked).toHaveLength(1)
+  // idle at the prompt: the next plan's card comes on a poll, with no turn's end or prompt
+  await room.as('bob').plan('errors', '# Errors\n- a 400 for a bad cursor\n', ['alice'])
+  w.answer('Agree')
+  await room.poll(clock)
+  await room.poll(clock)
+  expect(w.asked.map(c => c.question.split(' (')[0])).toEqual(['bob asks you to agree on plan paging v1', 'bob asks you to agree on plan errors v1'])
+  expect(entries(room, 'plan_answer')).toMatchObject([{ name: 'paging', answer: 'agree' }, { name: 'errors', answer: 'agree' }])
   await $.session.end(END)
 })

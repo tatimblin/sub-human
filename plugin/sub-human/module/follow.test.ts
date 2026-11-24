@@ -244,7 +244,7 @@ test('the first read of the room never holds up the session\'s start', async ($,
   expect(room.status).toEqual([])
   release()
   await room.settled(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob`)
   await $.session.end(END)
 })
 

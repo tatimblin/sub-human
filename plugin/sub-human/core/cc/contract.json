@@ -104,22 +104,15 @@
    "id": "status-line",
    "kind": "api",
    "feature": "status",
-   "surface": "$.ui.status, $.ui.log (2,000 characters drawn), and the PromptHint line's tail",
+   "surface": "$.ui.status and $.ui.log (2,000 characters drawn)",
    "typings": [
     "status: (text: string | undefined) => void;",
-    "log: (text: string, options?: UiLogOptions) => void;",
-    {
-     "in": "PromptHint: {",
-     "has": [
-      "tail?: string;",
-      "hint: string;"
-     ]
-    }
+    "log: (text: string, options?: UiLogOptions) => void;"
    ],
    "checked": [
     "2.1.330"
    ],
-   "note": "The room's line under the prompt (R15b): on a terminal at the end of the prompt's hint line (PromptHint's tail, drawn dim), since a plugin's $.ui.status is drawn as a warning, '⚠ sub-human: …' (docs/internals/v2-status-line.md); $.ui.status where no terminal draws the hint. $.ui.log for one-line notices and debug lines."
+   "note": "The room's line (R15b): its own row through $.ui.status, which Claude Code draws as '⚠ sub-human: …' (docs/internals/v2-status-line.md). $.ui.log for one-line notices and debug lines."
   },
   {
    "id": "ask-card",

@@ -20,11 +20,25 @@ const others = (s: RoomState, me: string) => s.members.filter(m => !m.kicked && 
 const memberNamed = (s: RoomState, name: string) => others(s, '').find(m => m.name.toLowerCase() === name.trim().toLowerCase())?.name;
 const onPlan = (p: Plan, me: string) => p.versions.some(v => v.from === me || v.asked.includes(me));
 
-/** A plan's name from its first heading or line: `## Cursor paging` → `cursor-paging`. */
+/** The words a plan's name leaves out. */
+const STOP = new Set('a an the and or of to for in on at by with from into onto via as is are be it its this that these those our my your we plan'.split(' '));
+const NAME_MAX = 24;
+
+/**
+ * A plan's short name from its first heading or line: its first three meaningful words, at most NAME_MAX characters
+ * (`## Finish webography: click a row to expand` → `finish-webography-click`).
+ */
 export function planName(text: string): string {
   const first = text.split('\n').find(l => /^\s*#/.test(l)) ?? text.split('\n').find(l => l.trim()) ?? '';
-  const slug = first.replace(/^\s*(?:#+|[-*+]|\d+[.)])\s*/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  return slug.slice(0, 40).replace(/-+$/, '') || 'plan';
+  const all = first.replace(/^\s*(?:#+|[-*+]|\d+[.)])\s*/, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const words = all.filter(w => !STOP.has(w));
+  let name = '';
+  for (const w of (words.length ? words : all).slice(0, 3)) {
+    const next = name ? `${name}-${w}` : w;
+    if (next.length > NAME_MAX) break;
+    name = next;
+  }
+  return name || (words[0] ?? all[0])?.slice(0, NAME_MAX) || 'plan';
 }
 
 /** A next version of a room plan: on which base, and who is asked again. */
@@ -67,15 +81,18 @@ export function choice(picked: string | null, a: Extract<Approval, { kind: 'ask'
 }
 
 /**
- * A name for a plan of mine: the plan's own while nobody's plan has it, else with a number after it; never another
- * person's plan. A personal plan of mine alone keeps its name (sending it again), a room plan never does.
+ * A name for a plan of mine: the plan's own while nobody's plan has it, else with a number after it, kept within
+ * NAME_MAX; never another person's plan. `again` is the name this session stored this same plan file under: a
+ * personal plan of mine keeps it (sending it again), so a different plan is never the next version of an old one.
  */
-export function freeName(s: RoomState, name: string, me: string, scope: Plan['scope']): { readonly name: string; readonly base: number } {
+export function freeName(s: RoomState, name: string, me: string, scope: Plan['scope'], again?: string): { readonly name: string; readonly base: number } {
   for (let n = 1; ; n++) {
-    const tried = n === 1 ? name : `${name}-${n}`;
+    const suffix = n === 1 ? '' : `-${n}`;
+    const tried = `${name.slice(0, NAME_MAX - suffix.length).replace(/-+$/, '')}${suffix}`;
     const plan = s.plans.find(p => p.name === tried);
     if (!plan) return { name: tried, base: 0 };
-    if (scope === 'personal' && plan.scope === scope && plan.versions.every(v => v.from === me)) return { name: tried, base: plan.versions.at(-1)?.version ?? 0 };
+    const mine = scope === 'personal' && tried === again && plan.scope === scope && plan.versions.every(v => v.from === me);
+    if (mine) return { name: tried, base: plan.versions.at(-1)?.version ?? 0 };
   }
 }
 

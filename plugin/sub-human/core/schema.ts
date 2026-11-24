@@ -64,7 +64,7 @@ const entry = exact<Entry>()(v.variant('kind', [
   v.object({ ...envelope, kind: v.literal('left') }),
   activity, finding, post,
   v.object({ ...envelope, ...ref, kind: v.literal('plan'), hash: short, base: count, scope }),
-  v.object({ ...envelope, ...ref, kind: v.literal('plan_ask'), people: names }),
+  v.object({ ...envelope, ...ref, kind: v.literal('plan_ask'), people: names, asker: opt(short) }),
   v.object({ ...envelope, ...ref, kind: v.literal('plan_answer'), answer, note: opt(text) }),
   v.object({ ...envelope, ...ref, kind: v.literal('decision'), agreed: names, changes: names }),
   v.object({ ...envelope, ...ref, kind: v.literal('plan_sent'), to: opt(name), branch: opt(short), files, note: opt(text) }),

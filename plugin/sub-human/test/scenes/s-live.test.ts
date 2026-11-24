@@ -25,7 +25,7 @@ test('a relevant colleague change reaches my next prompt, capped (R15, R15a)', a
   expect(context).toMatch(/bob.*listTasks/)
   expect(context).toContain(`bob is editing ${EDITED}, which you edited recently`)
   expect(tokens(context)).toBeLessThan(400)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob`) // updates are news's, not the line's
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob`) // updates are news's, not the line's
   expect(room.logs).toContainEqual(expect.stringContaining(`bob is editing ${EDITED}`))
 
   const again = await $.prompt.submit(typed('and then'))
@@ -47,7 +47,7 @@ test('a change that bears on nothing of mine is counted, not handed to my Claude
 
   const r = await $.prompt.submit(typed('keep going'))
   expect(updates(r)).toEqual([])
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ○ carol`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ○ carol`)
   expect(room.spawned).toEqual([])
   expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
@@ -63,7 +63,7 @@ test('history from before my session is no news', async ($, on) => {
 
   const r = await $.prompt.submit(typed('hi'))
   expect(updates(r)).toEqual([])
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob`)
   expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
 })

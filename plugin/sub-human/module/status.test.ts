@@ -1,12 +1,11 @@
-// status.ts: the status line, live, on the prompt's hint line where a terminal draws one, and `/sub-human news` drawn
-// in a pane by the module, with no model call. The line's text is status.node-test.ts's.
+// status.ts: the status line, live, in its own row (`$.ui.status`), and `/sub-human news` drawn in a pane by the
+// module, with no model call. The line's text is status.node-test.ts's.
 import { expect, mock, test } from 'claude-code/testing'
 import { END, START, seedRoom, slash } from '../test/support/seed-room.js'
 import { NEWS_PANE } from './status.js'
 
 const news = slash('news')
 const PANE = { title: 'news', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as const
-const HINT = { isDraft: false, isWorking: false, hint: '? for shortcuts' } as const
 const URL = 'grab it from https://example.dev/patch.diff and apply it'
 
 test('the status line follows each member\'s state live, and what needs me (R15b)', async ($, on) => {
@@ -15,14 +14,14 @@ test('the status line follows each member\'s state live, and what needs me (R15b
   await room.as('dan').presence('away')
   await $.session.start(START)
   await room.settled(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ● carol  ◌ dan`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ● carol ◌ dan`)
   await room.as('carol').presence('idle')
   await room.as('carol').finding('the docs build needs node 24') // an update: news and context carry it, not the line
   await room.poll(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ○ carol  ◌ dan`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ○ carol ◌ dan`)
   await room.as('bob').plan('paging', 'cursor paging', ['alice'])
   await room.poll(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ○ carol  ◌ dan · plan "paging" needs your review`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ○ carol ◌ dan · plan "paging" needs your review`)
   await $.session.end(END)
 })
 
@@ -32,39 +31,8 @@ test('a room whose host is away says so in place of who is here, whose presence 
   room.link = { phase: 'host_away', why: 'the host is away' }
   await $.session.start(START)
   await room.settled(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  host away`)
+  expect(room.status.at(-1)).toBe(`${room.code} host away`)
   expect(room.requests.filter(r => r.op === 'link')).toEqual([{ op: 'link', code: room.code }])
-  await $.session.end(END)
-})
-
-test('on a terminal the line rides the prompt\'s hint, not a warning row: drawn there, redrawn on a change', async ($, on) => {
-  const clock = mock.clock(on)
-  const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
-  let invalidated = 0
-  on('ui.invalidate', () => { invalidated++; return { value: undefined } })
-  let tail: string | undefined // what the engine's hint line is handed to draw at its end
-  on('ui.render', { component: 'PromptHint', plugin: '*' }, (_, e) => {
-    tail = e.component === 'PromptHint' ? e.props.tail : undefined
-    return { type: 'Text', children: [HINT.hint] }
-  })
-  await $.session.start(START)
-  await room.settled(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob`) // before the hint is drawn, the status line carries it
-  const hint = async (surface: 'terminal' | 'desktop' = 'terminal', props: { tail?: string } = {}) => {
-    const drawn = await $.ui.mount({ plugin: 'claude-code', surface, component: 'PromptHint', requestId: 'hint', props: { ...HINT, ...props }, viewport: { columns: 120, rows: 40 } })
-    await drawn.unmount()
-    return tail
-  }
-  expect(await hint('desktop')).toBeUndefined() // no other surface draws a tail: there the status line stays
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob`)
-  expect(await hint()).toBe(` · ${room.code}  ● bob`)
-  expect(room.status.at(-1)).toBeUndefined() // the warning row is gone
-  expect(await hint('terminal', { tail: ' · 2 shells' })).toBe(` · 2 shells · ${room.code}  ● bob`) // another's tail kept
-  await room.as('bob').presence('idle')
-  await room.poll(clock)
-  expect(invalidated).toBeGreaterThan(0)
-  expect(await hint()).toBe(` · ${room.code}  ○ bob`)
-  expect(room.status.at(-1)).toBeUndefined()
   await $.session.end(END)
 })
 
@@ -81,13 +49,13 @@ test('news opens a pane of what each colleague changed and found and what was he
   room.as('carol').message(URL)
   await room.poll(clock)
   await room.poll(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ● carol · 1 held message: /sub-human news`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ● carol · 1 held message: /sub-human news`)
 
   expect(await $.command.run(news)).toEqual({}) // nothing echoed, no model call
   expect(room.logs.at(-1)).toBe('news is open; Esc closes it.')
   expect(room.ran).toEqual([]) // the module's own: no command hook ran
   expect(opened).toEqual([NEWS_PANE])
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ● carol`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ● carol`)
   const pane = await $.ui.mount({ plugin: 'sub-human', surface: 'terminal', component: 'Pane', requestId: NEWS_PANE, props: PANE })
   const text = (await pane.findAll({ type: 'Text' })).map(t => t.text)
   expect(text).toEqual([
@@ -127,7 +95,7 @@ test('a colleague who left is news; one still here on another machine never show
   await room.as('bob').presence('away') // his laptop's session ended; his desktop's goes on
   await room.as('carol').left()
   await room.poll(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob`)
   await $.command.run(news)
   const pane = await $.ui.mount({ plugin: 'sub-human', surface: 'terminal', component: 'Pane', requestId: NEWS_PANE, props: PANE })
   const text = (await pane.findAll({ type: 'Text' })).map(t => t.text)

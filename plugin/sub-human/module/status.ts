@@ -15,11 +15,10 @@ const LINE_MAX = 300;
 
 /** How wide the line may be where nothing says (the `$.ui.status` row). */
 export const LINE_COLUMNS = 80;
-const SEP = ' · ';
 const DOT = { working: '●', idle: '○', waiting: '◐', away: '◌' } as const;
 
 /**
- * `CODE  ● bob  ○ carol · plan "paging" needs your review (+2)` (R15b): the room's code (a renamed session's title no
+ * `CODE ● bob ○ carol · plan "paging" needs your review (+2)` (R15b): the room's code (a renamed session's title no
  * longer shows it), each other member with a dot (● working, ○ idle, ◐ waiting on a permission prompt, ◌ away), or
  * that the host is away (R34) when nobody's presence can be known; then the one most urgent thing that needs me, with
  * how many more do. Within `width`, names fold into `+N` first: the code and what needs me are kept whole.
@@ -27,12 +26,12 @@ const DOT = { working: '●', idle: '○', waiting: '◐', away: '◌' } as cons
 export function statusLine(room: RoomState, me: { readonly code: string; readonly name: string }, held: number, away = false, width: number = LINE_COLUMNS): string {
   const needs = needsMe(room, me.name, held);
   const right = needs[0] === undefined ? '' : ` · ${needs[0]}${needs.length > 1 ? ` (+${needs.length - 1})` : ''}`;
-  if (away) return `${me.code}  host away${right}`;
+  if (away) return `${me.code} host away${right}`;
   // a member who hasn't left is drawn even while away: they are still in the room, and a message still reaches them
   const names = room.members.filter(m => m.name !== me.name && !m.kicked && m.machine !== undefined).map(m => `${dot(m)} ${m.name}`);
   for (let k = names.length; ; k--) {
     const rest = names.length - k;
-    const line = [me.code, ...names.slice(0, k), ...(rest ? [`+${rest}`] : [])].join('  ') + right;
+    const line = [me.code, ...names.slice(0, k), ...(rest ? [`+${rest}`] : [])].join(' ') + right;
     if (k === 0 || line.length <= width) return line;
   }
 }
@@ -99,8 +98,7 @@ export function registerStatus(on: On): void {
     session.read.news = session.fed;
     session.held = 0;
     session.shown = statusLine(session.state, room, 0, session.away);
-    if (session.hint) $.ui.invalidate('ui.render');
-    else $.ui.status(session.shown);
+    $.ui.status(session.shown);
     $.ui.log('news is open; Esc closes it.');
     return {};
   });
@@ -108,16 +106,4 @@ export function registerStatus(on: On): void {
     type: 'Box', props: { flexDirection: 'column' },
     children: shown.map(line => ({ type: 'Text', ...(line === shown[0] && { props: { bold: true } }), children: [line] })),
   }));
-  // The terminal draws the line at the end of the hint under the prompt: a plugin's `$.ui.status` is drawn as a
-  // warning there ("⚠ sub-human: …", docs/internals/v2-status-line.md), which the room's line isn't. Once a terminal
-  // draws the hint, `$.ui.status` is cleared and every change of the line redraws the hint instead.
-  on('ui.render', { component: 'PromptHint', plugin: '*' }, ($, e, next) => { // the engine's line, no plugin's
-    if (e.surface !== 'terminal') return next(e);
-    if (!session.hint) { session.hint = true; $.ui.status(undefined); }
-    const room = session.room;
-    if (!room || !session.state) return next(e);
-    const had = e.props.tail ?? '';
-    const width = (e.viewport?.columns ?? LINE_COLUMNS) - e.props.hint.length - had.length - SEP.length;
-    return next({ ...e, props: { ...e.props, tail: `${had}${SEP}${statusLine(session.state, room, session.held, session.away, width)}` } });
-  });
 }

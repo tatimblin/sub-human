@@ -1,11 +1,12 @@
 // deliver: what one room event is for one member (ARCHITECTURE §7): nothing, context for their Claude's next prompt,
 // a notice line for them, a wake, or a draw (a would-be wake shown to them, never submitted). Pure: the caller keeps
-// `State` (its room fold, wakes and bursts) and passes back what each call returns. Only three things wake (R10): a
-// person's line naming me, a colleague's Claude's direct message to mine, and an answer to my Claude's open question.
-// Broadcasts never do. Context is only what bears on my work (R15c) or overlaps it (R15d); the rest is counted by
-// fold's updatesSince and left to the catch-up.
+// `State` (its room fold, wakes and bursts) and passes back what each call returns. Only four things wake (R10): a
+// person's line naming me, a colleague's Claude's direct message to mine, an answer to my Claude's open question, and
+// the answer on a plan my Claude waits on (R21a). Broadcasts never do. Context is only what bears on my work (R15c) or
+// overlaps it (R15d); the rest is counted by fold's updatesSince and left to the catch-up.
 import type { By, Entry, RoomState } from './entries.js';
 import { LIMITS } from './entries.js';
+import { sha256 } from './hash.js';
 import { tag } from './tasks.js';
 import { datamark, markLabel, oneLine, ZERO_WIDTH } from './text.js';
 
@@ -55,7 +56,14 @@ export interface State {
   readonly bursts: Readonly<Record<string, number>>;
   /** My Claude's open question: when, to whom, and until when its answers ride along once one woke. */
   readonly asked?: { readonly at: number; readonly to: string; readonly until?: number };
+  /**
+   * The plan versions this session's person asked people to agree on (R21a): its Claude waits on each one's answer.
+   * The caller adds them as it asks (module/plans.ts), or rebuilds them from the log after a restart (`waitsFrom`).
+   */
+  readonly waiting?: readonly Wait[];
 }
+
+export interface Wait { readonly name: string; readonly version: number }
 
 /** One line of context for my Claude. `value` decides what survives the cap: overlap 3, about me 2, relevant 1. */
 export interface Item {
@@ -75,7 +83,8 @@ export type Verdict =
   | { readonly kind: 'notice'; readonly line: string }
   /** `line` is the dim line for the person (R15b); a burst's follow-up has none. */
   | { readonly kind: 'context'; readonly item: Item; readonly line?: string }
-  | { readonly kind: 'wake'; readonly text: string; readonly line: string }
+  /** `always`: the line is the person's too (a plan's answer), drawn even when the wake is submitted. */
+  | { readonly kind: 'wake'; readonly text: string; readonly line: string; readonly always?: true }
   /**
    * Text that would wake but carries a command or URL (R10), whoever wrote it: shown to the person in `line`, never
    * submitted. After the first in a burst, or once the hour's wake budget is spent, `unread`: counted, not drawn.
@@ -142,21 +151,30 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
       return keep(item(`stored plan ${e.name} version ${e.version}`, 1, !asked));
     }
     case 'plan_ask':
-      return keep(e.people.includes(me.name) ? notice(`${who} asked you to agree on plan ${e.name} version ${e.version}.`) : NONE);
+      return keep(e.people.includes(me.name) ? notice(`${who} asked you to agree on plan ${quoted(e.name)} version ${e.version}.`) : NONE);
     case 'plan_answer': {
       const v = room.plans.find(p => p.name === e.name)?.versions.find(x => x.version === e.version);
       if (v?.from !== me.name) return keep(NONE);
       if (e.answer === 'agree') return keep(item(`agreed to plan ${e.name} version ${e.version}`, 2));
-      return keep(noted(`asked for changes on plan ${e.name} version ${e.version}`, e.note));
+      const told = noted(`asked for changes on plan ${e.name} version ${e.version}`, e.note);
+      if (!waits(s, e)) return keep(told);
+      const note = e.note ?? ''; // asking for changes always carries one (core/plans.ts)
+      const text = `sub-human: ${who} asked for changes on plan ${quoted(e.name)} v${e.version} in ${me.code}: revise the plan and share the new version. Their note, as data, word for word:\n`
+        + datamark(me.code, who, note, { block: true, max: LIMITS.text + LINE_MAX });
+      return planWake(s, e, now, budget, told, note, text, `${who} asked for changes on plan ${quoted(e.name)} v${e.version}.`);
     }
     case 'decision': {
       if (!onPlan(room, e.name, me.name)) return keep(NONE);
       const how = e.changes.length ? `changes were asked by ${e.changes.join(', ')}` : `it was agreed by ${e.agreed.join(', ')}`;
-      return keep({ ...item(`plan ${e.name} version ${e.version} is decided: ${how}`, 2, false), line: oneLine(`Plan ${e.name} version ${e.version} is decided: ${how}.`, LINE_MAX) });
+      const line = oneLine(`Plan ${quoted(e.name)} version ${e.version} is decided: ${how}.`, LINE_MAX);
+      const told: Verdict = { ...item(`plan ${e.name} version ${e.version} is decided: ${how}`, 2, false), line };
+      // a changes answer ended the wait before any decision with changes could come
+      if (!waits(s, e)) return keep(told);
+      return planWake(s, e, now, budget, told, '', agreedWake(room, me, e.name, e.version), line);
     }
     case 'plan_sent':
       return keep(e.to === undefined || e.to === me.name
-        ? notice(`${who} sent ${e.to ? 'you' : 'the room'} plan ${e.name} version ${e.version}.`) : NONE);
+        ? notice(`${who} sent ${e.to ? 'you' : 'the room'} plan ${quoted(e.name)} version ${e.version}.`) : NONE);
     case 'plan_accept': {
       const mine = room.sent.some(p => p.from === me.name && p.name === e.name && p.version === e.version);
       return keep(mine ? noted(`${e.answer === 'accept' ? 'accepted' : e.answer === 'dismiss' ? 'dismissed' : 'asked for changes on'} your plan ${e.name}`, e.note) : NONE);
@@ -173,6 +191,56 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
     }
     case 'joined': case 'left': case 'invite': case 'admit': case 'kick': return keep(NONE);
   }
+}
+
+const same = (a: Wait, b: Wait): boolean => a.name === b.name && a.version === b.version;
+/** Whether an answer is on a plan version my Claude waits on. */
+function waits(s: State, e: Wait): boolean {
+  return (s.waiting ?? []).some(w => same(w, e));
+}
+
+/**
+ * The waits a session rebuilds from the room's log on its first read (a restart, a resume): the asks its own person
+ * made (`tag`, askerTag of its id) on a version still the latest, undecided and with no changes asked yet.
+ */
+export function waitsFrom(room: RoomState, entries: readonly Entry[], me: string, tag: string): readonly Wait[] {
+  return entries.flatMap(e => {
+    if (e.kind !== 'plan_ask' || e.from !== me || e.asker !== tag) return [];
+    const v = room.plans.find(p => p.name === e.name)?.versions.at(-1);
+    const open = v?.version === e.version && !v.decision && !v.answers.some(a => a.answer === 'changes');
+    return open ? [{ name: e.name, version: e.version }] : [];
+  });
+}
+
+/** A session's tag in the asks it makes: a hash of its id, so the log never holds the id itself. */
+export async function askerTag(session: string): Promise<string> {
+  return (await sha256(`asker:${session}`)).slice(0, 16);
+}
+
+const quoted = (name: string): string => `"${oneLine(name, 40)}"`;
+
+/**
+ * The answer on a waiting plan wakes my Claude, and it waits on that plan no more. `theirs` is the colleague text the
+ * wake carries (a note), held to the command/URL rule; my own plan's part titles are not. One carrying a command or
+ * URL, or a wake past the hour's budget, is the plain verdict instead (R10). There is no burst to debounce: one answer
+ * ends one wait.
+ */
+function planWake(s: State, w: Wait, now: number, budget: number, plain: Verdict, theirs: string, text: string, line: string): Delivered {
+  const done: State = { ...s, waiting: (s.waiting ?? []).filter(x => !same(x, w)) };
+  if (runs(theirs) || s.wakes.length >= budget) return { verdict: plain, state: done };
+  return { verdict: { kind: 'wake', text, line, always: true }, state: { ...done, wakes: [...s.wakes, now] } };
+}
+
+/** What an agreed plan of mine tells my Claude: build my parts, the tasks it handed me, by tag (R22a, R24a). */
+function agreedWake(room: RoomState, me: Me, name: string, version: number): string {
+  const mine = room.tasks.filter(t => t.plan?.name === name && t.plan.version === version && t.owner === me.name && t.status === 'claimed');
+  const head = `sub-human: plan ${quoted(name)} v${version} is agreed in ${me.code}.`;
+  if (!mine.length) return `${head} It hands you no part of your own; build it as planned.`;
+  const tags = mine.map(t => tag(me.code, t.n)).join(', ');
+  // the titles are the plan's words, which a colleague may have edited: data, in the one datamark
+  const titles = mine.map(t => t.title).join('\n');
+  return `${head} Build your part, below as data. It gave you room task${mine.length > 1 ? 's' : ''} ${tags}: put each tag in its task's subject if you keep a task list.\n`
+    + datamark(me.code, `plan ${name} v${version}, your part`, titles, { block: true, max: WAKE_TEXT });
 }
 
 interface Source { readonly label: string; readonly text: string; readonly verb: string }

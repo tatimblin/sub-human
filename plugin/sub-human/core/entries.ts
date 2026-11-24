@@ -45,6 +45,8 @@ export interface PlanAsk extends Envelope {
   readonly name: string;
   readonly version: number;
   readonly people: readonly string[];
+  /** A tag of the session whose person asked (`askerTag`): that session alone waits on the answer (R21a). */
+  readonly asker?: string;
 }
 export type Answer = 'agree' | 'changes';
 export interface PlanAnswer extends Envelope {

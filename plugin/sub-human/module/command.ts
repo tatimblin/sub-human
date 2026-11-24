@@ -3,8 +3,9 @@
 // hooks.json's UserPromptExpansion would run) and draws its answer with `$.ui.log`. It answers `{}`: Claude Code then
 // adds no row at all, so the typed line (an invite's secret) is never echoed and nothing reaches the model, and no
 // expansion hook runs, so there is no "UserPromptExpansion operation blocked by hook" frame (core/cc/contract.json
-// command-run-empty-answer). A prompt that isn't the person's own (the SDK, the bridge), or a run that is refused or
-// never answers, goes on to the classic hook, which answers with that frame, as it does where the module is off (C1).
+// command-run-empty-answer). A prompt that isn't the person's own (the SDK, the bridge), or a run refused before it
+// started, goes on to the classic hook, which answers with that frame, as it does where the module is off (C1). A run
+// that outlasts COMMAND_MS may have done its work (an invite minted), so it is never run a second time: one line says so.
 import type { On } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import { CODE } from '../core/api.js';
@@ -14,7 +15,10 @@ import { COMMAND, session } from './session.js';
 
 /** As long as hooks.json gives the classic hook. */
 export const COMMAND_MS = 15_000;
+/** A run that fails sooner than this was refused before it started. */
+export const REFUSED_MS = 2000;
 const PREFIX = 'sub-human: ';
+export const STILL_WORKING = '/sub-human is still working; check /sub-human who';
 const Reply = v.object({ reason: v.string() });
 
 /** The answer the classic expand hook printed (`{decision: 'block', reason: 'sub-human: …'}`), or null. */
@@ -62,10 +66,15 @@ export function registerCommand(on: On): void {
     };
     const payload = { session_id: await $.session.id(), cwd: await $.session.cwd(), command_args: e.args };
     let run: { readonly stdout: string; readonly stderr: string };
+    const began = await $.clock.now();
     try {
       run = await $.process.run(['sh', `${$.plugin.root}/hooks/node.sh`, 'expand'], { stdin: JSON.stringify(payload), env: commandEnv(got), timeoutMs: COMMAND_MS });
     } catch {
-      return next(e); // refused (managed policy) or never answered: the classic hook beneath answers instead
+      // the rejection says no more than that it failed, and `$` has no monotonic clock: a run refused within
+      // REFUSED_MS never started (managed policy refuses at once); a later one ran, and may have done its work
+      if ((await $.clock.now()) - began < REFUSED_MS) return next(e);
+      $.ui.log(STILL_WORKING);
+      return {};
     }
     session.recheck = true; // the run may have moved the pointer after the first recheck was taken
     const why = run.stderr.trim().split('\n').at(-1)?.replace(PREFIX, '').slice(0, 200);

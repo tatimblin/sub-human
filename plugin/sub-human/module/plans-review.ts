@@ -1,7 +1,8 @@
 // plans-review: the reviewer's side (ARCHITECTURE §7 "Group plan" steps 3–4, "Sent plan"; R21–R22c). follow.ts draws
-// the one notice line; at my next idle moment (a turn's end, or my next prompt) each plan waiting on me is a native
-// question card whose question says what changed since the version I last saw. "Read the full plan" opens a pane with
-// the diff and the whole text (a card can't scroll); its button, or the next idle moment, asks again. An answer goes
+// the one notice line; at my next idle moment (a turn's end, my next prompt, or a poll while no main turn runs, R21b)
+// each plan waiting on me is a native question card whose question says what changed since the version I last saw.
+// "Read the full plan" opens a pane with the diff and the whole text (a card can't scroll); its button, or the next
+// idle moment, asks again. An answer goes
 // to the daemon as `plan answer` or `plan accept`. A sent plan I accept, and my part of an agreed one (R22a), go to my
 // Claude with my next prompt. A card dismissed twice is left to the status count and news. No plan file is touched
 // and no mode changes (R19); nothing here starts a turn.
@@ -24,10 +25,11 @@ export const PLAN_PANE = 'sub-human-plan';
 const DISMISSALS = 2;
 
 /**
- * What plans.ts reads of this session, as plain data: whether a person is here to answer a card (`-p` has none), and
- * the room plans this session stored, by name → the plan file each came from ('' from the plan tool).
+ * What plans.ts and wake.ts read of this session, as plain data: whether a person is here to answer a card (`-p` has
+ * none), the plans this session stored, by name → the plan file each came from ('' from the plan tool), and the
+ * review's idle moment, which wake.ts's tick calls while no main turn runs (R21b).
  */
-export const planSession: { interactive: boolean; readonly stored: Map<string, string> } = { interactive: false, stored: new Map() };
+export const planSession: { interactive: boolean; readonly stored: Map<string, string>; review: (() => Promise<void>) | null } = { interactive: false, stored: new Map(), review: null };
 
 export function registerReview(on: On): void {
   // what is asked no more this session (answered), or not until after the next prompt (dismissed)
@@ -37,6 +39,7 @@ export function registerReview(on: On): void {
   let notes: string[] = []; // for my Claude, with the next prompt
   let pane: readonly string[] = [];
   let review: (() => Promise<void>) | null = null;
+  let reading: string | null = null; // the plan whose pane is open: asked again from its button, or once it closes
 
   // each event's matcher says when a card may come (capture, context and follow hold the unmatched hooks): in a session
   // with a person, at the end of a main turn that answered, and on a prompt they typed (here or through Remote Control)
@@ -48,6 +51,7 @@ export function registerReview(on: On): void {
     planSession.stored.clear();
     planSession.interactive = true;
     notes = [];
+    reading = null;
     let busy = false;
     let paneSaid = false;
     // dismissed: not again until after the next prompt, and never past DISMISSALS; the others still get their turn
@@ -61,10 +65,12 @@ export function registerReview(on: On): void {
       if (busy) return;
       busy = true;
       try {
+        // a pane closed with Esc lets its plan be asked again
+        if (reading !== null && !(await $.ui.panes().catch(() => [])).some(x => x.id === PLAN_PANE)) reading = null;
         for (;;) {
           const room = session.room;
           const s = session.state;
-          const p = room && s ? nextPending(s, room.name, new Set(skip.keys())) : null;
+          const p = room && s ? nextPending(s, room.name, new Set([...skip.keys(), ...(reading === null ? [] : [reading])])) : null;
           if (!room || !p) return;
           const read = (hash: string) => $.fs.read(blobFile(room.dir, hash)).catch(() => null);
           const after = await read(p.hash);
@@ -82,7 +88,7 @@ export function registerReview(on: On): void {
             pane = paneLines(p, before, after);
             const opened = await $.ui.open({ id: PLAN_PANE, title: `${p.name} v${p.version}`, focus: true, closeOnEscape: true })
               .catch((x: unknown) => ({ isPlaced: false as const, reason: why(x) }));
-            if (opened.isPlaced) return; // its button asks again; so does the next idle moment
+            if (opened.isPlaced) { reading = p.key; return; } // held while it is open; its button asks again
             if (!paneSaid) $.ui.log(`sub-human: the full plan isn't shown here (${opened.reason}); ask Claude to read plan ${p.name} to you.`);
             paneSaid = true; // one line a session
             later(p.key);
@@ -107,6 +113,7 @@ export function registerReview(on: On): void {
         busy = false;
       }
     };
+    planSession.review = review;
     return out;
   });
 
@@ -137,6 +144,7 @@ export function registerReview(on: On): void {
   on('ui.render', { component: 'Pane', requestId: PLAN_PANE }, ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e);
     const back = async (): Promise<void> => {
+      reading = null;
       await $.ui.close({ id: PLAN_PANE }).catch(() => undefined);
       await review?.();
     };

@@ -131,7 +131,10 @@ export function absorb(
     s = d.state;
     const v = d.verdict;
     if (v.kind === 'context') items.push(v.item);
-    if (v.kind === 'wake') { wakes.push(v.text); wakeLines.push({ line: v.line, value: 2, at: now }); }
+    if (v.kind === 'wake') {
+      wakes.push(v.text);
+      (v.always ? drawn : wakeLines).push({ line: v.line, value: 2, at: now }); // a plan's answer is the person's news too
+    }
     if (v.kind === 'draw') kept.push(input);
     if (v.kind === 'draw' && v.unread) continue; // a held command past its burst's first: counted, not drawn
     if (v.kind !== 'wake' && v.kind !== 'none' && v.line !== undefined) {

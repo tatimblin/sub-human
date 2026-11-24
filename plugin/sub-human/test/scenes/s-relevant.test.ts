@@ -18,7 +18,7 @@ test('an interface named in a plan I\'m on reaches my Claude in full; an unrelat
   await room.poll(clock)
   const context = updates(await $.prompt.submit(typed('go on')))
   expect(context).toBe(`[room ${room.code} · carol's Claude] listTasks now takes an options object instead of a cursor string`)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ● carol · plan "paging" needs your review`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ● carol · plan "paging" needs your review`)
   expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
 })
@@ -43,7 +43,7 @@ test('a line naming me, or a file I edited, reaches my Claude and is drawn; a co
     `bob's Claude: alice's ${EDITED} has a stale header`, `carol's Claude: ${EDITED} is generated now; edit the template instead`,
   ])
   expect(context).not.toContain('lunch')
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ● carol`) // the lunch line is news's
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ● carol`) // the lunch line is news's
   expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)
 })

@@ -125,7 +125,7 @@ export interface Version { readonly version: number; readonly hash: string }
 export type Author = Exclude<By, 'system'>;
 export type PlanAct =
   | { readonly act: 'edit'; readonly name: string; readonly base: number; readonly text: string; readonly scope?: PlanScope }
-  | { readonly act: 'ask'; readonly name: string; readonly version: number; readonly people: readonly string[]; readonly by: Author }
+  | { readonly act: 'ask'; readonly name: string; readonly version: number; readonly people: readonly string[]; readonly by: Author; readonly asker?: string }
   | { readonly act: 'answer'; readonly name: string; readonly version: number; readonly answer: Answer; readonly note?: string }
   | { readonly act: 'send'; readonly name: string; readonly version?: number; readonly to?: string; readonly note?: string; readonly branch?: string; readonly files?: readonly string[]; readonly by: Author }
   | { readonly act: 'accept'; readonly name: string; readonly version: number; readonly answer: Acceptance; readonly note?: string };
@@ -233,7 +233,7 @@ const request = v.variant('op', [
   v.object({ op: v.literal('append'), code: name, draft: v.looseObject({ id: v.pipe(v.string(), v.uuid()) }) }),
   v.variant('act', [
     v.object({ op: v.literal('plan'), ...writer, act: v.literal('edit'), name, base: count, text: blob, scope: opt(v.picklist(['group', 'personal'])) }),
-    v.object({ op: v.literal('plan'), ...writer, act: v.literal('ask'), name, version, people: v.pipe(v.array(name), v.maxLength(LIMITS.names)), by: author }),
+    v.object({ op: v.literal('plan'), ...writer, act: v.literal('ask'), name, version, people: v.pipe(v.array(name), v.maxLength(LIMITS.names)), by: author, asker: opt(v.pipe(v.string(), v.maxLength(LIMITS.short))) }),
     v.object({ op: v.literal('plan'), ...writer, act: v.literal('answer'), name, version, answer: v.picklist(['agree', 'changes']), note }),
     v.object({
       op: v.literal('plan'), ...writer, act: v.literal('send'), name, version: opt(version), to: opt(name), note,

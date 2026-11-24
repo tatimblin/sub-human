@@ -2,6 +2,7 @@
 // command hook beneath (node), the answer is a `$.ui.log` line, and the hook answers `{}`, which runs no expansion (no
 // "blocked by hook" frame), echoes nothing and starts no turn. Elsewhere the classic hook answers (C1).
 import { expect, mock, test } from 'claude-code/testing'
+import { REFUSED_MS, STILL_WORKING } from './command.js'
 import { CWD, END, HOME, START, SESSION, expandReply, seedRoom, slash } from '../test/support/seed-room.js'
 
 const HOME_KNOB = ['SUB', 'HUMAN', 'HOME'].join('_')
@@ -53,7 +54,7 @@ test('a /sub-human that is not the person\'s own goes on to the classic hook ben
   await $.session.end(END)
 })
 
-test('a command hook that answers nothing readable is one line; one policy refuses goes to the classic hook', async ($, on) => {
+test('a command hook that answers nothing readable is one line; one policy refuses goes to the classic hook; one that times out is never run twice', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   on('command.run', () => ({ text: 'the classic hook' }))
@@ -67,6 +68,13 @@ test('a command hook that answers nothing readable is one line; one policy refus
   room.broken.run = true // policy refuses the run: the classic hook beneath answers, as with the module off
   expect(await $.command.run(slash('who'))).toEqual({ text: 'the classic hook' })
   expect(room.logs).toHaveLength(1)
+  // a refusal is quick; a run that failed later had started and may have done its work (an invite minted): one
+  // line, and the classic hook never runs it again
+  room.onRun = () => clock.advance(REFUSED_MS / 4)
+  expect(await $.command.run(slash('who'))).toEqual({ text: 'the classic hook' })
+  room.onRun = () => clock.advance(REFUSED_MS * 3)
+  expect(await $.command.run(slash('invite bob'))).toEqual({})
+  expect(room.logs.slice(1)).toEqual([STILL_WORKING])
   expect(room.submitted).toEqual([])
   await $.session.end(END)
 })

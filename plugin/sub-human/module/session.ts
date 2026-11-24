@@ -1,6 +1,6 @@
 // What this session's module knows of its room: one object every part reads and writes as plain data (a `$` never
 // leaves the hook that holds it, so the parts share this instead). follow.ts fills it; nothing here does I/O.
-import type { Input, Item, Me } from '../core/deliver.js';
+import type { Input, Item, Me, Wait } from '../core/deliver.js';
 import type { ActivityDoc, RoomState } from '../core/entries.js';
 import type { Gated } from '../config.js';
 import type { LinkStatus, Pointer } from '../core/api.js';
@@ -31,6 +31,8 @@ export interface Session {
   /** Where news (the person) and `read since` (my Claude) last read the feed to. */
   read: { news: number; since: number };
   shown: string;
+  /** The plan versions this session's person asked people to agree on (R21a): plans.ts adds, deliver ends them. */
+  waiting: readonly Wait[];
   /** Wake prompts deliver decided on, waiting for wake.ts to submit once the session is idle (R10). */
   wakes: readonly string[];
   /**
@@ -54,12 +56,10 @@ export interface Session {
   away: boolean;
   /** The room a /sub-human join is waiting to be let into (R30), until its pointer appears or the link stops. */
   joining: string | null;
-  /** A terminal draws the prompt's hint line, which carries the status line in place of `$.ui.status` (status.ts). */
-  hint: boolean;
 }
 export const fresh = (): Session => ({
-  room: null, state: null, queue: [], touched: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
-  titled: '', said: [], off: [], away: false, joining: null, hint: false,
+  room: null, state: null, queue: [], touched: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', waiting: [], wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
+  titled: '', said: [], off: [], away: false, joining: null,
 });
 export const session: Session = fresh();
 
@@ -115,5 +115,5 @@ const OUR_TITLE = /^\S+\.[a-z]+-\d{4}$/;
 
 /** What the session knew of a room it is no longer in. */
 export function forget(s: Session): void {
-  Object.assign(s, { state: null, queue: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', wakes: [], away: false });
+  Object.assign(s, { state: null, queue: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', waiting: [], wakes: [], away: false });
 }

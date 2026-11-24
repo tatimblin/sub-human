@@ -1,5 +1,6 @@
 // wake: starts my Claude's turn for what core/deliver.ts decided wakes it (R10): a person's line naming me, an answer
-// to my Claude's open question, or a colleague's Claude's direct message. follow.ts leaves each wake's prompt in
+// to my Claude's open question, a colleague's Claude's direct message, or the answer on a plan it waits on (R21a). A
+// tick with nothing to submit while no main turn runs is the reviewer's idle moment: a card waiting on me (R21b). follow.ts leaves each wake's prompt in
 // session.wakes, already framed and datamarked, debounced and under the hour's budget; a message carrying a command or
 // URL was drawn for my person instead and never reaches here. This only chooses when: never inside a running turn (so
 // nobody is interrupted), as one `$.prompt.submit` once the main loop is idle, once more if that turn is aborted, and
@@ -13,6 +14,7 @@ import { context, tokens, WAKE_TOKENS } from '../core/deliver.js';
 import { mechanics } from '../core/mechanics.js';
 import { POLL_MS } from './follow.js';
 import type { InRoom, Session } from './session.js';
+import { planSession } from './plans-review.js';
 import { off, once, session } from './session.js';
 
 /** A wake's prompt is submitted at most this many times: once, and once more after an aborted turn. */
@@ -59,6 +61,7 @@ export function registerWake(on: On): void {
         if (t.started > t.ended) return; // a turn is running: its end comes first
         const retry = flight !== null && t.ended > flight.ended && flight.aborted && flight.tries < WAKE_TRIES ? flight : null;
         if (flight && t.ended > flight.ended && !retry) flight = null; // the woken turn ended
+        if (!flight && !session.wakes.length) { void planSession.review?.(); return; } // idle: a card waiting on me (R21b)
         if ((flight && !retry) || (!retry && !session.wakes.length)) return;
         if (!(await $.session.surfaces()).length) { session.wakes = []; flight = null; return; } // the drawn lines stay
         if (off(session, 'wake')) {

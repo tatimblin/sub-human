@@ -121,13 +121,15 @@ test('plans: CAS on base, a stale edit names the latest, and the last answer dec
   assert.partialDeepStrictEqual(stale, { latest: { version: 1 } });
   assert.match(JSON.stringify(stale), /"refused":"Plan paging was not stored: it is at v1, not v0/);
   assert.equal((await fs.readdir(`${roomDir(h, await fileKey('P'))}/plans`)).length, 1, 'the refused edit stored no text');
-  await okv(r, { op: 'plan', code: 'P', from: 'alice', act: 'ask', name: 'paging', version: 1, people: ['bob'], by: 'claude' });
+  await okv(r, { op: 'plan', code: 'P', from: 'alice', act: 'ask', name: 'paging', version: 1, people: ['bob'], by: 'person', asker: 'tag-of-session' });
   await okv(r, { op: 'plan', code: 'P', from: 'bob', act: 'answer', name: 'paging', version: 1, answer: 'agree' });
   assert.deepEqual(await kinds(h, 'P'), ['joined', 'joined', 'plan', 'plan_ask', 'plan_answer', 'decision', 'task']);
   const s = await openFsStore({ home: h, code: 'P' });
   assert.ok(s.ok);
   const lines = await s.value.read(0);
   const task = lines.ok ? lines.value.at(-1)?.entry : undefined;
+  // the asking session's tag reaches the log, so that session alone waits on the answer (R21a)
+  assert.partialDeepStrictEqual(lines.ok ? lines.value[3]?.entry : undefined, { kind: 'plan_ask', asker: 'tag-of-session' });
   assert.partialDeepStrictEqual(task, { kind: 'task', task: { n: 1, title: 'the HTTP handler', status: 'claimed', owner: 'bob' } });
   const strange = await r.handle({ op: 'plan', code: 'P', from: 'mallory', act: 'ask', name: 'paging', version: 1, people: ['bob'], by: 'claude' });
   assert.ok(!strange.ok && /mallory is not in P/.test(strange.error));

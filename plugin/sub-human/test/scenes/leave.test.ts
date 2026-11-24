@@ -43,10 +43,10 @@ test('a colleague who leaves goes from my status line, in one change, with no li
   const room = await seedRoom(on, { me: 'alice', others: ['bob', 'carol'], now: clock.now })
   await $.session.start(START)
   await room.settled(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob  ● carol`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob ● carol`)
   await room.as('carol').left()
   await room.poll(clock)
-  expect(room.status.at(-1)).toBe(`${room.code}  ● bob`)
+  expect(room.status.at(-1)).toBe(`${room.code} ● bob`)
   expect(room.logs).toEqual([])
   expect(room.logs.length).toBeLessThanOrEqual(6) // R41
   await $.session.end(END)

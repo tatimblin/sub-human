@@ -9,8 +9,9 @@
 import type { On } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import { readAnswer } from '../core/api.js';
-import { why } from '../core/text.js';
+import { markLabel, why } from '../core/text.js';
 import type { PlanAct } from '../core/api.js';
+import { askerTag } from '../core/deliver.js';
 import { sha256 } from '../core/hash.js';
 import { latestVersion, sentFiles } from '../core/plans.js';
 import type { Result } from '../core/result.js';
@@ -74,20 +75,30 @@ export function registerPlans(on: On): void {
       if (no) $.ui.log(`sub-human couldn't share your plan with ${room.code}: ${no}`);
       return a.ok && 'seq' in a.value ? ok(a.value.latest?.version ?? 0) : err(no);
     };
+    // my person's asks carry this session's tag, so this session alone waits on them, after a restart too (R21a)
+    const asker = await askerTag(await $.session.id());
+    const askFor = async (name: string, version: number, people: readonly string[]): Promise<boolean> => {
+      if (!people.length || !(await plan({ act: 'ask', name, version, people, by: 'person', asker })).ok) return false;
+      session.waiting = [...session.waiting, { name, version }];
+      return true;
+    };
     const ask = (c: Card) => $.ui.ask(c.question, { options: c.options, header: 'Plan', ...(c.multiSelect && { multiSelect: true }) }).catch(() => null);
     const told = (line: string) => ({ ...r, context: [...(r.context ?? []), `sub-human: ${line}`] });
+    // a room plan with people asked to agree waits for their answer (R21a); the approval result itself is untouched
+    const shared = (as: string, at: number, people: readonly string[], asked: boolean) => told(`this approved plan is room plan "${markLabel(as, 64)}" v${at} in ${room.code}.${asked
+      ? ` Plan "${markLabel(as, 64)}" v${at} is out for agreement with ${people.map(p => markLabel(p, 64)).join(', ')}. Don't start building it until it's decided; you'll be told.` : ''}`);
     // a next version of a room plan, asked of the same people again; `drawn` when no card asked for it
     const revise = async (rev: Revision, drawn: boolean) => {
       const at = await plan({ act: 'edit', name: rev.name, base: rev.base, text });
       if (!at.ok) return r;
       planSession.stored.set(rev.name, file);
-      const asked = rev.people.length ? (await plan({ act: 'ask', name: rev.name, version: at.value, people: rev.people, by: 'person' })).ok : false;
+      const asked = await askFor(rev.name, at.value, rev.people);
       const again = asked ? `; asked ${rev.people.join(', ')} again` : '';
       if (drawn) {
-        $.ui.log(`sub-human: shared as ${rev.name} v${at.value}${again}`);
+        $.ui.log(`sub-human: shared as "${rev.name}" v${at.value}${again}`);
         session.drawn++; // within the lines a prompt's turn may draw (R41)
       }
-      return told(`this approved plan is room plan ${rev.name} v${at.value} in ${room.code}${asked ? `; asked ${rev.people.join(', ')} to agree again` : ''}.`);
+      return shared(rev.name, at.value, rev.people, asked);
     };
     const a = approval(s, room.name, room.code, text, file, planSession.stored);
     if (a.kind === 'revision') return revise(a.revision, true);
@@ -100,10 +111,12 @@ export function registerPlans(on: On): void {
     if (c.kind === 'send') {
       const picked = await ask(sendCard(a.name, c.to));
       if (picked === null || picked === DONT) return r;
-      const { name: as, base } = freeName(s, a.name, room.name, 'personal');
+      const again = file ? [...planSession.stored].find(([, f]) => f === file)?.[0] : undefined;
+      const { name: as, base } = freeName(s, a.name, room.name, 'personal', again);
       const latest = latestVersion(s, as);
       const at = latest?.hash === await sha256(text) ? ok(latest.version) : await plan({ act: 'edit', name: as, base, text, scope: 'personal' });
       if (!at.ok) return r;
+      planSession.stored.set(as, file);
       const branch = (await $.vcs.detect({ path: room.root }).catch(() => null))?.branch;
       const note = picked === SEND ? '' : picked.trim();
       const sent = await plan({
@@ -118,8 +131,8 @@ export function registerPlans(on: On): void {
     planSession.stored.set(as, file);
     const card = reviewersCard(s, room.name, as, at.value);
     const people = card ? reviewers(await ask(card), s, room.name) : [];
-    const asked = people.length ? (await plan({ act: 'ask', name: as, version: at.value, people, by: 'person' })).ok : false;
-    return told(`this approved plan is room plan ${as} v${at.value} in ${room.code}${asked ? `; asked ${people.join(', ')} to agree. Their answers reach you as room updates` : ''}.`);
+    const asked = await askFor(as, at.value, people);
+    return shared(as, at.value, people, asked);
   });
 
   on('tool.run', { tool: toolName('plan') }, async ($, e) => {

@@ -12,7 +12,7 @@ import { why } from '../core/text.js';
 import type { DocKind, DocKinds, LogLine, RoomState } from '../core/entries.js';
 import { fold, takeSnapshot } from '../core/fold.js';
 import type { Me } from '../core/deliver.js';
-import { enqueue, terms } from '../core/deliver.js';
+import { askerTag, enqueue, terms, waitsFrom } from '../core/deliver.js';
 import { parseDoc } from '../core/schema.js';
 import { PING_MS, decodePointer, hostAway, readAnswer, sessionFile } from '../core/api.js';
 import { readConfig } from '../config.js';
@@ -39,7 +39,7 @@ export function registerFollow(on: On): void {
   on('session.start', async ($, e, next) => {
     const out = await next(e);
     timer?.cancel();
-    Object.assign(session, { ...fresh(), hint: session.hint }); // the hint line, once drawn, stays drawn
+    Object.assign(session, fresh());
     const home = homeDir({ SUB_HUMAN_HOME: await $.env.get('SUB_HUMAN_HOME') }, (await $.env.get('HOME')) ?? '');
     session.off = readConfig({ SUB_HUMAN_CC_OFF: (await $.env.get('SUB_HUMAN_CC_OFF')) ?? undefined }, '').off;
     let c = freshCursor();
@@ -102,9 +102,14 @@ export function registerFollow(on: On): void {
       const first = c.state === null;
       const folded = { ...(c.state ?? { wakes: [], draws: [], bursts: {} }), room: fold(c.state && takeSnapshot(c.state.room), lines.value, docsOf(c.held)) };
       c.state = folded;
-      if (!first) {
+      if (first) { // the waits this session's asks left open, after a restart or resume (R21a)
+        const tag = await askerTag(await $.session.id());
+        session.waiting = waitsFrom(folded.room, lines.value.map(l => l.entry), room.name, tag);
+      } else {
         for (const h of unreadPlans(folded.room, room.name, c.terms)) c.terms.set(h, terms((await $.fs.read(blobFile(room.dir, h)).catch(() => null)) ?? ''));
-        const a = absorb(folded, lines.value, activity, me(room, folded.room), await $.clock.now());
+        const now = await $.clock.now();
+        const a = absorb({ ...folded, waiting: session.waiting }, lines.value, activity, me(room, folded.room), now);
+        session.waiting = a.state.waiting ?? [];
         take(a, !a.wakeLines.length || await woken());
       }
       session.state = c.state.room;
@@ -128,8 +133,7 @@ export function registerFollow(on: On): void {
       const line = c.state ? statusLine(c.state.room, room, session.held, session.away) : session.shown;
       if (line === session.shown) return;
       session.shown = line;
-      if (session.hint) $.ui.invalidate('ui.render'); // status.ts draws it in the prompt's hint line
-      else $.ui.status(line);
+      $.ui.status(line);
     };
     // colleagues' Claudes' direct messages (R6), which the daemon keeps for this session until taken; a daemon that
     // doesn't answer is the ping's to say
@@ -164,8 +168,7 @@ export function registerFollow(on: On): void {
         if (was) {
           c = freshCursor();
           forget(session);
-          if (session.hint) $.ui.invalidate('ui.render');
-          else $.ui.status(undefined);
+          $.ui.status(undefined);
         }
         session.room = p && { home, code: p.code, name: p.name, title: p.title, dir: roomDir(home, await fileKey(p.code)), ...await where() };
         // a room this session was in as it started (a compact, a resume, a /clear's handoff): the SessionStart hook gave

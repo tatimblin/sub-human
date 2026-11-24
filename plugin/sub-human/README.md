@@ -11,9 +11,12 @@ happens. Nobody writes a status update, and nobody copies between chats.
 - Your status line shows the room, who is in it and what each is doing, and the one thing that needs you next:
 
   ```
-  heron-2988  ● bob  ○ carol
-  heron-2988  ● bob  ○ carol · plan "paging" needs your review (+1)
+  heron-2988 ● bob ○ carol
+  heron-2988 ○ bob · plan "finish-webography" needs your review (+2)
   ```
+
+  It is a row of its own, which Claude Code draws as the plugin's status, with its own prefix:
+  `⚠ sub-human: heron-2988 …`.
 
   `●` working, `○` idle, `◐` waiting on a permission prompt, `◌` away. On the right, most urgent first: a plan waiting
   on your review, a plan someone sent you, messages held for you (`/sub-human news` shows them), a task of yours that
@@ -139,10 +142,16 @@ Write plans in plan mode, as you do alone. When you approve one, you're asked on
 
 A room plan is versioned. Every version is kept, and an edit made on an old version is refused so the two can be
 merged. A part that names an owner (`## Store (owner: tristan)`, `- @jess the HTTP handler`) becomes a task once the
-plan is agreed, and each owner's Claude learns its part and who owns the rest.
+plan is agreed, and each owner's Claude learns its part and who owns the rest. A plan is named by the first three
+words of its heading that say something (`finish-webography-click`).
 
-**Reviewing.** When someone asks you to agree, you see one line, and at the end of your turn a card with a summary of
-what changed since the version you last saw: **Agree**, **Ask for changes** (type your note), or **Read the full
+**Waiting for agreement.** When you ask people to agree on a room plan, your Claude waits: it doesn't start building
+until the plan is decided. Once everyone agrees, it is woken to build its part. If someone asks for changes, it is
+woken with their note, word for word, to revise the plan; when you approve the revision, the same people are asked
+again. A room plan with nobody asked, a kept plan and a sent plan wait for nothing.
+
+**Reviewing.** When someone asks you to agree, you see one line, and, at the end of your turn or right away if you are
+idle, a card with a summary of what changed since the version you last saw: **Agree**, **Ask for changes** (type your note), or **Read the full
 plan**, which opens a scrollable pane with the whole text and the diff. A plan sent to you opens the same way, with
 **Accept** (your Claude takes it as its plan) or **Dismiss**. Only your answer on the card counts; no Claude agrees
 for its person, and an answer applies to that one version. Reviewing never touches your own plan file or your

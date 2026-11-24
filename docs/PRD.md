@@ -139,7 +139,8 @@ Talking is secondary. People have chat already; these exist so the Claudes can t
 - **R10 (P0)** **Wake rule: a direct message wakes; broadcasts never do.** A turn starts in my session only when:
   - a person's line names me (`@me`, or `me, …`);
   - **a colleague's Claude messages mine directly** (`SendMessage` to `NAME.CODE`), for example to ask a fact or to say "the `listTasks` shape changed, update your side". This is how the other side updates on its own after a change (the POC's best moment);
-  - someone answers my Claude's open question.
+  - someone answers my Claude's open question;
+  - the plan my Claude waits on is answered: agreed, or changes asked (R21a).
 
   Rules:
   - **Broadcasts never wake.** Findings, posts, activity, plans, decisions, joins and chat reach my Claude as context on its next turn, and me as a line or a count.
@@ -162,6 +163,7 @@ There are two ways to use them, and either works alone:
   - **When a plan is approved,** and only then, the person is asked once: **Keep it / make it a room plan / send to NAME**. The hook is on `ExitPlanMode`'s result, which carries `{plan, filePath}`. There is no module event for entering plan mode, so nothing is asked there.
   - A room plan is stored as a shared plan (R20–R22a). A sent plan goes to one member or the room (R22b). Kept plans stay theirs, and nothing is shared without that choice.
   - The question is skipped when the answer is obvious, for example when the plan is a revision of a room plan.
+  - A plan's name is a short slug of its first heading: its first three meaningful words, at most 24 characters, unique in the room (`finish-webography-click`). Lines show it in quotes.
 - **R19 (P0)** **Three properties hold for every plan feature:**
   1. A person's own plan is never lost or overwritten.
   2. A person's permission mode is the same after a review as before.
@@ -177,7 +179,9 @@ There are two ways to use them, and either works alone:
   - **Read the full plan** opens a **scrollable module pane** (`$.ui.open`) with the whole text and the diff, because a card can't scroll. It opens from that choice, not unasked, since an unasked pane only places on terminals at least 144 columns wide.
 
   The room records a decision when everyone named has answered.
-- **R22 (P0)** Answers apply to one version only. A newer version supersedes open requests on older ones. An "ask for changes" note reaches the author's Claude word for word, and it may draft the next version.
+- **R21a (P0)** A room plan with people asked to agree waits for them. The author's Claude is told, with the approval, that the plan is out for agreement and not to start building it until it is decided. When everyone asked agrees, its Claude is woken to build its part (R22a), with the tags of the tasks it was handed. When someone asks for changes, its Claude is woken with the note word for word, to revise the plan and share the new version, which asks the same people again. A room plan with nobody asked, a kept plan and a sent plan wait for nothing. Only the session whose person asked waits, and its wait survives a restart or resume.
+- **R21b (P0)** A reviewer sitting idle sees the card at once: the card comes at the first moment no turn of theirs is running (the end of a turn, a prompt, or the next poll while idle), never during a turn, never over the full plan while it is open, and never in `-p`. A card dismissed twice is asked no more.
+- **R22 (P0)** Answers apply to one version only. A newer version supersedes open requests on older ones. An "ask for changes" note reaches the author's Claude word for word, and it may draft the next version (on a waiting plan, it is woken to, R21a).
 - **R22a (P0)** Once a version is agreed, each owner's Claude gets its part as context: the agreed text, its part, and who owns the rest. This is how each Claude knows what to do.
 
 **A sent plan: pack it up and hand it over**

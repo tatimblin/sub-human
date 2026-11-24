@@ -37,7 +37,7 @@ export function edit(s: RoomState, e: Edit): Result<Draft[]> {
   return ok([{ kind: 'plan', from: e.from, by: 'system', name, version: base + 1, hash: e.hash, base, scope: plan?.scope ?? e.scope ?? 'group' }]);
 }
 
-export interface Ask { readonly name: string; readonly version: number; readonly people: readonly string[]; readonly from: string; readonly by: Author }
+export interface Ask { readonly name: string; readonly version: number; readonly people: readonly string[]; readonly from: string; readonly by: Author; readonly asker?: string }
 
 /** Ask named members to agree to one exact version, the latest. Asking oneself is dropped. */
 export function ask(s: RoomState, a: Ask): Result<Draft[]> {
@@ -49,7 +49,7 @@ export function ask(s: RoomState, a: Ask): Result<Draft[]> {
   if (strangers.length) return err(`${what}: ${strangers.join(', ')} ${strangers.length > 1 ? 'are' : 'is'} not in the room.`);
   if (!people.length) return err(`${what}: name the people to ask.`);
   if (new Set([...at.value.version.asked, ...people]).size > LIMITS.names) return err(`${what}: a version can ask at most ${LIMITS.names} people.`);
-  return ok([{ kind: 'plan_ask', from: a.from, by: a.by, name: a.name, version: a.version, people }]);
+  return ok([{ kind: 'plan_ask', from: a.from, by: a.by, name: a.name, version: a.version, people, ...(a.asker !== undefined && { asker: a.asker }) }]);
 }
 
 export interface AnswerIn { readonly name: string; readonly version: number; readonly from: string; readonly answer: Answer; readonly note?: string }

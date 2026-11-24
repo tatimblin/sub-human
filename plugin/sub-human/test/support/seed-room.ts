@@ -88,6 +88,8 @@ export interface Room {
    * refusing reads, tool registration refused, running a command refused.
    */
   readonly broken: { daemon: boolean; socket: boolean; log: boolean; tools: boolean; run: boolean };
+  /** What a command run does before it answers (a slow one moves the clock on); its refusal is then broken.run's. */
+  onRun: (() => Promise<void>) | null;
   /** Moves the clock one poll on and waits, at most 3 s, until that poll has finished. */
   poll(clock: MockClock): Promise<void>;
   /** Holds every file read until the returned release is called: a slow disk. */
@@ -186,8 +188,9 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     return { value: undefined };
   });
   on('session.cwd', () => ({ value: CWD }));
-  on('process.run', (_, e) => {
+  on('process.run', async (_, e) => {
     ran.push({ argv: e.argv, stdin: e.init?.stdin ?? '', ...(e.init?.env && { env: e.init.env }) });
+    await result.onRun?.();
     if (broken.run) return { deny: 'refused by policy' };
     return { value: { exitCode: 0, stdout: result.answer, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
   });
@@ -316,7 +319,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     await until(clock, want);
   };
   const settled = (clock: MockClock): Promise<void> => until(clock, 1);
-  const result: Room = { code, home: HOME, store, as, status, logs, debug, spawned, ran, answer: expandReply('done.'), reads, requests, submitted, surfaces, registered, link: null, pointer, resume: id => { current = id; }, broken, poll, settled, hold };
+  const result: Room = { code, home: HOME, store, as, status, logs, debug, spawned, ran, answer: expandReply('done.'), reads, requests, submitted, surfaces, registered, link: null, onRun: null, pointer, resume: id => { current = id; }, broken, poll, settled, hold };
   return result;
 }
 

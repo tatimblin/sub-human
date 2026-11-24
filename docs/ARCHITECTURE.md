@@ -147,7 +147,7 @@ plugin/sub-human/
     capture.ts       tool.call → activity documents and events; presence; pings (R12, R23)
     follow.ts        polls the tail file, reads the log by ranges, feeds deliver(); follow-lines.ts its pure part
     context.ts       prompt.submit context: mechanics once, relevant updates capped (R15a); mid-loop heads-up (R15d)
-    status.ts        the status line (the prompt's hint line, else ui.status); /sub-human news pane (R15b)
+    status.ts        the status line (its own row, ui.status); /sub-human news pane (R15b)
     messages.ts      session.send caught at the sender for NAME.CODE (R6)
     at-room.ts       prompt.submit: an `@room` line posted as the person's, dropped from the model (R8)
     wake.ts          $.prompt.submit once idle; retry on turn.complete.isAborted (R10)
@@ -193,7 +193,7 @@ plugin/sub-human/
 | `finding` | the member's Claude (`share`) | one-line update in its own words (R13) |
 | `post` | person (`@room`) or Claude (`share post`) | room-visible words; optional `to` to name someone (R7, R8). Private Claude-to-Claude messages are never posts (R6). |
 | `plan` | host on CAS edit | a plan version: name, version, blob hash, base, kind group/personal |
-| `plan_ask` | Claude for its person | agreement requested on one version from named members |
+| `plan_ask` | Claude for its person | agreement requested on one version from named members; `asker`, a hash of the asking session's id, says which session waits (R21a) |
 | `plan_answer` | person, from the review card | agree, or ask for changes plus a note |
 | `decision` | system | everyone named has answered |
 | `plan_sent` | person (send choice) | a personal plan sent to a member or the room, with branch, files and note |
@@ -287,14 +287,15 @@ How a wake is delivered:
 
 **Group plan (R18–R22a).**
 1. The person approves a plan in plan mode. `module/plans.ts` sees `ExitPlanMode`'s `tool.call` result (`{plan, filePath}`) and asks once: keep, room plan, or send to NAME.
-2. For a room plan, the text is stored with `plan edit`. The person names reviewers, and their Claude calls `plan ask`.
-3. Each reviewer gets a notice. Their review is a `ui.ask` card (typed; Claude Code draws it as its native question card):
+2. For a room plan, the text is stored with `plan edit`, under a short slug of its first heading (three meaningful words, at most 24 characters; `freeName` keeps it unique, its `-N` within the 24, and only the plan file this session stored makes a sent plan's next version). The person names reviewers, and the module calls `plan ask`. With anyone asked, the tool result gains one context line (the approval result itself is passed on as it came): the plan is out for agreement with those people, and Claude doesn't start building it until it's decided (R21a). Only this session waits: the module adds the version to `session.waiting` (a set: two plans can wait) as its ask succeeds, and the ask carries `asker`, so after a restart or resume the first read rebuilds the session's open waits from the log (`waitsFrom`); another session of the same person waits on nothing.
+3. Each reviewer gets a notice. Their review is a `ui.ask` card (typed; Claude Code draws it as its native question card), asked at their next idle moment: a main turn's end, a prompt, or a tick of wake.ts with nothing to submit while no main turn runs (R21b; interactive sessions only; never over the plan's open pane):
    - its question holds a short summary of what changed since the version they last saw;
    - the answers are Agree, Ask for changes (the note through Other), and Read the full plan;
    - Read the full plan opens a scrollable pane (`$.ui.open`; Pane bodies scroll, `ui.scroll`) with the full text and the diff from `diff`, then asks again. The pane opens from that choice, because an unasked pane only places on terminals at least 144 columns wide.
 
    No plan file is touched, and no mode changes (R19). The answer is recorded as `plan_answer`.
 4. When everyone named has answered, the host writes `decision`. `core/plans.ts` turns owned parts into tasks, and each owner's next context carries their part.
+5. The answer on the waiting version wakes the author's Claude (a fourth wake source in `core/deliver.ts`, like an answer to its own open question, and drawn for the person too): a `changes` answer at once, with the note word for word and "revise the plan and share the new version" (the next approval is the revision path, which asks the same people again and waits again); a decision with no changes, with "build your part" and the tags of the tasks it was handed. A colleague's note carrying a command or URL, or a wake past the hour's budget, is context as before; my own part titles are data, never held to that rule. Plan wakes skip the burst debounce: each is one answer ending one wait.
 
 **Sent plan (R22b–R22c).** At approval, "send to NAME" writes `plan_sent` with the text, branch, files and note. The recipient gets one notice and opens it on the same card and pane. Accepting writes `plan_accept`, and their context then carries the plan.
 
@@ -369,7 +370,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 | Whether the session has native task tools | `$.tool.list` | typed; *why* they are off (the env var and model list) is internal |
 | Context on the next turn | `prompt.submit` hook `context`: 100k characters per entry, 200k in total. **Not `prompt.context`**, which fires once per conversation. **Not `$.state`**, which is render state. | typed. It also fires for peer and plugin prompts. |
 | Notes inside a long tool loop | `tool.call` result `context` | typed |
-| Status line, dim line | the `PromptHint` line's `tail` on a terminal, else `ui.status` (drawn as `⚠ NAME: text`, docs/internals/v2-status-line.md); `ui.log` (2,000 characters drawn) | typed |
+| Status line, dim line | `ui.status`, its own row (drawn as `⚠ NAME: text`, docs/internals/v2-status-line.md); `ui.log` (2,000 characters drawn) | typed |
 | Let in / Refuse; keep / room / send; plan review | `ui.ask`, answered with a label or Other text | typed; it rejects when dismissed or in `-p` |
 | Full plan, scrollable | `$.ui.open` pane; Pane bodies scroll (`ui.scroll`) | typed. An unasked pane only places from 144 columns, so it opens from the card. |
 | Plan approval | `tool.call` on ExitPlanMode → `{plan, filePath?}` | typed; the rejection shape isn't needed |
