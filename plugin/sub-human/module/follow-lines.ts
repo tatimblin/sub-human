@@ -93,9 +93,12 @@ export interface Absorbed {
   readonly drawn: readonly Drawn[];
   /** The prompts that wake my Claude, for wake.ts (R10). */
   readonly wakes: readonly string[];
+  /** A line for each wake, drawn only where no wake is submitted: the wake's own prompt names who it is from. */
+  readonly wakeLines: readonly Drawn[];
   /** What news and `read since` gain: colleagues' joins, leaves, new edits and the updates fold counts, in order. */
   readonly feed: readonly Input[];
-  readonly count: number;
+  /** Messages held for the person, a command or URL in them (R10): the status line points to news for them. */
+  readonly held: number;
 }
 
 /**
@@ -121,15 +124,17 @@ export function absorb(
   const items: Item[] = [];
   const drawn: Drawn[] = [];
   const wakes: string[] = [];
-  let unread = 0;
+  const wakeLines: Drawn[] = [];
+  const kept: Input[] = [];
   for (const input of inputs) {
     const d = deliver(input, me, s, now);
     s = d.state;
     const v = d.verdict;
     if (v.kind === 'context') items.push(v.item);
-    if (v.kind === 'wake') wakes.push(v.text);
-    if (v.kind === 'draw' && v.unread) unread++; // a held command past its burst's first: counted, not drawn
-    else if (v.kind !== 'none' && v.line !== undefined) {
+    if (v.kind === 'wake') { wakes.push(v.text); wakeLines.push({ line: v.line, value: 2, at: now }); }
+    if (v.kind === 'draw') kept.push(input);
+    if (v.kind === 'draw' && v.unread) continue; // a held command past its burst's first: counted, not drawn
+    if (v.kind !== 'wake' && v.kind !== 'none' && v.line !== undefined) {
       drawn.push(v.kind === 'context' ? { line: v.line, value: v.item.value, at: v.item.at } : { line: v.line, value: 2, at: now });
     }
   }
@@ -137,6 +142,7 @@ export function absorb(
   const at = (i: Input): number => (i.kind === 'entry' ? i.entry.at : Number.MAX_SAFE_INTEGER); // an edit is as of now
   const others = inputs.filter(i => (i.kind === 'edits' ? i.from !== me.name
     : i.kind === 'entry' && i.entry.from !== me.name && (i.entry.kind === 'joined' || i.entry.kind === 'left')));
-  const feed = [...others, ...news.items.map(entry => ({ kind: 'entry', entry }) satisfies Input)].sort((a, b) => at(a) - at(b));
-  return { state: s, items, drawn, wakes, feed, count: news.count + unread };
+  const feed = [...others, ...news.items.map(entry => ({ kind: 'entry', entry }) satisfies Input), ...kept.filter(i => i.kind === 'message')]
+    .sort((a, b) => at(a) - at(b));
+  return { state: s, items, drawn, wakes, wakeLines, feed, held: kept.length };
 }

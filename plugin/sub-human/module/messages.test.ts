@@ -4,7 +4,7 @@
 // native delivery; reaching it means the send went native. The real-session check is scripts/risk-send.ts.
 import type { On, SessionSendOrigin } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
-import { END, START, seedRoom } from '../test/support/seed-room.js'
+import { END, START, seedRoom, slash } from '../test/support/seed-room.js'
 
 const origin: SessionSendOrigin = { kind: 'model' } // the engine stamps it in a session; the kit passes the input whole
 
@@ -53,7 +53,7 @@ test('any other address goes on with next: a teammate, another room, or my room 
   expect(await $.session.send({ to: 'team-lead', text: 'hello', origin })).toEqual({ isDelivered: false, reason: 'native' })
   expect(await $.session.send({ to: 'bob.heron-1111', text: 'hello', origin })).toEqual({ isDelivered: false, reason: 'native' })
   room.pointer(null) // a leave: the next poll reads the pointer gone
-  await $.prompt.submit({ text: '/sub-human leave', wait: false, origin: { kind: 'composer' }, command: { name: 'sub-human', args: 'leave' } })
+  await $.command.run(slash('leave'))
   await room.poll(clock)
   expect(await $.session.send({ to: `bob.${room.code}`, text: 'hello', origin })).toEqual({ isDelivered: false, reason: 'native' })
   expect(reached).toEqual(['team-lead', 'bob.heron-1111', `bob.${room.code}`])

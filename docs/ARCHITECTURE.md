@@ -147,7 +147,7 @@ plugin/sub-human/
     capture.ts       tool.call → activity documents and events; presence; pings (R12, R23)
     follow.ts        polls the tail file, reads the log by ranges, feeds deliver(); follow-lines.ts its pure part
     context.ts       prompt.submit context: mechanics once, relevant updates capped (R15a); mid-loop heads-up (R15d)
-    status.ts        ui.status line; /sub-human news pane (R15b)
+    status.ts        the status line (the prompt's hint line, else ui.status); /sub-human news pane (R15b)
     messages.ts      session.send caught at the sender for NAME.CODE (R6)
     at-room.ts       prompt.submit: an `@room` line posted as the person's, dropped from the model (R8)
     wake.ts          $.prompt.submit once idle; retry on turn.complete.isAborted (R10)
@@ -268,7 +268,7 @@ Native mid-turn interrupts are therefore never used for room members. Whether Cl
    - `context` entries are only those that bear on my work (R15c) or overlap it (R15d). They queue for the next `prompt.submit` `context`, datamarked and capped at about 400 tokens. Claude Code's own limits (100k characters per entry, 200k in total) are far above this cap.
    - An overlap heads-up (R15d) also reaches a Claude that is deep in a long tool loop. It rides as the `context` on its next `tool.call` result, without starting a turn (`$.session.append` is not used).
    - `notice` entries add one dim line through `ui.log`.
-   - Every entry updates the `ui.status` count. The rest waits for `read` or `/sub-human news`.
+   - The status line is redrawn from the new state: who is here, and what needs me (`module/status.ts`). The rest waits for `read` or `/sub-human news`.
 
 A finding takes the same path, starting from the `share` tool.
 
@@ -349,7 +349,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 
 ## 9. Claude Code surfaces
 
-**How this was checked (Q1, 2026-11-22).** These rows were checked against typings extracted from the Claude Code 2.1.330 binary, now the committed snapshot (`typings/`, refreshed with `npm run typings`). `core/cc/contract.json` lists each surface below: 23 entries, 19 API and 4 internal.
+**How this was checked (Q1, 2026-11-22).** These rows were checked against typings extracted from the Claude Code 2.1.330 binary, now the committed snapshot (`typings/`, refreshed with `npm run typings`). `core/cc/contract.json` lists each surface below: 24 entries, 19 API and 5 internal.
 
 **What the check changed:**
 - Claude's tools are registered by the module (`$.tool.register`, `tool.run`), so there is no MCP server.
@@ -369,7 +369,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 | Whether the session has native task tools | `$.tool.list` | typed; *why* they are off (the env var and model list) is internal |
 | Context on the next turn | `prompt.submit` hook `context`: 100k characters per entry, 200k in total. **Not `prompt.context`**, which fires once per conversation. **Not `$.state`**, which is render state. | typed. It also fires for peer and plugin prompts. |
 | Notes inside a long tool loop | `tool.call` result `context` | typed |
-| Status line, dim line | `ui.status`, `ui.log` (2,000 characters drawn) | typed |
+| Status line, dim line | the `PromptHint` line's `tail` on a terminal, else `ui.status` (drawn as `⚠ NAME: text`, docs/internals/v2-status-line.md); `ui.log` (2,000 characters drawn) | typed |
 | Let in / Refuse; keep / room / send; plan review | `ui.ask`, answered with a label or Other text | typed; it rejects when dismissed or in `-p` |
 | Full plan, scrollable | `$.ui.open` pane; Pane bodies scroll (`ui.scroll`) | typed. An unasked pane only places from 144 columns, so it opens from the card. |
 | Plan approval | `tool.call` on ExitPlanMode → `{plan, filePath?}` | typed; the rejection shape isn't needed |
@@ -384,10 +384,10 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 | `NAME.CODE` addressing | `sessionTitle` from a `SessionStart` command hook | documented; name uniqueness is internal |
 | Claude's tools | `$.tool.register` + `tool.run` | typed (also in 2.1.296) |
 | Node work | `$.process.spawn`/`run`; `$.http.fetch` to loopback | typed. The module has no Node and no `import()`; spawned children die with the module. |
-| `/sub-human` command, session end | command hooks (`UserPromptExpansion`, `SessionEnd`) | documented; they survive managed-machine policy |
+| `/sub-human` command, session end | the module's `command.run`, answering `{}` and drawing the answer with `ui.log` (no frame, no echo: docs/internals/v2-command-answer.md); command hooks (`UserPromptExpansion`, `SessionEnd`) | `command.run` typed, its `{}` adding no row internal; the command hooks documented, and they survive managed-machine policy |
 | Managed machines | The guard skips user hooks on `classic.*`, `prompt.compose`, `prompt.section`, `prompt.context`, `prompt.attachment`, `skill.prompt`, `attribution.text`, `telemetry.log`, `session.compact`, `settings.read`, and on `session.append` rows filtered by door. `allowManagedModsOnly` refuses the module, but leaves `hooks.json` hooks alone. | documented; v2 needs none of the skipped hooks |
 
-**Internals, as built:** 4 of the 10 allowed: the task-tool gate, the wake prompt's frame, honouring a `session.send` answer without `next` (U6 confirmed it on 2.1.330), and `sessionTitle` uniqueness. Total contract entries: 23.
+**Internals, as built:** 5 of the 10 allowed: the task-tool gate, the wake prompt's frame, honouring a `session.send` answer without `next` (U6 confirmed it on 2.1.330), `sessionTitle` uniqueness, and a `command.run` answer `{}` adding no row. Total contract entries: 24.
 
 **Also used, typed:** `$.session.version()` (the version a session runs, which its pings tell the daemon for doctor); the module registers `session.start` in several parts, each with its own matcher, because an event registered twice without one doesn't load.
 

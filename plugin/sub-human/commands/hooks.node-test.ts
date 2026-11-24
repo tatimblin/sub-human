@@ -29,7 +29,7 @@ test('the /sub-human expansion blocks with the answer as one line for the person
   const code = await fake.code();
   assert.deepEqual(r, {
     out: {
-      decision: 'block', reason: `sub-human: You opened room ${code} as alice. /sub-human invite brings someone from another machine.`,
+      decision: 'block', reason: `sub-human: You opened room ${code} as alice. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.`,
       hookSpecificOutput: { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true },
     },
     exit: 0,
@@ -50,6 +50,8 @@ test('SessionStart gives a session in a room its NAME.CODE title, and says nothi
   await HOOKS.expand({ ...expansion(''), session_id: later }, ctx);
   assert.deepEqual(await HOOKS.start({ ...start, session_id: later }, ctx),
     { out: { hookSpecificOutput: { hookEventName: 'SessionStart', sessionTitle: `alice-2.${code}` } }, exit: 0 });
+  // a session that has a title already (the person's /rename, resumed) keeps it
+  assert.deepEqual(await HOOKS.start({ ...start, session_title: 'paging work' }, ctx), { exit: 0 });
 });
 
 test('a permission prompt marks the member waiting; no room, or another notification, writes nothing', async () => {

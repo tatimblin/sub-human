@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hook, parse, terminal, USAGE } from './cli.js';
+import { homeLost, hook, parse, terminal, USAGE } from './cli.js';
 import { HELP } from './commands/help.js';
 import { call } from './net/daemon/client.js';
 import { fakeHome } from './test/support/fake-daemon.js';
@@ -168,4 +168,11 @@ test('node.sh never runs a node too old to strip types', () => {
   const r = run('start', start, tempHome(), { PATH: `${bin}:/usr/bin:/bin` });
   assert.equal(fs.existsSync(marker), false);
   assert.ok(r.exit === 0 || r.err.includes('needs Node 22.18+ or 24.3+'), r.err);
+});
+
+test('a run the module started that lost its home is refused in one line, never run on the default home', () => {
+  const home = ['SUB', 'HUMAN', 'HOME'].join('_');
+  assert.match(JSON.stringify(homeLost({ SUB_HUMAN_FROM_MODULE: '1' })), /nothing ran: the command didn't get this session's home/);
+  assert.equal(homeLost({ SUB_HUMAN_FROM_MODULE: '1', [home]: '/tmp/h' }), null);
+  assert.equal(homeLost({}), null); // the classic hook, run by Claude Code itself
 });

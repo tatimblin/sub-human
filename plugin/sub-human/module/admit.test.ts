@@ -3,10 +3,12 @@
 import type { On } from 'claude-code'
 import { test, expect, mock } from 'claude-code/testing'
 import * as v from '../vendor/valibot.mjs'
-import { END, START as IN_ROOM, seedRoom } from '../test/support/seed-room.js'
+import { END, START as IN_ROOM, expandReply, seedRoom, slash } from '../test/support/seed-room.js'
 
 const START = { cwd: '/work/api', surface: 'terminal', isInteractive: true } as const
-const INVITE = { text: '/sub-human invite bob', wait: false, origin: { kind: 'composer' }, command: { name: 'sub-human', args: 'invite bob' } } as const
+const INVITE = slash('invite bob')
+/** What the invite verb answers, through the command hook beneath (command.ts). */
+const INVITED = 'Send bob this line to type in Claude Code; it works once, for 15 minutes, and you\'ll be asked to let them in.'
 const ASK = { id: 'a1', code: 'otter-4821', kind: 'admit', name: 'bob', expected: 'bob', machine: 'bob-laptop', check: '1f2e-3d4c', member: false }
 
 /** The daemon beneath: answers asks once with `asks`, records every request, and answers the card with `pick`. */
@@ -35,13 +37,15 @@ function world(on: On, asks: readonly object[], pick: string | null, text?: stri
   on('session.id', () => ({ value: 'sess-1' }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('prompt.submit', (_, e) => ({ text: e.text }))
+  on('session.cwd', () => ({ value: START.cwd }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: expandReply(INVITED), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   return { clock, sent, asked, logged }
 }
 
 test('a joiner waiting: the card names them, their machine and the check; Let in is posted for this session (R30)', async ($, on) => {
   const w = world(on, [ASK], 'Let in')
   await $.session.start(START)
-  await $.prompt.submit(INVITE)
+  await $.command.run(INVITE)
   await w.clock.advance(3000)
   await w.clock.advance(3000)
   expect(w.asked).toEqual(['Let bob on bob-laptop into otter-4821? Check 1f2e-3d4c matches theirs.'])
@@ -51,7 +55,7 @@ test('a joiner waiting: the card names them, their machine and the check; Let in
 test('a name that is not the invite\'s is on the card; a dismissed card is a Refuse', async ($, on) => {
   const w = world(on, [{ ...ASK, name: 'mallory' }], null)
   await $.session.start(START)
-  await $.prompt.submit(INVITE)
+  await $.command.run(INVITE)
   await w.clock.advance(3000)
   expect(w.asked[0]).toContain('mallory (the invite was for bob)')
   expect(w.sent.filter(s => s.op === 'admit').map(s => s.answer)).toEqual(['refuse'])
@@ -60,16 +64,16 @@ test('a name that is not the invite\'s is on the card; a dismissed card is a Ref
 test('a line dialled twice is one line; one that let someone in offers their removal', async ($, on) => {
   const w = world(on, [{ ...ASK, kind: 'again' }, { ...ASK, id: 'a2', kind: 'leaked' }], 'Remove bob')
   await $.session.start(START)
-  await $.prompt.submit(INVITE)
+  await $.command.run(INVITE)
   await w.clock.advance(3000)
-  expect(w.logged).toEqual(['sub-human: someone else also used the invite for bob; nobody got in with it'])
+  expect(w.logged).toEqual([INVITED, 'sub-human: someone else also used the invite for bob; nobody got in with it'])
   expect(w.sent.filter(s => s.op === 'admit').map(s => [s.id, s.answer])).toEqual([['a2', 'kick']])
 })
 
 test('a joiner whose name is already a member: the card says so', async ($, on) => {
   const w = world(on, [{ ...ASK, member: true }], 'Refuse')
   await $.session.start(START)
-  await $.prompt.submit(INVITE)
+  await $.command.run(INVITE)
   await w.clock.advance(3000)
   expect(w.asked[0]).toContain('bob is already a member there.')
 })
@@ -77,11 +81,11 @@ test('a joiner whose name is already a member: the card says so', async ($, on) 
 test('an answer the module can\'t read is one line, not repeated on the next polls', async ($, on) => {
   const w = world(on, [], null, '{"ok":true,"value":{"asks":"nope"}}')
   await $.session.start(START)
-  await $.prompt.submit(INVITE)
+  await $.command.run(INVITE)
   await w.clock.advance(3000)
   await w.clock.advance(3000)
-  expect(w.logged.length).toBe(1)
-  expect(w.logged[0]).toMatch(/^sub-human: no joiner can be let in: /)
+  expect(w.logged.length).toBe(2)
+  expect(w.logged[1]).toMatch(/^sub-human: no joiner can be let in: /)
 })
 
 test('a session in no room that has not invited asks nothing', async ($, on) => {

@@ -38,7 +38,7 @@ export const bare: Verb = async (args, ctx) => {
   if (!r.ok) return refused(`Nobody joined: ${r.error}`);
   if ('rooms' in r.value) return say(`Rooms open here: ${r.value.rooms.join(', ')}. Type /sub-human ROOM to join one.`);
   const { code: room, opened, others } = r.value;
-  if (opened) return say(`You opened room ${room} as ${name}. /sub-human invite brings someone from another machine.`);
+  if (opened) return say(`You opened room ${room} as ${name}. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.`);
   return say(`You're in ${room} as ${name}${others.length ? `, with ${others.join(', ')}` : ''}.`);
 };
 

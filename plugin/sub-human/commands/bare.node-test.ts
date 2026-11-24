@@ -22,7 +22,7 @@ test('a bare /sub-human with no room open opens one, as the git name, with repo 
   const a = await runCommand('', ctx);
   const code = await fake.code();
   assert.match(code, /^[a-z]+-\d{4}$/);
-  assert.deepEqual(a, { kind: 'say', text: `You opened room ${code} as alice. /sub-human invite brings someone from another machine.` });
+  assert.deepEqual(a, { kind: 'say', text: `You opened room ${code} as alice. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.` });
   const s = await fake.rooms.state(code);
   assert.ok(s.ok);
   assert.deepEqual(s.value.members.map(m => [m.name, m.repo, m.branch, m.machines]), [['alice', 'api', 'main', ['laptop']]]);
@@ -94,7 +94,7 @@ test('two first opens at once make one room', async () => {
   assert.equal((await fake.rooms.codes()).length, 1);
   const code = await fake.code();
   // whichever open lands first makes the room; the other joins it
-  const opened = (who: string) => `You opened room ${code} as ${who}. /sub-human invite brings someone from another machine.`;
+  const opened = (who: string) => `You opened room ${code} as ${who}. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.`;
   const texts = answers.map(x => x.text).sort();
   const either = [[opened('alice'), `You're in ${code} as bob, with alice.`], [opened('bob'), `You're in ${code} as alice, with bob.`]];
   assert.ok(either.some(pair => JSON.stringify([...pair].sort()) === JSON.stringify(texts)), texts.join(' | '));

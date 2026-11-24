@@ -20,23 +20,26 @@ export interface Pending {
   readonly files: readonly string[];
 }
 
-export function nextPending(s: RoomState, me: string, skip: ReadonlySet<string>): Pending | null {
+/** Every plan waiting on my answer, reviews first, in the room's order. */
+export function pending(s: RoomState, me: string): Pending[] {
+  const out: Pending[] = [];
   for (const p of s.plans) {
     const v = p.versions.at(-1);
     if (!v || v.decision || v.from === me || !v.asked.includes(me) || v.answers.some(a => a.name === me)) continue;
-    const key = `review:${p.name}:${v.version}`;
-    if (skip.has(key)) continue;
     const seen = p.versions.filter(x => x.version < v.version && (x.from === me || x.asked.includes(me))).at(-1);
-    return { kind: 'review', key, name: p.name, version: v.version, from: v.from, hash: v.hash, files: [], ...(seen && { before: { version: seen.version, hash: seen.hash } }) };
+    out.push({ kind: 'review', key: `review:${p.name}:${v.version}`, name: p.name, version: v.version, from: v.from, hash: v.hash, files: [], ...(seen && { before: { version: seen.version, hash: seen.hash } }) });
   }
   for (const x of s.sent) {
-    const key = `sent:${x.from}:${x.name}:${x.version}`;
     const v = s.plans.find(p => p.name === x.name)?.versions.find(y => y.version === x.version);
     // a sent version I was asked to agree on is the review's card, not a second one (R22d)
-    if (x.from === me || (x.to ?? me) !== me || x.answers.some(a => a.name === me) || skip.has(key) || !v || v.asked.includes(me)) continue;
-    return { kind: 'sent', key, name: x.name, version: x.version, from: x.from, hash: v.hash, files: x.files, ...(x.note && { note: x.note }), ...(x.branch && { branch: x.branch }) };
+    if (x.from === me || (x.to ?? me) !== me || x.answers.some(a => a.name === me) || !v || v.asked.includes(me)) continue;
+    out.push({ kind: 'sent', key: `sent:${x.from}:${x.name}:${x.version}`, name: x.name, version: x.version, from: x.from, hash: v.hash, files: x.files, ...(x.note && { note: x.note }), ...(x.branch && { branch: x.branch }) });
   }
-  return null;
+  return out;
+}
+
+export function nextPending(s: RoomState, me: string, skip: ReadonlySet<string>): Pending | null {
+  return pending(s, me).find(p => !skip.has(p.key)) ?? null;
 }
 
 /** A unified diff of plan `name` from `before` to `after`, without the file header lines. */

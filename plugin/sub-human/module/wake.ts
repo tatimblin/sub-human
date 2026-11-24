@@ -9,7 +9,7 @@
 // SUB_HUMAN_CC_OFF=wake starts no turn: the wakes are dropped, said once (their drawn lines stay).
 import type { On } from 'claude-code';
 import { why } from '../core/text.js';
-import { context, tokens } from '../core/deliver.js';
+import { context, tokens, WAKE_TOKENS } from '../core/deliver.js';
 import { mechanics } from '../core/mechanics.js';
 import { POLL_MS } from './follow.js';
 import type { InRoom, Session } from './session.js';
@@ -17,8 +17,6 @@ import { off, once, session } from './session.js';
 
 /** A wake's prompt is submitted at most this many times: once, and once more after an aborted turn. */
 export const WAKE_TRIES = 2;
-/** The cap on one wake prompt, in deliver's token estimate: queued senders past it wait for the next. */
-export const WAKE_TOKENS = 600;
 /** A turn start with no end for this long is taken as ended (an end the module never heard), so wakes go on. */
 export const STUCK_MS: number = 15 * 60_000;
 

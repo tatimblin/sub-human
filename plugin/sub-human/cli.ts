@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import { parseArgs } from 'node:util';
-import { readConfig } from './config.js';
+import { FROM_MODULE, KNOBS, readConfig } from './config.js';
 import { nodeCtx } from './commands/context.js';
 import { daemonFor } from './commands/daemon.js';
 import type { MakeCtx, Reply } from './commands/hooks.js';
@@ -15,6 +15,16 @@ import { HOOKS, isHook } from './commands/hooks.js';
 import type { Ctx } from './commands/types.js';
 
 export const USAGE = 'usage: cli.ts doctor|help [--home DIR]';
+
+/**
+ * A run the module started whose home didn't arrive: answered with one line, so it never falls back to the default
+ * home (another sub-human's, or a real one a test must not touch).
+ */
+export function homeLost(env: Readonly<Record<string, string | undefined>>): Reply | null {
+  if (!env[FROM_MODULE] || env[HOME_KNOB]) return null;
+  return { out: { decision: 'block', reason: "sub-human: nothing ran: the command didn't get this session's home. Type it again." }, exit: 0 };
+}
+const HOME_KNOB = KNOBS[0];
 
 export async function hook(name: string | undefined, stdin: string, ctx: MakeCtx): Promise<Reply> {
   if (!isHook(name)) return { err: `sub-human: no hook ${String(name).slice(0, 40)}`, exit: 1 };
@@ -56,7 +66,9 @@ if (import.meta.main) {
   const [first, ...rest] = process.argv.slice(2);
   if (first === 'hook') {
     let r: Reply;
-    try {
+    const lost = homeLost(process.env);
+    if (lost) r = lost;
+    else try {
       r = await hook(rest[0], fs.readFileSync(0, 'utf8'), (session, cwd) => make(config.home, session, cwd));
     } catch (e) {
       r = { err: `sub-human: the hook failed (${e instanceof Error ? e.message : String(e)})`, exit: 1 };

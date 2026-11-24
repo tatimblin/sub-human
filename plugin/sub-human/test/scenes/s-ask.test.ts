@@ -7,7 +7,7 @@ import { END, START, seedRoom, turnEnd, turnStart, turns } from '../support/seed
 
 const origin: SessionSendOrigin = { kind: 'model' }
 
-test('my Claude asks bob\'s for a fact; his answer wakes mine after my turn, with one line for me (R6, R10)', async ($, on) => {
+test('my Claude asks bob\'s for a fact; his answer wakes mine after my turn, with no line before the wake (R6, R10)', async ($, on) => {
   const clock = mock.clock(on)
   const native: string[] = []
   on('session.send', (_, e) => { native.push(e.to); return { isDelivered: false, reason: 'native' } })
@@ -25,8 +25,8 @@ test('my Claude asks bob\'s for a fact; his answer wakes mine after my turn, wit
   expect(room.submitted).toEqual([]) // my turn runs on, uninterrupted
   await $.turn.complete(turnEnd('t1'))
   for (let i = 0; i < 2; i++) await room.poll(clock)
-  expect(room.submitted.map(s => s.text.split('\n')[0])).toEqual([`[room ${room.code} · bob's Claude, to you] 3000, from PORT in src/server.js`])
-  expect(room.logs).toEqual(["bob's Claude messaged your Claude."])
+  expect(room.submitted.map(s => s.text.split('\n').slice(0, 2).join(' '))).toEqual([`[room ${room.code} · bob's Claude, to you] 3000, from PORT in src/server.js`])
+  expect(room.logs).toEqual([]) // the wake names bob's Claude itself
 
   // the woken turn changes my store's shape; my Claude tells bob's, whose Claude says his side is updated
   await $.turn.start(turnStart('w1'))

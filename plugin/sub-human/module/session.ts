@@ -23,8 +23,8 @@ export interface Session {
   queue: readonly Item[];
   touched: Me['touched'];
   mine: ActivityDoc | null;
-  /** Updates since the person last opened news. */
-  count: number;
+  /** Messages held for the person (a command or URL) since they last opened news. */
+  held: number;
   /** What reached the room, the newest FEED_MAX; `fed` counts all ever added, so a reader's place is a count. */
   feed: readonly Input[];
   fed: number;
@@ -44,8 +44,8 @@ export interface Session {
   recheck: boolean;
   /** The mechanics went with this conversation's first prompt. */
   told: boolean;
-  /** A NAME.CODE title went out, so a leave clears it. */
-  titled: boolean;
+  /** The NAME.CODE title this session was last given ('' for none): set again only when it changes (retitle). */
+  titled: string;
   /** The problems already said this session: each is one line (C3). */
   said: readonly string[];
   /** The features SUB_HUMAN_CC_OFF turns off. */
@@ -54,10 +54,12 @@ export interface Session {
   away: boolean;
   /** The room a /sub-human join is waiting to be let into (R30), until its pointer appears or the link stops. */
   joining: string | null;
+  /** A terminal draws the prompt's hint line, which carries the status line in place of `$.ui.status` (status.ts). */
+  hint: boolean;
 }
 export const fresh = (): Session => ({
-  room: null, state: null, queue: [], touched: [], mine: null, count: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
-  titled: false, said: [], off: [], away: false, joining: null,
+  room: null, state: null, queue: [], touched: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
+  titled: '', said: [], off: [], away: false, joining: null, hint: false,
 });
 export const session: Session = fresh();
 
@@ -90,11 +92,28 @@ export function joined(s: Session, p: Pointer | null, l: LinkStatus | null): str
   const code = s.joining;
   if (code === null || (!p && l?.phase !== 'stopped')) return null;
   s.joining = null;
-  if (p) return p.code === code ? `sub-human: You're in ${p.code} as ${p.name}.` : null;
-  return `sub-human: you did not join ${code}: ${l?.why ?? 'the host did not let you in'}.`;
+  if (p) return p.code === code ? `You're in ${p.code} as ${p.name}.` : null;
+  return `You did not join ${code}: ${l?.why ?? 'the host did not let you in'}.`;
 }
+
+/**
+ * The title a prompt sets, from the one it arrived with (R6): NAME.CODE once it isn't the title this session was last
+ * given (a join here), and '' once after a leave; only ever over no title or one of ours (the last we gave, or another
+ * NAME.CODE), never over one the person chose, before the join or since. Messages don't need it: a send is resolved
+ * by member name (messages.ts).
+ */
+export function retitle(s: Session, current: string | undefined): string | undefined {
+  const want = s.room?.title ?? '';
+  const last = s.titled;
+  if (want === last) return undefined;
+  s.titled = want;
+  const ours = !current || current === last || OUR_TITLE.test(current);
+  return ours ? want : undefined;
+}
+/** A title a join gives: NAME.CODE. */
+const OUR_TITLE = /^\S+\.[a-z]+-\d{4}$/;
 
 /** What the session knew of a room it is no longer in. */
 export function forget(s: Session): void {
-  Object.assign(s, { state: null, queue: [], mine: null, count: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', wakes: [], away: false });
+  Object.assign(s, { state: null, queue: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', wakes: [], away: false });
 }

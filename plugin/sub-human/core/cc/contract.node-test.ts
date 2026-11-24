@@ -26,7 +26,7 @@ test('the committed contract: 18 to 24 entries, internals within the cap, each w
   const c = committed();
   assert.ok(c.entries.length >= 18 && c.entries.length <= 24, `${c.entries.length} entries`);
   const internals = c.entries.filter(e => e.kind === 'internal');
-  assert.ok(internals.length <= 4, `${internals.length} internal entries; ARCHITECTURE §9 estimates 2 to 4`);
+  assert.ok(internals.length <= 5, `${internals.length} internal entries; ARCHITECTURE §9 lists 5`);
   for (const e of internals) assert.ok(e.reason && e.fallback && e.request, e.id);
 });
 

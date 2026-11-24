@@ -41,17 +41,18 @@ export const HOOKS: Readonly<Record<Hook, Handler>> = {
     };
   }),
   /**
-   * SessionStart: a session still in a room (compact, a resumed crash) takes back the title its join gave it. After
-   * /clear or /resume the new session claims the room its predecessor handed on here. Setting the title on every
-   * prompt lands with the module core (U9).
+   * SessionStart: a session still in a room (compact, a resumed crash) takes back the title its join gave it, unless
+   * it has a title already. After /clear or /resume the new session claims the room its predecessor handed on here.
    */
-  start: hook(v.object({ ...base, source: v.optional(v.string(), '') }), async (p, c) => {
+  start: hook(v.object({ ...base, source: v.optional(v.string(), ''), session_title: v.optional(v.string(), '') }), async (p, c) => {
+    // a title the session already has stays: the person's own (a /rename) outranks NAME.CODE
+    const named = (t: string): Reply => (p.session_title ? NOTHING : title(t));
     const m = await c.sessions.get(c.session);
-    if (m) return title(m.title);
+    if (m) return named(m.title);
     if (!MOVES.has(p.source)) return NOTHING;
     const claimed = await c.daemon.claim(c.session, c.cwd);
     if (!claimed.ok) return { err: `sub-human: this session didn't take its room back: ${claimed.error}. Type /sub-human.`, exit: 1 };
-    return claimed.value ? title(claimed.value.title) : NOTHING;
+    return claimed.value ? named(claimed.value.title) : NOTHING;
   }),
   /**
    * Notification: a permission prompt marks the member waiting, best-effort (it comes about 6 s late). The module's

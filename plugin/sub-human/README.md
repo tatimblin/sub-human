@@ -8,7 +8,16 @@ happens. Nobody writes a status update, and nobody copies between chats.
 
 - Your Claude learns, by your next prompt, what a colleague changed that bears on your work: a file you touched, an
   interface a plan you're on names, a line that names you.
-- Your status line shows who is here, what each is working on, your open room tasks, and how many updates came in.
+- Your status line shows the room, who is in it and what each is doing, and the one thing that needs you next:
+
+  ```
+  heron-2988  ● bob  ○ carol
+  heron-2988  ● bob  ○ carol · plan "paging" needs your review (+1)
+  ```
+
+  `●` working, `○` idle, `◐` waiting on a permission prompt, `◌` away. On the right, most urgent first: a plan waiting
+  on your review, a plan someone sent you, messages held for you (`/sub-human news` shows them), a task of yours that
+  is now free to start; `(+N)` says how many more.
 - Your Claude can ask a colleague's Claude a question directly; the answer comes back after your turn, not in the
   middle of it.
 - Plans you write in plan mode can be shared, agreed version by version, or sent to someone.
@@ -114,8 +123,8 @@ What is never shared:
 Messages between two Claudes are private to them: they never go into the room's history, on any machine.
 
 **What reaches your Claude.** Only updates that bear on your work go to your Claude, beside your next prompt, marked
-as data from a named colleague and capped at about 400 tokens. The rest is counted on your status line and waits for
-`/sub-human news`, or for your Claude to ask for the catch-up. Nothing in the room starts a turn by itself except
+as data from a named colleague and capped at about 400 tokens. The rest waits for `/sub-human news`, or for your Claude to
+ask for the catch-up. Nothing in the room starts a turn by itself except
 three things: a person's line naming you, a colleague's Claude messaging yours directly, and an answer to your
 Claude's own question. Even then it waits for your turn to end and is framed as a colleague's request, and a message
 that carries a command or URL to run is shown to you instead of handed to your Claude.

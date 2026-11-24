@@ -2,7 +2,7 @@
 // with the data asked for, refusing secrets. Each write is a request to the kit's daemon.
 import { expect, mock, test } from 'claude-code/testing'
 import * as v from '../vendor/valibot.mjs'
-import { END, START, seedRoom } from '../test/support/seed-room.js'
+import { END, START, seedRoom, slash } from '../test/support/seed-room.js'
 import { toolName } from './tools.js'
 
 const share = (args: Record<string, unknown>) => ({ tool: toolName('share'), tool_use_id: 'toolu_share', ...args })
@@ -48,7 +48,7 @@ test('share refuses a secret, a member nobody is, and a session in no room; noth
   expect((await $.tool.run(share({ op: 'post', text: 'hi', to: 'zed' }))).deny).toBe(`Nothing was posted: ${room.code} has no member named zed.`)
   expect((await $.tool.run(share({ op: 'shout', text: 'hi' }))).deny).toMatch(/^Nothing was shared: share takes op/)
   room.pointer(null)
-  await $.prompt.submit({ text: '/sub-human leave', wait: false, origin: { kind: 'composer' }, command: { name: 'sub-human', args: 'leave' } })
+  await $.command.run(slash('leave'))
   await room.poll(clock)
   expect((await $.tool.run(share({ op: 'finding', text: 'late' }))).deny).toMatch(/^This session is in no room/)
   expect(room.store.room.lines).toHaveLength(before)

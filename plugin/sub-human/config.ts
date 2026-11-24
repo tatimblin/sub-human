@@ -25,6 +25,11 @@ export interface Config {
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
+/** Every knob, by name: what the module hands the command hook it runs (module/command.ts), so both use one home. */
+export const KNOBS = ['SUB_HUMAN_HOME', 'SUB_HUMAN_NAME', 'SUB_HUMAN_INVITE', 'SUB_HUMAN_SSH_ADDR', 'SUB_HUMAN_PORT', 'SUB_HUMAN_CC_OFF'] as const;
+/** Set by the module on the command hook it runs: that run must be handed the module's home, never fall back. */
+export const FROM_MODULE = 'SUB_HUMAN_FROM_MODULE';
+
 /** How long things may take, in ms. */
 export const TIMINGS = {
   /** Each git or claude call a command makes. */

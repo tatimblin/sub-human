@@ -3,6 +3,7 @@
 import type { On } from 'claude-code';
 import { registerAtRoom } from './at-room.js';
 import { registerCapture } from './capture.js';
+import { registerCommand } from './command.js';
 import { registerContext } from './context.js';
 import { registerFollow } from './follow.js';
 import { registerMessages } from './messages.js';
@@ -25,4 +26,5 @@ export function register(on: On): void {
   registerMessages(on);
   registerWake(on);
   registerPlans(on);
+  registerCommand(on); // innermost: news (status.ts) and invite (admit.ts) see /sub-human first
 }

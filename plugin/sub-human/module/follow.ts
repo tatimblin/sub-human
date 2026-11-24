@@ -24,7 +24,7 @@ import type { Absorbed } from './follow-lines.js';
 import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, planTerms, unreadPlans } from './follow-lines.js';
 import { request } from './bridge.js';
 import type { InRoom } from './session.js';
-import { feed, forget, fresh, joined, once, session } from './session.js';
+import { feed, forget, fresh, joined, off, once, session } from './session.js';
 import { statusLine } from './status.js';
 import { TOOLS } from './tools.js';
 
@@ -39,7 +39,7 @@ export function registerFollow(on: On): void {
   on('session.start', async ($, e, next) => {
     const out = await next(e);
     timer?.cancel();
-    Object.assign(session, fresh());
+    Object.assign(session, { ...fresh(), hint: session.hint }); // the hint line, once drawn, stays drawn
     const home = homeDir({ SUB_HUMAN_HOME: await $.env.get('SUB_HUMAN_HOME') }, (await $.env.get('HOME')) ?? '');
     session.off = readConfig({ SUB_HUMAN_CC_OFF: (await $.env.get('SUB_HUMAN_CC_OFF')) ?? undefined }, '').off;
     let c = freshCursor();
@@ -104,25 +104,32 @@ export function registerFollow(on: On): void {
       c.state = folded;
       if (!first) {
         for (const h of unreadPlans(folded.room, room.name, c.terms)) c.terms.set(h, terms((await $.fs.read(blobFile(room.dir, h)).catch(() => null)) ?? ''));
-        take(absorb(folded, lines.value, activity, me(room, folded.room), await $.clock.now()));
+        const a = absorb(folded, lines.value, activity, me(room, folded.room), await $.clock.now());
+        take(a, !a.wakeLines.length || await woken());
       }
       session.state = c.state.room;
       shown(room);
     };
     const me = (room: InRoom, r: RoomState): Me => ({ name: room.name, code: room.code, touched: session.touched, terms: planTerms(r, c.terms) });
-    const take = (a: Absorbed): void => {
+    // a wake's own line is drawn only where wake.ts submits none: a session nobody watches, or wakes turned off
+    const woken = async (): Promise<boolean> =>
+      e.isInteractive && !off(session, 'wake') && (await $.session.surfaces().catch(() => [])).length > 0;
+    const take = (a: Absorbed, submitted: boolean): void => {
       c.state = a.state;
       for (const item of a.items) session.queue = enqueue(session.queue, item);
-      const drawn = toDraw(a.drawn, session.drawn);
+      const drawn = toDraw(submitted ? a.drawn : [...a.drawn, ...a.wakeLines], session.drawn);
       session.drawn = drawn.shown;
       for (const line of drawn.draw) $.ui.log(line);
       session.wakes = [...session.wakes, ...a.wakes];
       feed(session, a.feed);
-      session.count += a.count;
+      session.held += a.held;
     };
     const shown = (room: InRoom): void => {
-      const line = c.state ? statusLine(c.state.room, room, session.count, session.away) : session.shown;
-      if (line !== session.shown) { session.shown = line; $.ui.status(line); }
+      const line = c.state ? statusLine(c.state.room, room, session.held, session.away) : session.shown;
+      if (line === session.shown) return;
+      session.shown = line;
+      if (session.hint) $.ui.invalidate('ui.render'); // status.ts draws it in the prompt's hint line
+      else $.ui.status(line);
     };
     // colleagues' Claudes' direct messages (R6), which the daemon keeps for this session until taken; a daemon that
     // doesn't answer is the ping's to say
@@ -133,7 +140,8 @@ export function registerFollow(on: On): void {
       const messages = r?.ok ? r.value.messages.filter(m => m.code === room.code) : [];
       const st = c.state; // read again: the room may have changed during the fetch
       if (!messages.length || !st) return;
-      take(absorb(st, [], [], me(room, st.room), await $.clock.now(), messages));
+      const a = absorb(st, [], [], me(room, st.room), await $.clock.now(), messages);
+      take(a, !a.wakeLines.length || await woken());
       shown(room);
     };
     // the repo my work is in (R1, R12), and what it ignores, which is never shared (R14a)
@@ -146,6 +154,7 @@ export function registerFollow(on: On): void {
     // where this session's pointer says it is: the same room, another (joined elsewhere), or none (it left); then a
     // ping, which keeps a session in a room live even while idle at the prompt, and the room's link
     const locate = async (): Promise<void> => {
+      const first = id === '';
       session.recheck = false;
       id = await $.session.id();
       const p = decodePointer((await $.fs.read(sessionFile(home, id)).catch(() => null)) ?? '');
@@ -155,9 +164,13 @@ export function registerFollow(on: On): void {
         if (was) {
           c = freshCursor();
           forget(session);
-          $.ui.status(undefined);
+          if (session.hint) $.ui.invalidate('ui.render');
+          else $.ui.status(undefined);
         }
         session.room = p && { home, code: p.code, name: p.name, title: p.title, dir: roomDir(home, await fileKey(p.code)), ...await where() };
+        // a room this session was in as it started (a compact, a resume, a /clear's handoff): the SessionStart hook gave
+        // it its title, so no prompt sets it again over one the person chose
+        if (p && first) session.titled = p.title;
       }
       cc ??= (await $.session.version().catch(() => null))?.version ?? '';
       const now = await $.clock.now();

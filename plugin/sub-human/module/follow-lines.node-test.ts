@@ -78,13 +78,13 @@ const lineOf = (entry: Entry): LogLine => ({ entry, hash: `h${entry.seq}` });
 const ALICE: Me = { name: 'alice', code: 'otter-4821', touched: [{ path: 'src/a.js', at: 0 }], terms: [] };
 const settled = (lines: readonly LogLine[]): State => ({ room: fold(null, lines, NO_DOCS), wakes: [], draws: [], bursts: {} });
 
-test('absorb: context and a drawn line for what bears on me, a count for the rest, and the feed in order', () => {
+test('absorb: context and a drawn line for what bears on me, the feed in order, and nothing held', () => {
   const lines = [lineOf(joined('alice', 1)), lineOf(joined('bob', 2)), lineOf(finding('bob', 'src/a.js changed', 3)), lineOf(finding('bob', 'lunch', 4))];
   const edited = [{ doc: { name: 'bob', files: ['src/b.js'], at: 5 } }, { doc: { name: 'alice', files: ['src/a.js'], at: 5 } }];
   const a = absorb(settled(lines), lines.slice(1), edited, ALICE, 10);
   assert.deepEqual(a.items.map(i => i.text), ['src/a.js changed']);
   assert.deepEqual(a.drawn, [{ line: "bob's Claude: src/a.js changed", value: 1, at: 3 }]);
-  assert.equal(a.count, 2);
+  assert.equal(a.held, 0);
   assert.deepEqual(a.feed.map(f => (f.kind === 'entry' ? f.entry.kind : f.kind)), ['joined', 'finding', 'finding', 'edits']);
 });
 

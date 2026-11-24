@@ -25,7 +25,7 @@ export function card(a: Ask): { readonly question: string; readonly options: rea
 export function registerAdmit(on: On): void {
   let timer: { cancel(): void } | null = null;
   let invited = false;
-  on('prompt.submit', { command: { name: COMMAND, args: /^\s*invite\b/ } }, (_, e, next) => {
+  on('command.run', { command: COMMAND, args: /^\s*invite\b/ }, (_, e, next) => {
     invited = true;
     return next(e);
   });

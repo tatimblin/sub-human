@@ -2,7 +2,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { tokens } from '../core/deliver.js'
 import { docFile, fileKey, roomDir } from '../home.js'
-import { EDIT, EDITED, END, HOME, SESSION, START, seedRoom } from '../test/support/seed-room.js'
+import { EDIT, EDITED, END, HOME, SESSION, START, expandReply, seedRoom, slash } from '../test/support/seed-room.js'
 import { PING_MS } from '../core/api.js'
 import { POLL_MS } from './follow.js'
 
@@ -124,9 +124,9 @@ test('a log that can\'t be read is one line, at session start too, and updates f
   expect(room.logs.filter(l => l.includes("can't read room"))).toHaveLength(1)
   room.broken.log = false
   await room.poll(clock) // its first read: the room as it stands, no news
-  await room.as('bob').finding('and now')
+  await room.as('bob').finding('alice, and now')
   await room.poll(clock)
-  expect(room.status.at(-1)).toMatch(/· 1 update$/)
+  expect(room.logs.at(-1)).toBe("bob's Claude: alice, and now")
   await $.session.end(END)
 })
 
@@ -215,7 +215,8 @@ test('after /sub-human join, the pointer the daemon writes once let in is one li
   room.pointer(null)
   await $.session.start(START)
   await room.settled(clock)
-  const join = (code: string) => $.prompt.submit({ ...typed('/sub-human join'), command: { name: 'sub-human', args: `join ssh://devbox/${code}?port=7420#0000 bob` } })
+  room.answer = expandReply('Asked the host to let you in.')
+  const join = (code: string) => $.command.run(slash(`join ssh://devbox/${code}?port=7420#0000 1234`))
   await join(room.code)
   room.link = { phase: 'waiting', why: null }
   await room.poll(clock)
@@ -223,14 +224,14 @@ test('after /sub-human join, the pointer the daemon writes once let in is one li
   room.pointer(SESSION) // the daemon's join, once the room synced
   await room.poll(clock)
   await room.poll(clock)
-  expect(room.logs).toEqual([`sub-human: You're in ${room.code} as bob.`])
+  expect(room.logs).toEqual(['Asked the host to let you in.', `You're in ${room.code} as bob.`])
   room.pointer(null)
   await room.poll(clock)
   await join('vole-1234')
   room.link = { phase: 'stopped', why: 'the host did not let this machine in; ask them for a new invite' }
   await room.poll(clock)
   await room.poll(clock)
-  expect(room.logs.slice(1)).toEqual(['sub-human: you did not join vole-1234: the host did not let this machine in; ask them for a new invite.'])
+  expect(room.logs.slice(2)).toEqual(['Asked the host to let you in.', 'You did not join vole-1234: the host did not let this machine in; ask them for a new invite.'])
   expect(room.requests.filter(r => r.op === 'link').map(r => 'code' in r && r.code)).toContain('vole-1234')
   await $.session.end(END)
 })
@@ -243,7 +244,7 @@ test('the first read of the room never holds up the session\'s start', async ($,
   expect(room.status).toEqual([])
   release()
   await room.settled(clock)
-  expect(room.status.at(-1)).toBe(`${room.code} · bob (working) here`)
+  expect(room.status.at(-1)).toBe(`${room.code}  ● bob`)
   await $.session.end(END)
 })
 

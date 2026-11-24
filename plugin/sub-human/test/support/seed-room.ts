@@ -61,7 +61,12 @@ export interface Room {
   /** Every `$.ui.status` text and `$.ui.log` line the module drew, and each process it tried to start. */
   readonly status: (string | undefined)[];
   readonly logs: string[];
+  /** Every debug-log line the module wrote, but the poll marker. */
+  readonly debug: string[];
   readonly spawned: (readonly string[])[];
+  /** Each `/sub-human` the module ran through the command hook beneath (command.ts), and what that hook answers. */
+  readonly ran: { readonly argv: readonly string[]; readonly stdin: string; readonly env?: Readonly<Record<string, string>> }[];
+  answer: string;
   /** How many times each path was read, and each folder listed (`list:` and its path). */
   readonly reads: Map<string, number>;
   /** Every request the module sent the daemon, decoded. */
@@ -80,9 +85,9 @@ export interface Room {
   link: LinkStatus | null;
   /**
    * What the test breaks: the daemon refusing every write, the socket refused (the fetch rejects), the log's file
-   * refusing reads, tool registration refused.
+   * refusing reads, tool registration refused, running a command refused.
    */
-  readonly broken: { daemon: boolean; socket: boolean; log: boolean; tools: boolean };
+  readonly broken: { daemon: boolean; socket: boolean; log: boolean; tools: boolean; run: boolean };
   /** Moves the clock one poll on and waits, at most 3 s, until that poll has finished. */
   poll(clock: MockClock): Promise<void>;
   /** Holds every file read until the returned release is called: a slow disk. */
@@ -110,9 +115,11 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   let writes = 0;
   const status: (string | undefined)[] = [];
   const logs: string[] = [];
+  const debug: string[] = [];
   const spawned: (readonly string[])[] = [];
+  const ran: { argv: readonly string[]; stdin: string; env?: Readonly<Record<string, string>> }[] = [];
   const reads = new Map<string, number>();
-  const broken = { daemon: false, socket: false, log: false, tools: false };
+  const broken = { daemon: false, socket: false, log: false, tools: false, run: false };
   const registered: string[] = [];
   const requests: Request[] = [];
   const submitted: { text: string; context: readonly string[]; keys: string[] }[] = [];
@@ -175,7 +182,14 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   on('ui.log', (_, e) => {
     if (e.to !== 'debug') logs.push(e.text);
     else if (e.text === POLLED) polls++;
+    else debug.push(e.text);
     return { value: undefined };
+  });
+  on('session.cwd', () => ({ value: CWD }));
+  on('process.run', (_, e) => {
+    ran.push({ argv: e.argv, stdin: e.init?.stdin ?? '', ...(e.init?.env && { env: e.init.env }) });
+    if (broken.run) return { deny: 'refused by policy' };
+    return { value: { exitCode: 0, stdout: result.answer, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
   });
   // eslint-disable-next-line require-yield -- refused before it starts, so it streams nothing
   on('process.spawn', async function* (_, e) { spawned.push(e.argv); return { deny: 'no processes in the kit' }; });
@@ -302,9 +316,16 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     await until(clock, want);
   };
   const settled = (clock: MockClock): Promise<void> => until(clock, 1);
-  const result: Room = { code, home: HOME, store, as, status, logs, spawned, reads, requests, submitted, surfaces, registered, link: null, pointer, resume: id => { current = id; }, broken, poll, settled, hold };
+  const result: Room = { code, home: HOME, store, as, status, logs, debug, spawned, ran, answer: expandReply('done.'), reads, requests, submitted, surfaces, registered, link: null, pointer, resume: id => { current = id; }, broken, poll, settled, hold };
   return result;
 }
+
+/** `/sub-human ARGS` typed at the prompt, as `command.run` gets it. */
+export const slash = (args: string) =>
+  ({ command: 'sub-human', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } }) as const;
+/** What the classic expand hook prints for an answer (commands/hooks.ts). */
+export const expandReply = (text: string): string =>
+  JSON.stringify({ decision: 'block', reason: `sub-human: ${text}`, hookSpecificOutput: { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true } });
 
 /** A main-loop turn's start and end, as the engine fires them around a model turn; `turns` stubs both. */
 export function turns(on: On): void {

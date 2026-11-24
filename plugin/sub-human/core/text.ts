@@ -31,12 +31,13 @@ export function markLabel(text: string, max: number = 300): string {
 /**
  * Text marked as data from the room (the one datamark): `[room CODE · LABEL] text`, with any `[room` inside defused so
  * it can't forge another label. One line clipped to `max` by default; a `block` keeps its lines, each cleaned, after
- * the label's line, and is cut at `max` characters with a line saying so.
+ * the label's line, and is cut at `max` characters with a line saying so (with `ask`, how many more, to ask again for).
  */
-export function datamark(code: string, label: string, text: string, o: { readonly max?: number; readonly block?: true } = {}): string {
+export function datamark(code: string, label: string, text: string, o: { readonly max?: number; readonly block?: true; readonly ask?: true } = {}): string {
   const max = o.max ?? 300;
   const head = `[room ${markLabel(code, 64)} · ${markLabel(label)}]`;
   if (!o.block) return `${head} ${oneLine(text, max)}`;
   const body = defuse(text.split('\n').map(clean).join('\n'));
-  return `${head}\n${body.length > max ? `${body.slice(0, max)}\n… (cut at ${max} characters)` : body}`;
+  if (body.length <= max) return `${head}\n${body}`;
+  return `${head}\n${body.slice(0, max)}\n… ${o.ask ? `${body.length - max} more characters: ask again` : `(cut at ${max} characters)`}`;
 }

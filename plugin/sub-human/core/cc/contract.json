@@ -104,15 +104,22 @@
    "id": "status-line",
    "kind": "api",
    "feature": "status",
-   "surface": "$.ui.status and $.ui.log (2,000 characters drawn)",
+   "surface": "$.ui.status, $.ui.log (2,000 characters drawn), and the PromptHint line's tail",
    "typings": [
     "status: (text: string | undefined) => void;",
-    "log: (text: string, options?: UiLogOptions) => void;"
+    "log: (text: string, options?: UiLogOptions) => void;",
+    {
+     "in": "PromptHint: {",
+     "has": [
+      "tail?: string;",
+      "hint: string;"
+     ]
+    }
    ],
    "checked": [
     "2.1.330"
    ],
-   "note": "Who's here and the unread count under the prompt (R15b); debug lines."
+   "note": "The room's line under the prompt (R15b): on a terminal at the end of the prompt's hint line (PromptHint's tail, drawn dim), since a plugin's $.ui.status is drawn as a warning, '⚠ sub-human: …' (docs/internals/v2-status-line.md); $.ui.status where no terminal draws the hint. $.ui.log for one-line notices and debug lines."
   },
   {
    "id": "ask-card",
@@ -230,12 +237,24 @@
    "surface": "sessionTitle from a SessionStart command hook",
    "typings": [
     "sessionTitle?: string;",
-    "SessionStart: 'additionalContext' | 'initialUserMessage' | 'sessionTitle'"
+    "SessionStart: 'additionalContext' | 'initialUserMessage' | 'sessionTitle'",
+    {
+     "in": "type UserPromptSubmitHookInput =",
+     "has": [
+      "session_title?: string;"
+     ]
+    },
+    {
+     "in": "type SessionStartHookInput =",
+     "has": [
+      "session_title?: string;"
+     ]
+    }
    ],
    "checked": [
     "2.1.330"
    ],
-   "note": "NAME.CODE addressing; uniqueness is session-title-unique."
+   "note": "NAME.CODE addressing; uniqueness is session-title-unique. The title a prompt or a start arrives with is read, so NAME.CODE is set on a join and never over a title the person chose (module/session.ts retitle)."
   },
   {
    "id": "follow-poll",
@@ -305,6 +324,23 @@
     "2.1.330"
    ],
    "note": "Documented; they survive managed-machine policy, which can refuse the module."
+  },
+  {
+   "id": "command-run-empty-answer",
+   "kind": "internal",
+   "feature": "core",
+   "surface": "a module's command.run answer {} to a prompt the person typed adds no row: no echo of the command line, no expansion hook, no model turn",
+   "search": [
+    "but no command.run hook answered it",
+    "I.length===0&&!V)return{messages:[],shouldQuery:!1"
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "reason": "A /sub-human answer must be one plain line: a {text} answer echoes the typed command (a join line's secret) into the transcript, and the classic UserPromptExpansion block draws 'UserPromptExpansion operation blocked by hook:'.",
+   "fallback": "The classic hook answers, inside Claude Code's 'blocked by hook' frame.",
+   "request": "Document that an empty command.run answer adds no row (not yet filed).",
+   "note": "Only for origin composer with no pasted blocks before it; the SDK, the bridge and -p echo the line. module/command.ts; docs/internals/v2-command-answer.md."
   },
   {
    "id": "task-tool-gate",
