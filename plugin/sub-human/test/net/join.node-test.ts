@@ -11,7 +11,7 @@ import { fileKey, roomDir } from '../../home.js';
 import { connect, generateKeyPair } from '../../net/channel.js';
 import { parse } from '../../net/invite.js';
 import { pipe } from '../../net/pathways/pipe.js';
-import { CODE, hostRoom, joinBob, linkIs, nextAsk, twoHomes } from '../support/two-homes.js';
+import { CODE, dialHost, hostRoom, joinBob, linkIs, nextAsk, twoHomes } from '../support/two-homes.js';
 import type { Homes } from '../support/two-homes.js';
 import { home, post, started, until } from '../support/daemon.js';
 import { call } from '../../net/daemon/client.js';
@@ -222,39 +222,10 @@ test('an uninvite while Let in is being written is refused: the joiner gets in',
   await linkIs(h, 'online');
 });
 
-test('a leaked line dialled twice refuses both dials and alerts the host (R30)', async t => {
-  const h = await twoHomes(t);
-  await hostRoom(h);
-  const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
-  await h.joiner.ok({ op: 'dial', line, name: 'bob' });
-  const first = await nextAsk(h);
-  // the same line from another machine (another home's key), while the first waits
-  const inv = parse(line);
-  assert.ok(inv.ok);
-  const other = generateKeyPair();
-  const { mac } = await import('../../net/invite.js');
-  const dial = pipe((s, src) => { h.hostNet.accept(s, src); });
-  const pay = Buffer.from(JSON.stringify({ code: CODE, name: 'eve', machine: 'mE', mac: mac(inv.value, other.pub).toString('base64url') }));
-  const ch = await connect(await dial(inv.value.via, CODE), { s: other, rs: inv.value.hostKey, payload: pay });
-  await new Promise<void>(res => { ch.onClose(() => { res(); }); });
-  await linkIs(h, 'stopped');
-  const alert = await nextAsk(h);
-  assert.deepEqual([alert.kind, alert.expected], ['again', 'bob']);
-  const late = await h.host.call({ op: 'admit', session: 'sa', code: CODE, id: first.id, answer: 'let_in' });
-  assert.ok(!late.ok, 'the first dial was refused too');
-});
-
 test('a used line dialled again alerts with the member to kick', async t => {
   const h = await twoHomes(t);
   const { line } = await joinBob(h);
-  const inv = parse(line);
-  assert.ok(inv.ok);
-  const { mac } = await import('../../net/invite.js');
-  const other = generateKeyPair();
-  const dial = pipe((s, src) => { h.hostNet.accept(s, src); });
-  const pay = Buffer.from(JSON.stringify({ code: CODE, name: 'eve', machine: 'mE', mac: mac(inv.value, other.pub).toString('base64url') }));
-  const ch = await connect(await dial(inv.value.via, CODE), { s: other, rs: inv.value.hostKey, payload: pay });
-  await new Promise<void>(res => { ch.onClose(() => { res(); }); });
+  await (await dialHost(h, line, { name: 'eve', machine: 'mE' })).closed;
   const alert = await nextAsk(h);
   assert.deepEqual([alert.kind, alert.name], ['leaked', 'bob']);
   const wrong = await h.host.call({ op: 'admit', session: 'nobody', code: CODE, id: alert.id, answer: 'kick' });

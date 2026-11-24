@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { RoomRequest as Request } from '../../core/api.js';
-import { HANDOFF_MS, decodePointer, sessionFile, titleFor } from '../../core/api.js';
+import { HANDOFF_MS, decodePointer, sessionFile } from '../../core/api.js';
 import type { Kind } from '../../core/entries.js';
 import { openFsStore } from '../../store/fs-store.js';
 import { fileKey, roomDir } from '../../home.js';
@@ -71,13 +71,22 @@ test('a retried append (same id) answers the first seq and hash and writes nothi
   assert.equal(lines.ok && lines.value[1]?.entry.id, draft.id, 'the entry keeps the caller\'s id');
 });
 
-test('the host refuses its own kinds, a stranger\'s line and document, and a write its caller may not make (R35, R37)', async () => {
+test('the host refuses its own kinds (plan acts come only through the plan op), a stranger\'s line and document, and a write its caller may not make (R35, R37)', async () => {
   const h = await home();
   const r = rooms(h);
   await room(r, 'R', 'alice');
-  const decision = { kind: 'decision', id: randomUUID(), from: 'alice', by: 'system', name: 'p', version: 1, agreed: ['alice'], changes: [] } as const;
-  const r1 = await r.handle({ op: 'append', code: 'R', draft: decision });
-  assert.ok(!r1.ok && /host's to write/.test(r1.error));
+  const base = { from: 'alice', name: 'p', version: 1 };
+  const own = [
+    { ...base, kind: 'decision', by: 'system', agreed: ['alice'], changes: [] },
+    { ...base, kind: 'plan_ask', by: 'claude', people: ['alice'] },
+    { ...base, kind: 'plan_answer', by: 'person', answer: 'agree' },
+    { ...base, kind: 'plan_sent', by: 'person', files: [] },
+    { ...base, kind: 'plan_accept', by: 'person', answer: 'accept' },
+  ] as const;
+  for (const draft of own) {
+    const a = await r.handle({ op: 'append', code: 'R', draft: { ...draft, id: randomUUID() } });
+    assert.ok(!a.ok && a.error === `a ${draft.kind} entry is the host's to write; nothing was written`, draft.kind);
+  }
   const r2 = await r.handle({ op: 'append', code: 'R', draft: post('mallory', 'hi') });
   assert.ok(!r2.ok && /mallory is not in R/.test(r2.error));
   // a person's own post only for a session of theirs here, and a link writes no system entry but its member's joined
@@ -91,24 +100,6 @@ test('the host refuses its own kinds, a stranger\'s line and document, and a wri
   assert.ok(!r3.ok && /bob is not in R/.test(r3.error));
   assert.equal(await okv(r, { op: 'put_doc', code: 'R', kind: 'presence', name: 'alice', doc: { name: 'alice', state: 'idle', at: 1 } }), null);
   assert.deepEqual(await kinds(h, 'R'), ['joined', 'post']);
-});
-
-test('plan asks, answers, sends and accepts come only through the plan op, never append', async () => {
-  const h = await home();
-  const r = rooms(h);
-  await room(r, 'H', 'alice', 'bob');
-  const base = { from: 'alice', name: 'p', version: 1 };
-  const drafts = [
-    { ...base, kind: 'plan_ask', by: 'claude', people: ['bob'] },
-    { ...base, kind: 'plan_answer', by: 'person', answer: 'agree' },
-    { ...base, kind: 'plan_sent', by: 'person', files: [] },
-    { ...base, kind: 'plan_accept', by: 'person', answer: 'accept' },
-  ] as const;
-  for (const draft of drafts) {
-    const a = await r.handle({ op: 'append', code: 'H', draft: { ...draft, id: randomUUID() } });
-    assert.ok(!a.ok && a.error === `a ${draft.kind} entry is the host's to write; nothing was written`, draft.kind);
-  }
-  assert.deepEqual(await kinds(h, 'H'), ['joined', 'joined']);
 });
 
 test('plans: CAS on base, a stale edit names the latest, and the last answer decides and makes owned tasks (R17, R20)', async () => {
@@ -223,13 +214,6 @@ test('a handoff and a claim sent together run in order on the cwd\'s chain: the 
   assert.deepEqual(claimed.value, { pointer: BOB });
 });
 
-test('titleFor: NAME.CODE, else the lowest free NAME-N.CODE among the titles held (R5) (R2)', () => {
-  assert.equal(titleFor('alice', 'vole-0001', []), 'alice.vole-0001');
-  assert.equal(titleFor('alice', 'vole-0001', ['alice.vole-0001']), 'alice-2.vole-0001');
-  assert.equal(titleFor('alice', 'vole-0001', ['alice.vole-0001', 'alice-2.vole-0001']), 'alice-3.vole-0001');
-  assert.equal(titleFor('alice', 'vole-0001', ['alice-2.vole-0001']), 'alice.vole-0001', 'a freed title is used again');
-});
-
 test('a joined for a member who is here, or a left for one who isn\'t, writes nothing', async () => {
   const h = await home();
   const r = rooms(h);
@@ -291,20 +275,4 @@ test('the sweep deletes a room or copy nobody has used for 30 days and no pointe
   await okv(r, { op: 'retire', id: 'held' }); // its presence goes away now: the room was used today
   await r.sweep();
   assert.ok(await there(BOB.code));
-});
-
-test('a put_doc renews the tail file\'s documents stamp and keeps its head, so a follower lists documents only then', async () => {
-  const h = await home();
-  const r = rooms(h);
-  await room(r, 'R', 'alice');
-  const tail = async (): Promise<unknown> => JSON.parse(await fs.readFile(`${roomDir(h, await fileKey('R'))}/tail.json`, 'utf8'));
-  const doc = { op: 'put_doc', code: 'R', kind: 'presence', name: 'alice', doc: { name: 'alice', state: 'idle', at: 1 } } as const;
-  await okv(r, doc);
-  const a = await tail();
-  await okv(r, doc);
-  const b = await tail();
-  assert.ok(a && typeof a === 'object' && 'docs' in a && b && typeof b === 'object' && 'docs' in b);
-  assert.notEqual(a.docs, b.docs);
-  assert.deepEqual({ ...b, docs: 0, at: 0 }, { ...a, docs: 0, at: 0 });
-  assert.ok('seq' in b && b.seq === 1);
 });

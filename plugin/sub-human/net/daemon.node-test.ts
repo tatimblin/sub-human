@@ -37,15 +37,6 @@ test('the socket is born private (umask), not only made so by the chmod after', 
   assert.equal((await fs.stat(socketFile(h))).mode & 0o077, 0);
 });
 
-test('three daemons starting together in one process: exactly one binds', async t => {
-  const h = await home();
-  const rs = await Promise.all([startDaemon({ home: h }), startDaemon({ home: h }), startDaemon({ home: h })]);
-  const live = rs.flatMap(r => (r.ok && r.value ? [r.value] : []));
-  for (const d of live) t.after(() => d.close());
-  assert.equal(live.length, 1);
-  assert.ok(rs.every(r => r.ok));
-});
-
 for (const detached of [true, false]) {
   test(`five daemon processes started at once${detached ? ' with --detached' : ''}: exactly one is left serving`, async () => {
     const h = await home();

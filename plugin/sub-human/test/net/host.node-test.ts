@@ -6,10 +6,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { openFsStore } from '../../store/fs-store.js';
-import { connect, generateKeyPair } from '../../net/channel.js';
-import { mac, parse } from '../../net/invite.js';
-import { pipe } from '../../net/pathways/pipe.js';
-import { CODE, hostRoom, joinBob, nextAsk, rawLink, twoHomes } from '../support/two-homes.js';
+import { generateKeyPair } from '../../net/channel.js';
+import { CODE, dialHost, hostRoom, joinBob, linkIs, nextAsk, rawLink, twoHomes } from '../support/two-homes.js';
 import type { Homes } from '../support/two-homes.js';
 import { joined, post, until } from '../support/daemon.js';
 
@@ -101,24 +99,15 @@ test('a kicked key dialling again, and a known key dialling another room, are re
   assert.deepEqual(again.got, [], 'no hello for a kicked key');
 });
 
-async function dialLine(h: Homes, line: string, o: { name: string; machine: string; key?: ReturnType<typeof generateKeyPair> }): Promise<{ closed: Promise<void>; check: string }> {
-  const inv = parse(line);
-  assert.ok(inv.ok);
-  const me = o.key ?? generateKeyPair();
-  const pay = Buffer.from(JSON.stringify({ code: CODE, name: o.name, machine: o.machine, mac: mac(inv.value, me.pub).toString('base64url') }));
-  const ch = await connect(await pipe((s, src) => { h.hostNet.accept(s, src); })(inv.value.via, CODE), { s: me, rs: inv.value.hostKey, payload: pay });
-  return { check: ch.check, closed: new Promise(res => { ch.onClose(() => { res(); }); }) };
-}
-
 test('a name or machine that can\'t be shown on the card is refused before anything is asked', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
   const bad = ['\u0007\u202e', 'lap\u0000top', 'my laptop', 'b\u0430ptop', 'x'.repeat(65)].map(machine => ({ name: 'bob', machine }));
-  for (const o of [{ name: 'Bob Smith', machine: 'm' }, { name: 'x'.repeat(65), machine: 'm' }, ...bad]) await (await dialLine(h, line, o)).closed;
+  for (const o of [{ name: 'Bob Smith', machine: 'm' }, { name: 'x'.repeat(65), machine: 'm' }, ...bad]) await (await dialHost(h, line, o)).closed;
   assert.deepEqual((await h.host.ok({ op: 'asks', session: 'sa' })).asks, []);
   // a machine is shown as hostname characters only
-  await dialLine(h, line, { name: 'bob', machine: 'Bobs-MacBook.local' });
+  await dialHost(h, line, { name: 'bob', machine: 'Bobs-MacBook.local' });
   assert.equal((await nextAsk(h)).machine, 'Bobs-MacBook.local');
 });
 
@@ -127,9 +116,9 @@ test('the same machine dialling its pending line again takes its dial\'s place: 
   await hostRoom(h);
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
   const me = generateKeyPair();
-  const first = await dialLine(h, line, { name: 'bob', machine: 'mB', key: me });
+  const first = await dialHost(h, line, { name: 'bob', machine: 'mB', key: me });
   const ask = await nextAsk(h);
-  const second = await dialLine(h, line, { name: 'bob', machine: 'mB', key: me });
+  const second = await dialHost(h, line, { name: 'bob', machine: 'mB', key: me });
   const again = await nextAsk(h);
   assert.deepEqual([again.id, again.kind, again.check], [ask.id, 'admit', second.check], 'the same card again, with the live check');
   assert.notEqual(again.check, ask.check);
@@ -144,22 +133,36 @@ test('the same machine dialling its pending line again takes its dial\'s place: 
   assert.ok(host, 'the second dial is bound');
 });
 
-test('two machines dialling one open line at once both reach no card: the second finds it pending, and both are refused', async t => {
-  const h = await twoHomes(t);
-  await hostRoom(h);
-  const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
-  await h.restartHost(); // a cold room: the first dial waits on reading it, so the second arrives meanwhile
-  const dials = await Promise.all(['mB', 'mC'].map(machine => dialLine(h, line, { name: 'bob', machine })));
-  const asks = await until('the alert', async () => { const a = (await h.host.ok({ op: 'asks', session: 'sa' })).asks; return a.length ? a : null; });
-  assert.deepEqual(asks.map(a => a.kind), ['again']);
-  await Promise.all(dials.map(d => d.closed));
-});
+for (const race of [false, true]) {
+  test(race ? 'two machines dialling one open line at once both reach no card: the second finds it pending, and both are refused'
+    : 'a leaked line dialled from another machine while the first waits refuses both dials and alerts the host (R30)', async t => {
+    const h = await twoHomes(t);
+    await hostRoom(h);
+    const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
+    if (race) {
+      await h.restartHost(); // a cold room: the first dial waits on reading it, so the second arrives meanwhile
+      const dials = await Promise.all(['mB', 'mC'].map(machine => dialHost(h, line, { name: 'bob', machine })));
+      const asks = await until('the alert', async () => { const a = (await h.host.ok({ op: 'asks', session: 'sa' })).asks; return a.length ? a : null; });
+      assert.deepEqual(asks.map(a => [a.kind, a.expected]), [['again', 'bob']]);
+      await Promise.all(dials.map(d => d.closed));
+      return;
+    }
+    await h.joiner.ok({ op: 'dial', line, name: 'bob' });
+    const first = await nextAsk(h);
+    await (await dialHost(h, line, { name: 'eve', machine: 'mE' })).closed;
+    await linkIs(h, 'stopped');
+    const alert = await nextAsk(h);
+    assert.deepEqual([alert.kind, alert.expected], ['again', 'bob']);
+    const late = await h.host.call({ op: 'admit', session: 'sa', code: CODE, id: first.id, answer: 'let_in' });
+    assert.ok(!late.ok, 'the first dial was refused too');
+  });
+}
 
 test('an admit that can\'t be written leaves no link saved', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);
   const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
-  await dialLine(h, line, { name: 'bob', machine: 'mB' });
+  await dialHost(h, line, { name: 'bob', machine: 'mB' });
   const ask = await nextAsk(h);
   // the host's own room log made unwritable: its directory is read-only
   const { fileKey, roomDir } = await import('../../home.js');

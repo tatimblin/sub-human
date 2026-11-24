@@ -27,16 +27,7 @@ async function funnel(t: Parameters<typeof twoHomes>[0], env: Record<string, str
   return { h, f, port: () => port };
 }
 
-test('a join over Funnel: an https line, a WebSocket through the front, the joiner\'s address as its source (R29, R29a)', async t => {
-  const { h, f } = await funnel(t);
-  const { line } = await joinBob(h, 'public');
-  assert.match(line, new RegExp(`^${f.origin}/${CODE}#`));
-  assert.ok(f.forwarded > 0);
-  const placed = await h.joiner.ok({ op: 'append', code: CODE, draft: { kind: 'joined', id: crypto.randomUUID(), from: 'bob', by: 'system' } });
-  assert.ok(placed.seq > 0);
-});
-
-test('the joiner\'s dialer goes through HTTPS_PROXY (R29a)', async t => {
+test('a join over Funnel: an https line, a WebSocket through the front and the joiner\'s HTTPS_PROXY, its address as the source (R29, R29a)', async t => {
   const seen: string[] = [], auth: string[] = [];
   const proxy = http.createServer();
   proxy.on('connect', (q: http.IncomingMessage, sock: Duplex) => {
@@ -51,9 +42,13 @@ test('the joiner\'s dialer goes through HTTPS_PROXY (R29a)', async t => {
   t.after(() => { proxy.closeAllConnections(); proxy.close(); });
   const a = proxy.address();
   const { h, f } = await funnel(t, { HTTPS_PROXY: `http://jess:p%40ss@127.0.0.1:${a !== null && typeof a === 'object' ? a.port : 0}` });
-  await joinBob(h, 'public');
+  const { line } = await joinBob(h, 'public');
+  assert.match(line, new RegExp(`^${f.origin}/${CODE}#`));
+  assert.ok(f.forwarded > 0);
   assert.ok(seen.length >= 2 && seen.every(u => u === f.origin.replace('https://', '')), seen.join(','));
   assert.ok(auth.every(x => x === `Basic ${Buffer.from('jess:p@ss').toString('base64')}`), 'the proxy URL\'s user and password');
+  const placed = await h.joiner.ok({ op: 'append', code: CODE, draft: { kind: 'joined', id: crypto.randomUUID(), from: 'bob', by: 'system' } });
+  assert.ok(placed.seq > 0);
 });
 
 const UPGRADE = `GET /${CODE} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`;
@@ -77,7 +72,8 @@ test('an upgrade with no PROXY header did not come through the forward, and is r
   assert.equal(await raw(port(), Buffer.concat([proxyHeader('127.0.0.1'), Buffer.from(UPGRADE)])), '', 'a loopback source is a local peer, refused');
 });
 
-test('half-open upgrades count against their source from the PROXY header on; an IPv6 source is its /64, ssh -W has its own cap', async t => {
+// the caps' numbers are core/host-rules.ts's (SOURCE_MAX 8, TOTAL_MAX 64, LOCAL_RESERVE 8); this is the listener holding them
+test('half-open upgrades count against their source from the PROXY header on: 8 a source (an IPv6 one its /64), 56 public in all, ssh -W its own cap and the last 8 (R29a, R40)', async t => {
   const { h, port } = await funnel(t);
   await hostRoom(h);
   await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'public' });
@@ -88,36 +84,26 @@ test('half-open upgrades count against their source from the PROXY header on; an
     s.on('close', () => { open.delete(id); }).on('error', () => undefined);
     t.after(() => { s.destroy(); });
   };
+  const from = (ip: string) => Buffer.concat([proxyHeader(ip), Buffer.from('GET / HTTP/1.1\r\n')]);
+  const local = Buffer.from([0, 48]); // an ssh -W connection: its first Noise frame, then silence
+  const count = (prefix: string) => [...open].filter(id => id.startsWith(prefix)).length;
   // one /64, a new address for each connection
-  for (let i = 0; i < 40; i++) hold(`p${i}`, Buffer.concat([proxyHeader(`2001:db8:1:2:0:0:0:${(i + 1).toString(16)}`), Buffer.from('GET / HTTP/1.1\r\n')]));
-  await until('all but eight cut', () => Promise.resolve(open.size <= 8 || null));
-  // more local (ssh -W) connections than one public source may hold: their first Noise frame, then silence
-  for (let i = 0; i < 12; i++) hold(`l${i}`, Buffer.from([0, 48]));
+  for (let i = 0; i < 40; i++) hold(`v6.${i}`, from(`2001:db8:1:2:0:0:0:${(i + 1).toString(16)}`));
+  await until('the /64 at its cap', () => Promise.resolve(count('v6.') <= 8 || null));
+  // more local connections than one public source may hold
+  for (let i = 0; i < 12; i++) hold(`l.${i}`, local);
+  for (let i = 0; i < 9; i++) hold(`a.${i}`, from('198.51.100.1')); // an IPv4 source, one over its cap
+  await until('the IPv4 source at its cap', () => Promise.resolve(count('a.') <= 8 || null));
   await sleep(300);
-  assert.equal([...open].filter(id => id.startsWith('p')).length, 8);
-  assert.equal([...open].filter(id => id.startsWith('l')).length, 12);
-});
-
-test('the listener holds at most 56 connections from public sources, keeping 8 for local (ssh -W) ones', async t => {
-  const { h, port } = await funnel(t);
-  await hostRoom(h);
-  await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'public' });
-  const open = new Set<string>();
-  const hold = (id: string, bytes: Buffer): void => {
-    const s = net.connect(port(), '127.0.0.1', () => { s.write(bytes); });
-    open.add(id);
-    s.on('close', () => { open.delete(id); }).on('error', () => undefined);
-    t.after(() => { s.destroy(); });
-  };
-  // 8 sources of 8 each, half-open: the last source's are over the public total
-  for (let src = 1; src <= 8; src++) for (let i = 0; i < 8; i++) hold(`p${src}.${i}`, Buffer.concat([proxyHeader(`198.51.100.${src}`), Buffer.from('GET / HTTP/1.1\r\n')]));
+  assert.deepEqual([count('v6.'), count('l.'), count('a.')], [8, 12, 8]);
+  // more sources than the public total: 28 more fit beside the 28 open
+  for (let src = 2; src <= 6; src++) for (let i = 0; i < 8; i++) hold(`b${src}.${i}`, from(`198.51.100.${src}`));
   await until('the public total held', () => Promise.resolve(open.size <= 56 || null));
   await sleep(200);
   assert.equal(open.size, 56);
-  // a local (ssh -W) connection still gets in: its first Noise frame, then silence
-  for (let i = 0; i < 8; i++) hold(`l${i}`, Buffer.from([0, 48]));
+  for (let i = 0; i < 8; i++) hold(`r.${i}`, local); // the last 8 are local's alone
   await sleep(300);
-  assert.equal([...open].filter(id => id.startsWith('l')).length, 8);
+  assert.equal(count('r.'), 8);
 });
 
 test('a WebSocket message larger than one Noise frame is refused before the handshake', async t => {
@@ -129,24 +115,6 @@ test('a WebSocket message larger than one Noise frame is refused before the hand
   const code = new Promise<number>(res => { ws.once('close', c => { res(c); }); });
   ws.send(Buffer.alloc(MAX_FRAME + 3));
   assert.equal(await code, 1009, 'message too big');
-});
-
-test('each PROXY source has its own connection cap (R29a, R40)', async t => {
-  const { h, f } = await funnel(t);
-  await hostRoom(h);
-  const { line } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'public' });
-  const closed = new Set<number>();
-  const open = async (source: string, i: number): Promise<void> => {
-    f.source = source;
-    const d = await dialWs(f.origin, CODE, {}, f.ca);
-    d.on('close', () => { closed.add(i); }).on('error', () => undefined).resume();
-  };
-  for (let i = 0; i < 8; i++) await open('198.51.100.1', i);
-  await assert.rejects(open('198.51.100.1', 8), 'the ninth from one source is cut before its upgrade');
-  await open('198.51.100.2', 9);
-  await sleep(100);
-  assert.deepEqual([...closed], [], 'the others, and another source, stay open');
-  assert.ok(line);
 });
 
 test('the host reads nothing past message 3 until it answers: a flood waits in the transport', async t => {

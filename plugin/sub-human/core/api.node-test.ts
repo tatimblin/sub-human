@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { AppendDraft } from './entries.js';
-import { daemonArgv, decodePointer, decodeRequest, readAnswer, refusedAppend, socketFile } from './api.js';
+import { daemonArgv, decodePointer, decodeRequest, readAnswer, refusedAppend, socketFile, titleFor } from './api.js';
 
 const ID = '0b9d6f3e-2c4a-4f1e-9a7b-5d8c1e2f3a4b';
 
@@ -93,4 +93,11 @@ test('the net ops are read with their fields, and an admit answer is one of thre
 test('the socket and the daemon\'s argv are under the home and the plugin', () => {
   assert.equal(socketFile('/h'), '/h/daemon.sock');
   assert.deepEqual(daemonArgv('/bin/node', '/p', '/h'), ['/bin/node', '--import', '/p/resolve-ts.ts', '/p/net/daemon.ts', '/h']);
+});
+
+test('titleFor: NAME.CODE, else the lowest free NAME-N.CODE among the titles held (R5) (R2)', () => {
+  assert.equal(titleFor('alice', 'vole-0001', []), 'alice.vole-0001');
+  assert.equal(titleFor('alice', 'vole-0001', ['alice.vole-0001']), 'alice-2.vole-0001');
+  assert.equal(titleFor('alice', 'vole-0001', ['alice.vole-0001', 'alice-2.vole-0001']), 'alice-3.vole-0001');
+  assert.equal(titleFor('alice', 'vole-0001', ['alice-2.vole-0001']), 'alice.vole-0001', 'a freed title is used again');
 });

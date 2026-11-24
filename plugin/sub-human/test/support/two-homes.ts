@@ -11,7 +11,9 @@ import type { Net, NetOptions } from '../../net/daemon/net.js';
 import type { Rooms } from '../../net/daemon/rooms.js';
 import { makeNet } from '../../net/daemon/net.js';
 import { machineKey } from '../../keys.js';
-import { connect } from '../../net/channel.js';
+import { connect, generateKeyPair } from '../../net/channel.js';
+import type { KeyPair } from '../../net/channel.js';
+import { mac, parse } from '../../net/invite.js';
 import type { ToHost, ToLink } from '../../core/protocol.js';
 import { decodeToLink, encode } from '../../core/protocol.js';
 import type { Dial } from '../../net/link.js';
@@ -111,6 +113,16 @@ export async function joinBob(h: Homes, via: 'ssh' | 'public' | 'tailnet' = 'ssh
   await linkIs(h, 'online');
   await h.joiner.ok({ op: 'ping', session: 'sb', code: CODE, name: 'bob' });
   return { line, check };
+}
+
+/** A dial of `line` by hand, as another machine (`key`, else a new one) naming `name` on `machine`: its check string and its close. */
+export async function dialHost(h: Homes, line: string, o: { name: string; machine: string; key?: KeyPair }): Promise<{ closed: Promise<void>; check: string }> {
+  const inv = parse(line);
+  assert.ok(inv.ok);
+  const me = o.key ?? generateKeyPair();
+  const payload = Buffer.from(JSON.stringify({ code: CODE, name: o.name, machine: o.machine, mac: mac(inv.value, me.pub).toString('base64url') }));
+  const ch = await connect(await pipe((s, src) => { h.hostNet.accept(s, src); })(inv.value.via, CODE), { s: me, rs: inv.value.hostKey, payload });
+  return { check: ch.check, closed: new Promise(res => { ch.onClose(() => { res(); }); }) };
 }
 
 

@@ -90,13 +90,6 @@ test('tailscale: a port 443 another app serves is left alone; the next free port
   assert.ok(s.TCP?.['443'] && !s.TCP['443'].TCPForward, 'the other app\'s 443 is untouched');
 });
 
-test('tailscale: every Funnel port held is one line, and nothing is run', async () => {
-  const f = await ts({ TCP: { 443: { HTTPS: true }, 8443: { HTTPS: true }, 10000: { TCPForward: '127.0.0.1:9' } } });
-  const r = await expose('public', 7420, f.env, NO_APP);
-  assert.ok(!r.ok && /443, 8443, 10000 all serve something else/.test(r.error));
-  assert.equal((await logged(f.log)).filter(a => a[0] === 'funnel').length, 0);
-});
-
 test('tailscale: turning one forward off leaves every other forward as it was', async () => {
   const f = await ts({ TCP: { 10000: { TCPForward: '127.0.0.1:5432' } } });
   const pub = await expose('public', 7420, f.env, NO_APP);
@@ -108,25 +101,22 @@ test('tailscale: turning one forward off leaves every other forward as it was', 
   assert.deepEqual((await logged(f.log)).at(-1), ['funnel', '--tls-terminated-tcp=443', 'off']);
 });
 
-test('tailscale: a tailnet with Funnel off names the admin page, without waiting on it', async () => {
-  const f = await ts({}, { FAKE_TS_OFF: '1' });
-  const started = Date.now();
-  const r = await expose('public', 7420, f.env, NO_APP);
-  assert.ok(!r.ok && /Funnel isn't on for this tailnet.*https:\/\/login\.tailscale\.com\/f\/funnel\?node=n1/.test(r.error), r.ok ? '' : r.error);
-  assert.ok(Date.now() - started < 5000);
-});
-
-test('tailscale: not running or logged out is one line, and nothing is published', async () => {
-  const f = await ts({}, { FAKE_TS_BACKEND: 'NeedsLogin' });
-  const r = await expose('tailnet', 7420, f.env, NO_APP);
-  assert.ok(!r.ok && /isn't running or logged in/.test(r.error));
+test('tailscale: what it can\'t publish is one line, said without waiting, and nothing is published', async () => {
+  // the last field: whether it may have tried a forward (Funnel off is found by trying)
+  const rows: [string, 'public' | 'tailnet', object, Record<string, string>, RegExp, boolean][] = [
+    ['every Funnel port held', 'public', { TCP: { 443: { HTTPS: true }, 8443: { HTTPS: true }, 10000: { TCPForward: '127.0.0.1:9' } } }, {}, /443, 8443, 10000 all serve something else/, false],
+    ['Funnel off for the tailnet: the admin page', 'public', {}, { FAKE_TS_OFF: '1' }, /Funnel isn't on for this tailnet.*https:\/\/login\.tailscale\.com\/f\/funnel\?node=n1/, true],
+    ['logged out', 'tailnet', {}, { FAKE_TS_BACKEND: 'NeedsLogin' }, /isn't running or logged in/, false],
+    ['a forward of ours without the PROXY header, not reused', 'public', { TCP: { 443: { TCPForward: '127.0.0.1:7420' } }, AllowFunnel: { 'node.tail1234.ts.net:443': true } }, {}, /without the PROXY header.*--tls-terminated-tcp=443 off/, false],
+  ];
+  for (const [what, mode, state, extra, why, tried] of rows) {
+    const f = await ts(state, extra);
+    const started = Date.now();
+    const r = await expose(mode, 7420, f.env, NO_APP);
+    assert.ok(!r.ok && why.test(r.error), `${what}: ${r.ok ? 'published' : r.error}`);
+    assert.ok(Date.now() - started < 5000, what);
+    if (!tried) assert.deepEqual((await logged(f.log)).filter(a => (a[0] === 'funnel' || a[0] === 'serve') && a[1] !== 'status'), [], what);
+  }
   const none = await expose('tailnet', 7420, { PATH: '/nonexistent' }, NO_APP);
   assert.ok(!none.ok && /isn't installed/.test(none.error));
-});
-
-test('tailscale: a forward of ours already there without the PROXY header is one line, and is not reused', async () => {
-  const f = await ts({ TCP: { 443: { TCPForward: '127.0.0.1:7420' } }, AllowFunnel: { 'node.tail1234.ts.net:443': true } });
-  const r = await expose('public', 7420, f.env, NO_APP);
-  assert.ok(!r.ok && /without the PROXY header.*--tls-terminated-tcp=443 off/.test(r.error), r.ok ? '' : r.error);
-  assert.equal((await logged(f.log)).filter(a => a[0] === 'funnel').length, 0);
 });

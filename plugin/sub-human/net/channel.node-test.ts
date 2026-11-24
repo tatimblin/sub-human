@@ -89,10 +89,8 @@ test('transport: replayed, reordered and tampered messages fail', () => {
 
 /** A host and a joiner over a stream pair; admit records what it saw. */
 async function pair(o: { rs?: Buffer; payload?: Buffer; admit?: boolean } = {}) {
-  const host = generateKeyPair(), me = generateKeyPair();
-  const [a, b] = duplexPair();
-  a.on('close', () => b.destroy()); // as a socket does: one end gone, the other sees it
-  b.on('close', () => a.destroy());
+  const { a, b, host } = linked();
+  const me = generateKeyPair();
   const seen: { key: Buffer; payload: Buffer }[] = [];
   const hostSide = accept(b, { s: host, admit: (key, payload) => { seen.push({ key, payload }); return o.admit ?? true; } });
   const joiner = connect(a, { s: me, rs: o.rs ?? host.pub, ...(o.payload ? { payload: o.payload } : {}) });
@@ -148,11 +146,19 @@ test('channel: a tampered frame closes it with an error', async () => {
   await closed(j);
 });
 
-test('channel: a joiner that never sends message 1 is dropped after timeoutMs; admit is never asked', { timeout: 5000 }, async () => {
+test('channel: a joiner that never sends message 1 is dropped after timeoutMs, or HANDSHAKE_MS with none; admit is never asked', { timeout: 5000 }, async t => {
   const [, b] = duplexPair();
   let asked = false;
   await assert.rejects(accept(b, { s: generateKeyPair(), timeoutMs: 30, admit: () => (asked = true) }), NoiseError);
   assert.ok(!asked && b.destroyed);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const [, c] = duplexPair();
+  const h = accept(c, { s: generateKeyPair(), admit: () => (asked = true) });
+  t.mock.timers.tick(HANDSHAKE_MS - 1);
+  assert.ok(!c.destroyed);
+  t.mock.timers.tick(1);
+  await assert.rejects(h, NoiseError);
+  assert.ok(!asked);
 });
 
 /** A joiner that speaks the wire by hand, to send what connect() never would. */
@@ -166,6 +172,7 @@ async function rawJoiner(stream: Duplex, hostKey: Buffer) {
   const { send } = hs.split();
   return { m3, seal: (more: number, body: Buffer): Buffer => frame(send.encrypt(Buffer.concat([Buffer.from([more]), body]))) };
 }
+/** A stream pair that closes as a socket does, one end gone and the other sees it, and a host key. */
 function linked() {
   const [a, b] = duplexPair();
   a.on('close', () => b.destroy());
@@ -208,16 +215,6 @@ test('channel: an admit() that throws ends the stream', { timeout: 5000 }, async
   assert.ok(b.destroyed);
 });
 
-test('channel: with no timeoutMs the handshake still ends after HANDSHAKE_MS', { timeout: 5000 }, async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const [, b] = duplexPair();
-  const h = accept(b, { s: generateKeyPair(), admit: () => true });
-  t.mock.timers.tick(HANDSHAKE_MS - 1);
-  assert.ok(!b.destroyed);
-  t.mock.timers.tick(1);
-  await assert.rejects(h, NoiseError);
-});
-
 /** An admitted raw joiner and the host's channel. */
 async function admitted() {
   const { a, b, host } = linked();
@@ -229,12 +226,14 @@ async function admitted() {
   return { a, j, ch };
 }
 
-test('channel: a message over MAX_MESSAGE is refused on receipt and on send', { timeout: 5000 }, async () => {
-  const { a, j, ch } = await admitted();
-  const end = closed(ch);
+test('channel: a message over MAX_MESSAGE is refused on receipt and on send, and so are messages past it in all with nobody reading them yet', { timeout: 5000 }, async () => {
   const piece = Buffer.alloc(65_000);
-  for (let n = 0; n * piece.length <= MAX_MESSAGE; n++) a.write(j.seal(1, piece));
-  assert.match(String(await end), /over/);
+  for (const [more, why] of [[1, /over/], [0, /nobody reading/]] as const) {
+    const { a, j, ch } = await admitted();
+    const end = closed(ch);
+    for (let n = 0; n * piece.length <= MAX_MESSAGE; n++) a.write(j.seal(more, piece));
+    assert.match(String(await end), why);
+  }
   const p = await pair();
   const [h2, jc] = await Promise.all([p.hostSide, p.joiner]);
   assert.throws(() => jc.send(Buffer.alloc(MAX_MESSAGE + 1)), /over/);
@@ -252,12 +251,4 @@ test('channel: a close inside a continued message is an error; a continuation by
   const end2 = closed(two.ch);
   two.a.write(two.j.seal(2, Buffer.from('x')));
   assert.match(String(await end2), /continuation/);
-});
-
-test('channel: messages past MAX_MESSAGE in all, with nobody reading them yet, close it', { timeout: 5000 }, async () => {
-  const { a, j, ch } = await admitted();
-  const end = closed(ch);
-  const piece = Buffer.alloc(65_000);
-  for (let n = 0; n * piece.length <= MAX_MESSAGE; n++) a.write(j.seal(0, piece));
-  assert.match(String(await end), /nobody reading/);
 });

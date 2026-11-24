@@ -49,7 +49,7 @@ async function hostPosts(h: Homes): Promise<string[]> {
   return r.value.flatMap(l => (l.entry.kind === 'post' ? [l.entry.text] : []));
 }
 
-test('offline: a person\'s post queues and is sent again under its id on reconnect; the host keeps one line (R32, R36)', async t => {
+test('offline: a person\'s post queues and is sent again under its id on reconnect; the host keeps one line, and places one it never saw (R32, R36)', async t => {
   const { h, clock, cut } = await setup(t);
   cut();
   await linkIs(h, 'offline');
@@ -63,52 +63,49 @@ test('offline: a person\'s post queues and is sent again under its id on reconne
   // the first send reached the host before the cut: the host has the line already
   await h.host.ok({ op: 'ping', session: 'sb-host', code: CODE, name: 'bob' });
   await h.host.ok({ op: 'append', code: CODE, draft: post('bob', 'while away', id, 'person') });
+  await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'queued', undefined, 'person') }); // one it never saw
+  assert.deepEqual(await hostPosts(h), ['while away']);
   clock.advance(4000);
   await linkIs(h, 'online');
   await until('the post acked', async () => {
     const mine = await new MirrorStore(roomDir(h.joiner.home, await fileKey(CODE)), { append: () => Promise.resolve({ ok: true, value: null }), putDoc: () => Promise.resolve(), putBlob: () => Promise.resolve() }).read(0);
     return mine.ok && mine.value.some(l => l.entry.id === id) ? true : null;
   });
-  assert.deepEqual(await hostPosts(h), ['while away']);
+  await until('the queued post on the host', async () => ((await hostPosts(h)).length === 2 ? true : null));
+  assert.deepEqual(await hostPosts(h), ['while away', 'queued']);
 });
 
-test('a post the host never saw is placed once the link is back', async t => {
-  const { h, clock, cut } = await setup(t);
-  cut();
-  await linkIs(h, 'offline');
-  await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'queued', undefined, 'person') });
-  assert.deepEqual(await hostPosts(h), []);
-  clock.advance(4000);
-  await linkIs(h, 'online');
-  await until('the queued post on the host', async () => ((await hostPosts(h)).length ? true : null));
-  assert.deepEqual(await hostPosts(h), ['queued']);
-});
-
-test('a fork: a copy whose chain breaks is discarded for the host\'s snapshot and lines (R36)', async t => {
-  const { h, clock, cut } = await setup(t);
-  const dir = roomDir(h.joiner.home, await fileKey(CODE));
-  // the copy's last line rewritten: its cursor is no longer on the host's chain
-  const text = await fs.readFile(logFile(dir), 'utf8');
-  const forged = text.replace(/"by":"system"(?=[^\n]*\n$)/, '"by":"person"');
-  assert.notEqual(forged, text);
-  await fs.writeFile(logFile(dir), forged);
-  cut();
-  await linkIs(h, 'offline');
-  await h.host.ok({ op: 'append', code: CODE, draft: post('alice', 'after the fork') });
-  clock.advance(4000);
-  await linkIs(h, 'online');
-  const host = await openFsStore({ home: h.host.home, code: CODE });
-  assert.ok(host.ok);
-  const want = await host.value.read(0);
-  assert.ok(want.ok);
-  const copy = new MirrorStore(dir, { append: () => Promise.resolve({ ok: true, value: null }), putDoc: () => Promise.resolve(), putBlob: () => Promise.resolve() });
-  const got = await until('the copy resynced', async () => {
-    const r = await copy.catchup();
-    return r.ok && r.value.lines.at(-1)?.hash === want.value.at(-1)?.hash ? r.value : null;
+for (const offline of [true, false]) {
+  test(`a fork found ${offline ? 'on reconnect' : 'while online'}: a copy whose chain breaks is discarded for the host's snapshot and lines (R36)`, async t => {
+    const { h, clock, cut } = await setup(t);
+    const dir = roomDir(h.joiner.home, await fileKey(CODE));
+    // the copy's last line rewritten: its cursor is no longer on the host's chain
+    const text = await fs.readFile(logFile(dir), 'utf8');
+    const forged = text.replace(/"by":"system"(?=[^\n]*\n$)/, '"by":"person"');
+    assert.notEqual(forged, text);
+    await fs.writeFile(logFile(dir), forged);
+    if (offline) {
+      cut();
+      await linkIs(h, 'offline');
+    }
+    await h.host.ok({ op: 'append', code: CODE, draft: post('alice', 'after the fork') });
+    if (offline) {
+      clock.advance(4000);
+      await linkIs(h, 'online');
+    }
+    const host = await openFsStore({ home: h.host.home, code: CODE });
+    assert.ok(host.ok);
+    const want = await host.value.read(0);
+    assert.ok(want.ok);
+    const copy = new MirrorStore(dir, { append: () => Promise.resolve({ ok: true, value: null }), putDoc: () => Promise.resolve(), putBlob: () => Promise.resolve() });
+    const got = await until('the copy resynced', async () => {
+      const r = await copy.catchup();
+      return r.ok && r.value.lines.at(-1)?.hash === want.value.at(-1)?.hash ? r.value : null;
+    });
+    assert.deepEqual(got.lines.map(l => l.hash), want.value.map(l => l.hash));
+    assert.ok(!(await fs.readFile(logFile(dir), 'utf8')).includes('"by":"person","machine":"mB"'), 'the forged line is gone');
   });
-  assert.deepEqual(got.lines.map(l => l.hash), want.value.map(l => l.hash));
-  assert.ok(!(await fs.readFile(logFile(dir), 'utf8')).includes('"by":"person","machine":"mB"'), 'the forged line is gone');
-});
+}
 
 test('the host restarts: links are told the host is away, and come back to the same listener (R34)', async t => {
   const h = await twoHomes(t, { joinOpts: { timings: { ...timings, retryMs: 50, retryMaxMs: 100 } } });
@@ -120,24 +117,4 @@ test('the host restarts: links are told the host is away, and come back to the s
   assert.ok((await h.joiner.ok({ op: 'append', code: CODE, draft: post('bob', 'back') })).seq > 0);
   const kept: unknown = JSON.parse(await fs.readFile(`${h.host.home}/host.json`, 'utf8'));
   assert.ok(typeof kept === 'object' && kept !== null && 'port' in kept && String(kept.port) === port, 'the listener kept its port');
-});
-
-test('a fork found while online: a host line that doesn\'t follow the copy resyncs it from the snapshot', async t => {
-  const { h } = await setup(t);
-  const dir = roomDir(h.joiner.home, await fileKey(CODE));
-  const text = await fs.readFile(logFile(dir), 'utf8');
-  const forged = text.replace(/"by":"system"(?=[^\n]*\n$)/, '"by":"person"');
-  assert.notEqual(forged, text);
-  await fs.writeFile(logFile(dir), forged); // the copy's head no longer the host's
-  await h.host.ok({ op: 'append', code: CODE, draft: post('alice', 'live, after the fork') });
-  const host = await openFsStore({ home: h.host.home, code: CODE });
-  assert.ok(host.ok);
-  const want = await host.value.read(0);
-  assert.ok(want.ok);
-  const copy = new MirrorStore(dir, { append: () => Promise.resolve({ ok: true, value: null }), putDoc: () => Promise.resolve(), putBlob: () => Promise.resolve() });
-  const got = await until('the copy resynced', async () => {
-    const r = await copy.catchup();
-    return r.ok && r.value.lines.at(-1)?.hash === want.value.at(-1)?.hash ? r.value : null;
-  });
-  assert.deepEqual(got.lines.map(l => l.hash), want.value.map(l => l.hash));
 });
