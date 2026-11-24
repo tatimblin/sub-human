@@ -110,8 +110,8 @@ export class Rooms {
       left: p => this.handle({ op: 'append', code: p.code, draft: { kind: 'left', from: p.name, by: 'system', id: p.leave } }),
       away: p => this.handle({ op: 'put_doc', code: p.code, kind: 'presence', name: p.name, doc: { name: p.name, state: 'away', at: this.o.now() } }),
       // the last session here left a room hosted elsewhere: its link and copy go, so its line can be joined again
-      // (checked again on the room's chain, so a session that joined meanwhile keeps it)
-      emptied: code => this.chains.run(code, async () => { if (this.links.hosts(code) && !(await this.pointers.holds(code))) await this.drop(code); }),
+      // (checked again behind every join, then on the room's chain, so a session that joined meanwhile keeps it)
+      emptied: code => this.chains.run(OPEN, () => this.chains.run(code, async () => { if (this.links.hosts(code) && !(await this.pointers.holds(code))) await this.drop(code); })),
     });
   }
 
