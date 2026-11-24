@@ -3,6 +3,7 @@
 // names bob. The prompt never reaches my Claude; one line says where it went. The daemon takes a person's post only
 // from a session of theirs here (core/api.ts refusedAppend), and the secret filter applies as to every post.
 import type { On } from 'claude-code';
+import { why } from '../core/text.js';
 import type { AppendDraft, RoomState } from '../core/entries.js';
 import { LIMITS } from '../core/entries.js';
 import type { Result } from '../core/result.js';
@@ -35,7 +36,7 @@ export function registerAtRoom(on: On): void {
     const line = roomLine(e.text, room, session.state, crypto.randomUUID());
     if (!line.ok) return { drop: `sub-human: ${line.error}` };
     const q = request({ op: 'append', code: room.code, draft: line.value }, room.home);
-    const r = await $.http.fetch(q.url, q).then(x => answer('append', x), (x: unknown) => err(String(x).slice(0, 200)));
+    const r = await $.http.fetch(q.url, q).then(x => answer('append', x), (x: unknown) => err(why(x)));
     const to = line.value.to;
     return { drop: r.ok ? `sub-human: sent to ${room.code}${to ? `, to ${to}` : ''}.` : `sub-human didn't send that to ${room.code}: ${r.error}` };
   });

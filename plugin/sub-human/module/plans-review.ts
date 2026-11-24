@@ -6,6 +6,7 @@
 // Claude with my next prompt. A card dismissed twice is left to the status count and news. No plan file is touched
 // and no mode changes (R19); nothing here starts a turn.
 import type { On } from 'claude-code';
+import { why } from '../core/text.js';
 import type { PlanAct } from '../core/api.js';
 import { err } from '../core/result.js';
 import { blobFile } from '../home.js';
@@ -79,7 +80,7 @@ export function registerReview(on: On): void {
           if (pick.kind === 'read') {
             pane = paneLines(p, before, after);
             const opened = await $.ui.open({ id: PLAN_PANE, title: `${p.name} v${p.version}`, focus: true, closeOnEscape: true })
-              .catch((x: unknown) => ({ isPlaced: false as const, reason: String(x).slice(0, 200) }));
+              .catch((x: unknown) => ({ isPlaced: false as const, reason: why(x) }));
             if (opened.isPlaced) return; // its button asks again; so does the next idle moment
             if (!paneSaid) $.ui.log(`sub-human: the full plan isn't shown here (${opened.reason}); ask Claude to read plan ${p.name} to you.`);
             paneSaid = true; // one line a session
@@ -91,7 +92,7 @@ export function registerReview(on: On): void {
             ? { act: 'answer', name: p.name, version: p.version, answer: pick.answer === 'changes' ? 'changes' : 'agree', ...note }
             : { act: 'accept', name: p.name, version: p.version, answer: pick.answer === 'agree' ? 'accept' : pick.answer, ...note };
           const q = request({ op: 'plan', code: room.code, from: room.name, ...act }, room.home);
-          const r = await $.http.fetch(q.url, q).then(x => answer('plan', x), (x: unknown) => err(String(x).slice(0, 200)));
+          const r = await $.http.fetch(q.url, q).then(x => answer('plan', x), (x: unknown) => err(why(x)));
           if (!r.ok) {
             $.ui.log(`sub-human couldn't record your answer on ${p.name} v${p.version}: ${r.error}`);
             skip.set(p.key, 'later');

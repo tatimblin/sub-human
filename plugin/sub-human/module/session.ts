@@ -23,11 +23,13 @@ export interface Session {
   queue: readonly Item[];
   touched: Me['touched'];
   mine: ActivityDoc | null;
-  /** Updates since the person last opened news, and what news will show. */
+  /** Updates since the person last opened news. */
   count: number;
-  unseen: readonly Input[];
-  /** What `read since` answers: what reached the room since my Claude last read it. */
-  since: readonly Input[];
+  /** What reached the room, the newest FEED_MAX; `fed` counts all ever added, so a reader's place is a count. */
+  feed: readonly Input[];
+  fed: number;
+  /** Where news (the person) and `read since` (my Claude) last read the feed to. */
+  read: { news: number; since: number };
   shown: string;
   /** Wake prompts deliver decided on, waiting for wake.ts to submit once the session is idle (R10). */
   wakes: readonly string[];
@@ -54,10 +56,21 @@ export interface Session {
   joining: string | null;
 }
 export const fresh = (): Session => ({
-  room: null, state: null, queue: [], touched: [], mine: null, count: 0, unseen: [], since: [], shown: '', wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
+  room: null, state: null, queue: [], touched: [], mine: null, count: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
   titled: false, said: [], off: [], away: false, joining: null,
 });
 export const session: Session = fresh();
+
+/** What news and `read since` keep at most; the oldest go first. */
+const FEED_MAX = 500;
+export function feed(s: Session, items: readonly Input[]): void {
+  s.feed = [...s.feed, ...items].slice(-FEED_MAX);
+  s.fed += items.length;
+}
+/** The feed after `who` last read it. */
+export function unread(s: Session, who: keyof Session['read']): readonly Input[] {
+  return s.feed.slice(Math.max(0, s.feed.length - (s.fed - s.read[who])));
+}
 
 /** Whether the problem `key` is new this session, noting it: each is said in one line (C3). */
 export function once(s: Session, key: string): boolean {
@@ -83,5 +96,5 @@ export function joined(s: Session, p: Pointer | null, l: LinkStatus | null): str
 
 /** What the session knew of a room it is no longer in. */
 export function forget(s: Session): void {
-  Object.assign(s, { state: null, queue: [], mine: null, count: 0, unseen: [], since: [], shown: '', wakes: [], away: false });
+  Object.assign(s, { state: null, queue: [], mine: null, count: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', wakes: [], away: false });
 }

@@ -8,6 +8,7 @@
 // hold session.start and the turn events, so these two are matched: capture.ts counts the turns in session.turns.
 // SUB_HUMAN_CC_OFF=wake starts no turn: the wakes are dropped, said once (their drawn lines stay).
 import type { On } from 'claude-code';
+import { why } from '../core/text.js';
 import { context, tokens } from '../core/deliver.js';
 import { mechanics } from '../core/mechanics.js';
 import { POLL_MS } from './follow.js';
@@ -73,7 +74,7 @@ export function registerWake(on: On): void {
         if (r.drop !== undefined) { flight = null; $.ui.log(`sub-human: a wake was dropped: ${r.drop}`, { to: 'debug' }); }
       } catch (x) {
         flight = null;
-        $.ui.log(`sub-human: a wake wasn't submitted: ${String(x).slice(0, 200)}`, { to: 'debug' });
+        $.ui.log(`sub-human: a wake wasn't submitted: ${why(x)}`, { to: 'debug' });
       } finally {
         busy = false;
       }

@@ -10,6 +10,9 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u206
 /** Zero-width characters (and the soft hyphen and word joiner), which hide inside a word: removed, not spaced. */
 export const ZERO_WIDTH: RegExp = /[\u00ad\u200b-\u200d\u2060\ufeff]/g;
 
+/** Why something failed, from whatever was thrown, as one short line. */
+export function why(x: unknown): string { return oneLine(String(x), 200); }
+
 export function oneLine(text: string, max: number): string {
   const one = defuse(clean(text).replace(/\s+/g, ' ').trim());
   return one.length > max ? `${one.slice(0, max - 1)}…` : one;

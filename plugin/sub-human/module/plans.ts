@@ -8,6 +8,7 @@
 // plans-cards.ts says what each card asks and what an answer means; plans-review.ts is the reviewer's side.
 import type { On } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
+import { why } from '../core/text.js';
 import type { PlanAct } from '../core/api.js';
 import { sha256 } from '../core/hash.js';
 import { latestVersion, sentFiles } from '../core/plans.js';
@@ -67,10 +68,10 @@ export function registerPlans(on: On): void {
     const file = got.output.filePath ?? '';
     const plan = async (act: PlanAct) => {
       const q = request({ op: 'plan', code: room.code, from: room.name, ...act }, room.home);
-      const a = await $.http.fetch(q.url, q).then(x => answer('plan', x), (x: unknown) => err(String(x).slice(0, 200)));
-      const why = !a.ok ? a.error : 'refused' in a.value ? a.value.refused : '';
-      if (why) $.ui.log(`sub-human couldn't share your plan with ${room.code}: ${why}`);
-      return a.ok && 'seq' in a.value ? ok(a.value.latest?.version ?? 0) : err(why);
+      const a = await $.http.fetch(q.url, q).then(x => answer('plan', x), (x: unknown) => err(why(x)));
+      const no = !a.ok ? a.error : 'refused' in a.value ? a.value.refused : '';
+      if (no) $.ui.log(`sub-human couldn't share your plan with ${room.code}: ${no}`);
+      return a.ok && 'seq' in a.value ? ok(a.value.latest?.version ?? 0) : err(no);
     };
     const ask = (c: Card) => $.ui.ask(c.question, { options: c.options, header: 'Plan', ...(c.multiSelect && { multiSelect: true }) }).catch(() => null);
     const told = (line: string) => ({ ...r, context: [...(r.context ?? []), `sub-human: ${line}`] });
@@ -133,7 +134,7 @@ export function registerPlans(on: On): void {
     const text = latest ? (await $.fs.read(blobFile(room.dir, latest.hash)).catch(() => null)) ?? '' : '';
     const req = c.value.act === 'send' ? { ...c.value, files: sentFiles(text, session.mine?.files ?? [], room.ignore), ...(branch && { branch }) } : c.value;
     const q = request(req, room.home);
-    const a = await $.http.fetch(q.url, q).then(x => answer('plan', x), (x: unknown) => err(String(x).slice(0, 200)));
+    const a = await $.http.fetch(q.url, q).then(x => answer('plan', x), (x: unknown) => err(why(x)));
     if (!a.ok) return refuse(`Nothing was done in ${room.code}: ${a.error}`);
     if ('refused' in a.value) { // a stale edit, answered with the current text so the Claude can merge (R17)
       const at = a.value.latest;

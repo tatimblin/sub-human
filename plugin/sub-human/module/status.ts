@@ -1,11 +1,11 @@
 // status: what the person sees of the room without asking (R15b). The status line names who else is here and counts
 // the updates since they last looked; `/sub-human news` opens a pane with those updates, drawn here with no model
-// call, and clears the count. follow.ts fills `session.unseen` and draws the line; this file draws the pane.
+// call, and clears the count. follow.ts fills the session's feed and draws the line; this file draws the pane.
 import type { On } from 'claude-code';
 import type { Input } from '../core/deliver.js';
 import type { Member, RoomState } from '../core/entries.js';
-import { oneLine } from '../core/text.js';
-import { COMMAND, session } from './session.js';
+import { oneLine, why } from '../core/text.js';
+import { COMMAND, session, unread } from './session.js';
 import { isHere } from '../core/entries.js';
 
 /** The pane's id; one news pane at a time. */
@@ -65,11 +65,11 @@ export function registerStatus(on: On): void {
   on('prompt.submit', { command: { name: COMMAND, args: /^\s*news\s*$/ } }, async ($, e, next) => {
     const room = session.room;
     if (!room || !session.state) return next(e); // the command answers that this session is in no room
-    shown = newsLines(session.unseen, session.state, room.code);
+    shown = newsLines(unread(session, 'news'), session.state, room.code);
     const opened = await $.ui.open({ id: NEWS_PANE, title: `${room.code} news`, focus: true, closeOnEscape: true })
-      .catch((x: unknown) => ({ isPlaced: false as const, reason: String(x).slice(0, 200) }));
+      .catch((x: unknown) => ({ isPlaced: false as const, reason: why(x) }));
     if (!opened.isPlaced) return { drop: `sub-human: news isn't shown here (${opened.reason}); /sub-human who says what each member is doing.` };
-    session.unseen = [];
+    session.read.news = session.fed;
     session.count = 0;
     session.shown = statusLine(session.state, room, 0, session.away);
     $.ui.status(session.shown);

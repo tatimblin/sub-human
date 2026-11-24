@@ -5,6 +5,7 @@
 // Every write goes to the daemon over its Unix socket (§5); module/bridge.ts builds the call. The native task bridge's
 // rules are module/tasks.ts; this hook makes its calls, unless SUB_HUMAN_CC_OFF turns it off (said once).
 import type { On } from 'claude-code';
+import { why } from '../core/text.js';
 import { capture, plansDir } from '../core/activity.js';
 import { err } from '../core/result.js';
 import { answer, request } from './bridge.js';
@@ -16,7 +17,7 @@ export function registerCapture(on: On): void {
   on('tool.call', { tool: ['Edit', 'Write', 'Read', 'Bash', 'TaskCreate', 'TaskUpdate', 'ExitPlanMode'] }, async ($, e, next) => {
     // an update of a task the map lacks (after a resume or restart): list before it runs, as a deletion leaves no trace
     if (session.room && (e.tool === 'TaskCreate' || e.tool === 'TaskUpdate') && needsList(tasks, await $.session.id(), e)) {
-      const list = await $.tool.call({ tool: 'TaskList' }).catch((x: unknown) => String(x).slice(0, 200));
+      const list = await $.tool.call({ tool: 'TaskList' }).catch((x: unknown) => why(x));
       if (!fill(tasks, list)) $.ui.log(`sub-human: TaskList didn't answer; the next unknown task asks again (${typeof list === 'string' ? list : 'refused'})`, { to: 'debug' });
     }
     const r = await next(e);
@@ -39,7 +40,7 @@ export function registerCapture(on: On): void {
     } else if (bridged === 'already') $.ui.log(`sub-human: room ${room.code} already shows that task change`, { to: 'debug' });
     else if (bridged) {
       const q = request(bridged, room.home);
-      const res = await $.http.fetch(q.url, q).then(x => answer('task', x), (x: unknown) => err(String(x).slice(0, 200)));
+      const res = await $.http.fetch(q.url, q).then(x => answer('task', x), (x: unknown) => err(why(x)));
       if (!res.ok && once(session, `task ${bridged.act} ${bridged.n}`)) $.ui.log(`sub-human couldn't update task #${bridged.n} in ${room.code}: ${res.error}`);
     }
     if (c.kind === 'none') return r;
@@ -49,7 +50,7 @@ export function registerCapture(on: On): void {
       : c.events.map(d => request({ op: 'append', code: room.code, draft: { ...d, id: crypto.randomUUID() } }, room.home));
     const op = c.kind === 'doc' ? 'put_doc' : 'append';
     for (const q of calls) {
-      const res = await $.http.fetch(q.url, q).then(x => answer(op, x), (x: unknown) => err(String(x).slice(0, 200)));
+      const res = await $.http.fetch(q.url, q).then(x => answer(op, x), (x: unknown) => err(why(x)));
       if (!res.ok && once(session, 'write')) { // one line a session (C3)
         $.ui.log(`sub-human couldn't share your work with room ${room.code}: ${res.error}`);
       }

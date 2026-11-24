@@ -8,6 +8,7 @@
 // the daemon writes the pointer once the host lets this machine in (R30): its appearing is drawn as one line. The link
 // to a room hosted elsewhere is asked at each ping, so the status line says when its host is away (R34).
 import type { On } from 'claude-code';
+import { why } from '../core/text.js';
 import type { DocKind, DocKinds, LogLine, RoomState } from '../core/entries.js';
 import { fold, takeSnapshot } from '../core/fold.js';
 import type { Me } from '../core/deliver.js';
@@ -23,15 +24,13 @@ import type { Absorbed } from './follow-lines.js';
 import { absorb, docsOf, toDraw, docsStamp, freshCursor, linesAfter, planTerms, unreadPlans } from './follow-lines.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
-import { forget, fresh, joined, once, session } from './session.js';
+import { feed, forget, fresh, joined, once, session } from './session.js';
 import { statusLine } from './status.js';
 import { TOOLS } from './tools.js';
 
 export const POLL_MS = 1000;
 /** `$.fs.read` answers at most 4 MiB. */
 const READ_MAX = 4 * 1024 * 1024;
-/** What news and `read since` keep at most; the oldest go first. */
-const UNSEEN_MAX = 500;
 /** The debug line each finished poll leaves: what a test waits on. */
 export const POLLED = 'sub-human: polled';
 
@@ -48,7 +47,7 @@ export function registerFollow(on: On): void {
     let beat = 0;
     let registered = false;
     let cc: string | undefined; // the Claude Code version, told to the daemon with each ping for doctor
-    let stopped = false; // a fork: this session follows the room no more
+    let stopped = false; // set by a fork (readLog)
     let pinged = { id: '', at: 0 }; // the id that last got a ping through, and when: in no room, one each PING_MS
     let id = '';
     const say = (line: string, key = line): void => { if (once(session, key)) $.ui.log(line); };
@@ -73,7 +72,10 @@ export function registerFollow(on: On): void {
         const text = await $.fs.read(logFile(room.dir), { offset: c.offset, length: READ_MAX }).catch(() => null);
         if (text === null) return err(`sub-human can't read room ${room.code}'s log; its updates wait until it can.`);
         const r = await linesAfter(text, c.head);
-        if (!r.ok) return err(`sub-human stopped following room ${room.code}: its log no longer matches what this session read (${r.error.replace(/^fork: /, '')}).`);
+        if (!r.ok) {
+          stopped = true; // a fork: this session follows the room no more
+          return err(`sub-human stopped following room ${room.code}: its log no longer matches what this session read (${r.error.replace(/^fork: /, '')}).`);
+        }
         if (r.value.bytes === 0) break; // the tail is ahead of a line still being written
         out.push(...r.value.lines);
         c.head = r.value.head;
@@ -87,7 +89,6 @@ export function registerFollow(on: On): void {
       const tail = parseTail(text);
       const lines = await readLog(room, tail.ok ? tail.value.seq : 0);
       if (!lines.ok) {
-        stopped = lines.error.includes('stopped following');
         if (stopped) timer?.cancel();
         say(lines.error);
         return;
@@ -116,8 +117,7 @@ export function registerFollow(on: On): void {
       session.drawn = drawn.shown;
       for (const line of drawn.draw) $.ui.log(line);
       session.wakes = [...session.wakes, ...a.wakes];
-      session.unseen = [...session.unseen, ...a.feed].slice(-UNSEEN_MAX);
-      session.since = [...session.since, ...a.feed].slice(-UNSEEN_MAX);
+      feed(session, a.feed);
       session.count += a.count;
     };
     const shown = (room: InRoom): void => {
@@ -163,7 +163,7 @@ export function registerFollow(on: On): void {
       const now = await $.clock.now();
       if (p || pinged.id !== id || now - pinged.at >= PING_MS) {
         const q = request({ op: 'ping', session: id, ...(p && { code: p.code, name: p.name }), ...(cc && { cc }) }, home);
-        const r = await $.http.fetch(q.url, q).then(x => answer('ping', x), (x: unknown) => err(String(x).slice(0, 200)));
+        const r = await $.http.fetch(q.url, q).then(x => answer('ping', x), (x: unknown) => err(why(x)));
         if (r.ok) pinged = { id, at: now };
         for (const n of r.ok ? r.value?.notes ?? [] : []) $.ui.log(n, { to: 'debug' }); // the daemon's (a room swept)
         if (!r.ok && p) say(`sub-human didn't answer, so ${p.code} may show you away: ${r.error}. /sub-human doctor says why.`, 'ping');
@@ -179,9 +179,9 @@ export function registerFollow(on: On): void {
       if (away !== session.away && session.room) { session.away = away; shown(session.room); }
       if (!registered) { // Claude's tools, from the next prompt on, once this session is in a room
         registered = true;
-        const failed = await Promise.all(TOOLS.map(t => $.tool.register(t).then(() => null, (x: unknown) => String(x).slice(0, 200))));
-        const why = failed.find(f => f !== null);
-        if (why) say(`sub-human's tools aren't available in this session: ${why}`); // C3: one line, no fallback
+        const failed = await Promise.all(TOOLS.map(t => $.tool.register(t).then(() => null, (x: unknown) => why(x))));
+        const no = failed.find(f => f !== null);
+        if (no) say(`sub-human's tools aren't available in this session: ${no}`); // C3: one line, no fallback
       }
     };
     const poll = async (): Promise<void> => {
@@ -191,7 +191,7 @@ export function registerFollow(on: On): void {
         if (!session.room || session.recheck || ++beat % (PING_MS / POLL_MS) === 0) await locate();
         if (session.room && !stopped) { await step(session.room); await inbox(session.room); }
       } catch (x) {
-        say(`sub-human can't follow the room: ${String(x).slice(0, 200)}`);
+        say(`sub-human can't follow the room: ${why(x)}`);
       } finally {
         busy = false;
         $.ui.log(POLLED, { to: 'debug' });

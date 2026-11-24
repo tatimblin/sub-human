@@ -15,11 +15,11 @@ import { LIMITS, isMember } from '../core/entries.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 import { secretIn } from '../core/secrets.js';
-import { datamark, markLabel, oneLine } from '../core/text.js';
+import { datamark, markLabel, oneLine, why } from '../core/text.js';
 import { blobFile } from '../home.js';
 import { answer, request } from './bridge.js';
 import type { InRoom } from './session.js';
-import { session } from './session.js';
+import { session, unread } from './session.js';
 import { newsLines } from './status.js';
 
 /** A registered tool's name as the model calls it. */
@@ -136,17 +136,17 @@ export function registerTools(on: On): void {
     const c = shareCall(e, room, session.state, await $.clock.now(), crypto.randomUUID());
     if (!c.ok) return { deny: c.error };
     const q = request(c.value.req, room.home);
-    const r = await $.http.fetch(q.url, q).then(x => answer(c.value.req.op, x), (x: unknown) => err(String(x).slice(0, 200)));
+    const r = await $.http.fetch(q.url, q).then(x => answer(c.value.req.op, x), (x: unknown) => err(why(x)));
     if (!r.ok) return { deny: `Nothing was shared with ${room.code}: ${r.error}` };
     return { result: c.value.done };
   });
   on('tool.run', { tool: toolName('read') }, async ($, e) => {
     const room = session.room;
     if (!room) return { deny: 'This session is in no room; there is nothing to read.' };
-    const c = readCall(e, room, session.state, session.since);
+    const c = readCall(e, room, session.state, unread(session, 'since'));
     if (!c.ok) return { deny: c.error };
     if ('text' in c.value) {
-      if (e.op === 'since') session.since = [];
+      if (e.op === 'since') session.read.since = session.fed;
       return { result: c.value.text };
     }
     const text = await $.fs.read(c.value.blob).catch(() => null);
