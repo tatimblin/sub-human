@@ -93,7 +93,10 @@ export class LinkSet {
     this.links.delete(code);
     await fs.rm(linkFile(this.o.home, await fileKey(code)), { force: true });
   }
-  status(code: string): LinkStatus | null { return this.links.get(code)?.status ?? this.joining.get(code) ?? null; }
+  /** A join under way, or the last one's end, before the old link's: a new attempt's state replaces a stale reason. */
+  status(code: string): LinkStatus | null { return this.joining.get(code) ?? this.links.get(code)?.status ?? null; }
+  /** The member name the room's link writes as: the one the host let this machine in as. */
+  name(code: string): string | undefined { return this.links.get(code)?.name; }
 
   /** Proves the line to its host and answers the check string; the host's answer arrives later (status). */
   async join(line: string, name: string): Promise<Result<{ code: string; check: string }>> {
@@ -106,7 +109,7 @@ export class LinkSet {
     if (hosted) return err(`this machine already hosts room ${code}; nothing was sent`);
     let ch: Channel, stream: Duplex | null = null;
     try {
-      const pay = { code, name, machine: this.o.machine, mac: mac(inv.value, this.o.key.pub).toString('base64url') };
+      const pay = { code, name, machine: this.o.machine, mac: mac(inv.value, this.o.key.pub).toString('base64url'), caps: ['named'] };
       stream = await this.o.dial(via, code);
       ch = await connect(stream, { s: this.o.key, rs: hostKey, payload: Buffer.from(JSON.stringify(pay)) });
     } catch (e) {
@@ -117,13 +120,13 @@ export class LinkSet {
     }
     this.joining.set(code, { phase: 'waiting', why: null });
     let over = false;
-    const done = async (why: string | null): Promise<void> => {
+    const done = async (why: string | null, as = name): Promise<void> => {
       if (over) return;
       over = true;
       cancel();
       ch.close();
       if (why !== null) { this.joining.set(code, { phase: 'stopped', why }); return; }
-      const file: LinkFile = { code, name, hostKey: hostKey.toString('base64url'), via };
+      const file: LinkFile = { code, name: as, hostKey: hostKey.toString('base64url'), via };
       await writeAtomic(linkFile(this.o.home, await fileKey(code)), JSON.stringify(file));
       await this.add(file);
       this.joining.delete(code);
@@ -132,9 +135,11 @@ export class LinkSet {
     const cancel = (this.o.clock ?? REAL_CLOCK).after(JOIN_MS, () => { void done(refused); });
     ch.onMessage(b => {
       const m = decodeToLink(b.toString('utf8'));
+      if (m.ok && m.value?.t === 'refused') { void done(m.value.reason); return; }
       if (!m.ok || m.value?.t !== 'hello') return;
       const a = negotiate(hello(name, this.o.machine), m.value);
-      void done(a.ok ? null : skewLine(a.update, 'the host'));
+      // the host's hello names who this machine was let in as (an older host's names nobody)
+      void done(a.ok ? null : skewLine(a.update, 'the host'), m.value.name || name);
     });
     ch.onClose(() => { void done(refused); });
     return ok({ code, check: ch.check });
@@ -150,6 +155,7 @@ export class LinkSet {
 
 class Link {
   readonly mirror: MirrorStore;
+  get name(): string { return this.file.name; }
   status: LinkStatus = { phase: 'connecting', why: null };
   private readonly o: LinkSetOptions;
   private readonly file: LinkFile;

@@ -96,7 +96,8 @@ export function joined(s: Session, p: Pointer | null, l: LinkStatus | null): str
   const code = s.joining;
   if (code === null || (!p && l?.phase !== 'stopped')) return null;
   s.joining = null;
-  if (p) return p.code === code ? `You're in ${p.code} as ${p.name}.` : null;
+  // let in under another name, theirs being in the room from another machine: the link's status says so
+  if (p) return p.code !== code ? null : l?.phase !== 'stopped' && l?.why ? `sub-human: ${l.why}.` : `You're in ${p.code} as ${p.name}.`;
   return `You did not join ${code}: ${l?.why ?? 'the host did not let you in'}.`;
 }
 

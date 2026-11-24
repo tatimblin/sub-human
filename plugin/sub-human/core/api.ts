@@ -155,6 +155,9 @@ export interface Ask {
   readonly check: string;
   /** Whether `name` is already a member of the room. */
   readonly member: boolean;
+  /** The name the joiner is let in as when `name` is in the room from another machine (`holder`). */
+  readonly as?: string;
+  readonly holder?: string;
 }
 export type LinkPhase = 'waiting' | 'connecting' | 'online' | 'offline' | 'host_away' | 'stopped';
 /** Whether a link in `phase` can't reach the room's host now (R34). */
@@ -298,6 +301,7 @@ const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
   uninvite: v.null(),
   asks: v.object({ asks: v.array(v.object({
     id: name, code: name, kind: v.picklist(['admit', 'again', 'leaked']), name, expected: name, machine: v.string(), check: v.string(), member: v.boolean(),
+    as: v.exactOptional(name), holder: v.exactOptional(v.string()),
   })) }),
   admit: v.null(),
   kick: v.null(),

@@ -36,6 +36,8 @@ export interface Links {
   state(code: string): Promise<RoomState | null>;
   /** R3: closes the room's link for good and deletes its file (the copy is the caller's to delete). */
   forget(code: string): Promise<void>;
+  /** Such a room's member name for this machine: the one its host let it in as. */
+  name?(code: string): string | undefined;
 }
 /** No links: every room is hosted here. */
 export const NO_LINKS: Links = {
@@ -292,6 +294,8 @@ export class Rooms {
     if (!p.ok) return p;
     if ('rooms' in p.value) return ok({ rooms: p.value.rooms });
     const { code, fresh } = p.value;
+    const as = this.links.hosts(code) ? this.links.name?.(code) : undefined; // a room hosted elsewhere: the name it let this machine in as
+    if (as !== undefined && as !== req.name) return this.join({ ...req, code, name: as });
     const state = rooms.get(code);
     const me = state?.members.find(m => m.name === req.name);
     if (me?.kicked) return err(`${req.name} was removed from ${code}.`);

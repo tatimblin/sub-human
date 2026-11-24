@@ -52,15 +52,16 @@ test('a joiner waiting: the card names them, their machine and the check; Let in
   expect(w.sent.filter(s => s.op === 'admit')).toEqual([{ op: 'admit', session: 'sess-1', code: 'otter-4821', id: 'a1', answer: 'let_in', socketPath: '/u/sh/daemon.sock' }])
 })
 
-test('a name that is not the invite\'s, or already a member, is on the card; a dismissed card is a Refuse', async ($, on) => {
-  const w = world(on, [{ ...ASK, name: 'mallory' }, { ...ASK, id: 'a2', member: true }], null)
+test('a name that is not the invite\'s, already a member, or in the room from another machine is on the card; a dismissed card is a Refuse (R30)', async ($, on) => {
+  const w = world(on, [{ ...ASK, name: 'mallory' }, { ...ASK, id: 'a2', member: true }, { ...ASK, id: 'a3', member: true, as: 'bob2', holder: 'devbox' }], null)
   await $.session.start(START)
   await $.command.run(INVITE)
   await w.clock.advance(3000)
   await w.clock.advance(3000)
   expect(w.asked[0]).toContain('mallory (the invite was for bob)')
   expect(w.asked[1]).toContain('bob is already a member there.')
-  expect(w.sent.filter(s => s.op === 'admit').map(s => [s.id, s.answer])).toEqual([['a1', 'refuse'], ['a2', 'refuse']])
+  expect(w.asked[2]).toBe('Let bob on bob-laptop into otter-4821? bob joins as bob2 (bob is already in the room from devbox). Check 1f2e-3d4c matches theirs.')
+  expect(w.sent.filter(s => s.op === 'admit').map(s => [s.id, s.answer])).toEqual([['a1', 'refuse'], ['a2', 'refuse'], ['a3', 'refuse']])
 })
 
 test('a line dialled twice is one line; one that let someone in offers their removal', async ($, on) => {
