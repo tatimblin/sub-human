@@ -45,7 +45,9 @@ export function daemonFor(home: string): Daemon {
     },
     status: async () => {
       const s = await (await client()).call(home, { op: 'status' }, 1000);
-      return s.ok ? ok({ sessions: s.value.sessions, cc: s.value.cc }) : s;
+      if (!s.ok) return s;
+      const { sessions, cc, unwritable } = s.value;
+      return ok({ sessions, cc, ...(unwritable !== undefined && { unwritable }) });
     },
   };
 }

@@ -22,3 +22,24 @@ export async function writeAtomic(file: string, text: string): Promise<void> {
   const d = await fs.open(dir, 'r').catch(() => null);
   if (d) { await d.sync().catch(() => undefined); await d.close(); }
 }
+
+/** The codes that say the home can't be written at all (a sandbox gone, a read-only disk, lost permissions). */
+const FATAL = new Set(['ENOSYS', 'EROFS', 'EACCES', 'EPERM', 'EOPNOTSUPP']);
+/** `e`'s code when it says the home can't be written, else null. */
+export function fatal(e: unknown): string | null {
+  const code = e instanceof Error && 'code' in e ? e.code : undefined;
+  return typeof code === 'string' && FATAL.has(code) ? code : null;
+}
+
+/** Whether a file can be made in `dir` as writeAtomic makes one: the error, or null when it can. */
+export async function probe(dir: string): Promise<unknown> {
+  const file = path.join(dir, `write-probe.${process.pid}`);
+  try {
+    await (await fs.open(file, 'wx', 0o600)).close();
+    await fs.unlink(file);
+    return null;
+  } catch (e) {
+    await fs.unlink(file).catch(() => undefined);
+    return e;
+  }
+}

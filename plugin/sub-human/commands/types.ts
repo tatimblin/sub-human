@@ -36,8 +36,8 @@ export interface Daemon {
   link(code: string): Promise<Result<Answers['link']>>;
   /** Whether this session's hooks module has pinged the daemon (C1): false where modules are off. */
   pinged(id: string): Promise<Result<boolean>>;
-  /** How many sessions' modules have pinged it, and the Claude Code versions they run. */
-  status(): Promise<Result<{ readonly sessions: number; readonly cc: readonly string[] }>>;
+  /** How many sessions' modules have pinged it, the Claude Code versions they run, and why it can't write, if so. */
+  status(): Promise<Result<{ readonly sessions: number; readonly cc: readonly string[]; readonly unwritable?: string }>>;
 }
 
 /** A session in a room: its id (the pointer file's name) and what the pointer holds. */

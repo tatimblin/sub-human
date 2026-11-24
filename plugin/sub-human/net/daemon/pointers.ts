@@ -34,6 +34,8 @@ export interface PointersOptions {
   readonly left: (p: Pointer) => Promise<Result<unknown>>;
   /** The member's presence document, set away. */
   readonly away: (p: Pointer) => Promise<unknown>;
+  /** An explicit leave left no pointer or fresh handoff here in room `code`. */
+  readonly emptied: (code: string) => Promise<unknown>;
 }
 
 export class Pointers {
@@ -57,16 +59,19 @@ export class Pointers {
     return ok({ title });
   }
 
-  /** `/room leave`: `left` only when no other pointer or pending handoff holds the name. */
+  /** `/room leave`: `left` only when no other pointer or pending handoff holds the name; then the room may be emptied. */
   async leave(id: string): Promise<Result<null>> {
     const p = await this.read(id);
     if (!p) return ok(null); // already left
-    if (!(await this.held(sameName(p), id, false))) {
+    const last = !(await this.held(sameName(p), id, false));
+    if (last) {
       const r = await this.o.left(p);
       if (!r.ok) return r;
       await this.o.away(p);
     }
-    return this.end(id);
+    await this.end(id);
+    if (last && !(await this.holds(p.code))) await this.o.emptied(p.code);
+    return ok(null);
   }
 
   /** The session ended (logout, exit, a crash): its pointer goes, and the member is away unless held live elsewhere. */

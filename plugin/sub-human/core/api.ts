@@ -33,8 +33,12 @@
 //                                                     the daemon's debug lines (a room swept, R3), each told once
 //   message  {code, to, from, text}    → null         private Claude-to-Claude: into the recipient's inbox, never the log
 //   inbox    {session}                 → {messages}   takes this session's messages in all its rooms, once
-//   status   {session?}                → {version, pid, sessions, cc, pinged?}  cc: the Claude Code versions live
-//                                                     sessions run; `pinged`: whether that session's module ever pinged
+//   status   {session?}                → {version, pid, sessions, cc, pinged?, unwritable?}  cc: the Claude Code
+//                                                     versions live sessions run; `pinged`: whether that session's module
+//                                                     ever pinged. An answer proves the daemon is up, not that it can
+//                                                     write: `unwritable` is the error code of a file it couldn't make
+//                                                     in the home (checked at most every 5 s), and client.ts ensure
+//                                                     ends such a daemon, or an older one, with SIGTERM and starts another
 //
 // Across machines (net/, U15):
 //   invite   {code, from, name, via}   → {line, id, expires}  a line for NAME (via public, tailnet or ssh); starts the
@@ -54,7 +58,9 @@
 // An append to a room hosted elsewhere while its host is away answers seq 0 for a person's post, queued for a while
 // under its id; every other write there fails at once.
 //
-// Every request keeps the daemon up; it exits after IDLE_MS (120 s, net/daemon.ts) with none.
+// Every request that succeeds keeps the daemon up; it exits after IDLE_MS (120 s, net/daemon.ts) with none. A write the
+// home refuses outright (a handler's fatal error while the home's write probe fails too: net/daemon.ts) is one line,
+// and the daemon exits.
 import * as v from '../vendor/valibot.mjs';
 import type { Acceptance, ActivityDoc, Answer, AppendDraft, By, DocKind, FocusDoc, LogState, PlanScope, PresenceDoc } from './entries.js';
 import { DOC_KINDS, LIMITS } from './entries.js';
@@ -63,7 +69,7 @@ import { err, ok } from './result.js';
 import { decode, decodeDoc, decodeEntry, parseJson } from './schema.js';
 
 /** Bumped when a request or an answer changes shape; status carries it. */
-export const API_VERSION = 6;
+export const API_VERSION = 7;
 /** A request body larger than this is refused unread. */
 export const MAX_BODY: number = 1024 * 1024;
 export const DAEMON_URL: string = 'http://daemon/';
@@ -119,7 +125,7 @@ export function daemonArgv(node: string, plugin: string, home: string): string[]
 }
 
 export interface Message { readonly code: string; readonly from: string; readonly text: string; readonly at: number }
-export interface Status { readonly version: number; readonly pid: number; readonly sessions: number; readonly cc: readonly string[]; readonly pinged?: boolean }
+export interface Status { readonly version: number; readonly pid: number; readonly sessions: number; readonly cc: readonly string[]; readonly pinged?: boolean; readonly unwritable?: string }
 /** The session a dial takes into the room once it is let in. */
 export interface Joining { readonly id: string; readonly cwd: string; readonly leave: string }
 export interface Version { readonly version: number; readonly hash: string }
@@ -293,7 +299,7 @@ const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
   ping: v.nullable(v.object({ notes: v.array(v.string()) })),
   message: v.null(),
   inbox: v.object({ messages: v.array(v.object({ code: name, from: name, text, at: count })) }),
-  status: v.object({ version: count, pid: count, sessions: count, cc: v.array(v.string()), pinged: opt(v.boolean()) }),
+  status: v.object({ version: count, pid: count, sessions: count, cc: v.array(v.string()), pinged: opt(v.boolean()), unwritable: opt(v.string()) }),
   invite: v.object({ line: v.string(), id: name, expires: count }),
   uninvite: v.null(),
   asks: v.object({ asks: v.array(v.object({

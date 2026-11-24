@@ -253,6 +253,22 @@ test('status counts live sessions, names the Claude Code versions their pings to
   assert.partialDeepStrictEqual(await okv(r, { op: 'status', session: 's-off' }), { pinged: false }, 'a session whose module is off');
 });
 
+for (const code of ['EROFS', 'EACCES']) {
+  test(`status says the home can't be written (${code}), and a ping whose marker it refuses fails (C1)`, async t => {
+    const h = await home();
+    const r = rooms(h);
+    if (code === 'EROFS') {
+      const open = fs.open.bind(fs);
+      t.mock.method(fs, 'open', (...a: Parameters<typeof fs.open>) => (a[1] === 'wx' ? Promise.reject(Object.assign(new Error(code), { code })) : open(...a)));
+    } else {
+      await fs.chmod(h, 0o500);
+      t.after(() => fs.chmod(h, 0o700));
+    }
+    assert.partialDeepStrictEqual(await okv(r, { op: 'status' }), { unwritable: code });
+    await assert.rejects(r.handle({ op: 'ping', session: 's-a' }), { code });
+  });
+}
+
 test('the sweep deletes a room or copy nobody has used for 30 days and no pointer or fresh handoff holds, with its link; the next ping says so once (R3)', async () => {
   const h = await home();
   let now = 1_000;
