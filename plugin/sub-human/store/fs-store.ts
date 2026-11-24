@@ -3,7 +3,7 @@
 // follower polls. A line cut short by a crash has no newline yet: readers skip it and the next append drops it.
 import fs from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import type { DocKind, DocKinds, Docs, LogLine, Snapshot } from '../core/entries.js';
+import type { DocKind, DocKinds, Docs, LogLine, Snapshot, StoreDraft } from '../core/entries.js';
 import { SNAPSHOT_EVERY, snapshotDue } from '../core/fold.js';
 import { parseDoc, parseSnapshot } from '../core/schema.js';
 import type { Result } from '../core/result.js';
@@ -12,7 +12,7 @@ import { blobFile, docDir, docFile, fileKey, lockFile, logFile, roomDir, snapsho
 import { writeAtomic } from './atomic.js';
 import type { LockOptions } from './lock.js';
 import { withLock } from './lock.js';
-import type { Catchup, Draft, Head, RoomStore, Tail } from './store.js';
+import type { Catchup, Head, RoomStore, Tail } from './store.js';
 import { BLOB_HASH, headOf, lineHash, nextSnapshot, parseTail, placeLine, tailText, verifyLines } from './store.js';
 import { sha256 } from '../core/hash.js';
 
@@ -47,13 +47,13 @@ export class FsStore implements RoomStore {
     this.lock = o.lock ?? {};
   }
 
-  async append(draft: Draft): Promise<Result<LogLine>> {
+  async append(draft: StoreDraft): Promise<Result<LogLine>> {
     await fs.mkdir(this.dir, { recursive: true, mode: 0o700 });
     const r = await withLock(lockFile(this.dir), () => this.place(draft), this.lock);
     return r.ok ? r.value : r;
   }
 
-  private async place(draft: Draft): Promise<Result<LogLine>> {
+  private async place(draft: StoreDraft): Promise<Result<LogLine>> {
     const fh = await fs.open(logFile(this.dir), 'a+', 0o600);
     let placed: ReturnType<typeof placeLine>;
     try {

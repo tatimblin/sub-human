@@ -8,9 +8,9 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { Duplex } from 'node:stream';
 import * as v from '../vendor/valibot.mjs';
-import type { AppendDraft, Answers, LinkStatus, Op, RoomRequest } from '../core/api.js';
+import type { Answers, LinkStatus, Op, RoomRequest } from '../core/api.js';
 import { HOST_AWAY as AWAY, decodeAppendDraft, readAnswer } from '../core/api.js';
-import type { RoomState } from '../core/entries.js';
+import type { AppendDraft, RoomState, StoreDraft } from '../core/entries.js';
 import { DOC_KINDS } from '../core/entries.js';
 import type { Clock as FullClock } from '../core/clock.js';
 import { REAL_CLOCK } from '../core/clock.js';
@@ -25,7 +25,6 @@ import { decodeDoc, parseJson } from '../core/schema.js';
 import { fileKey, linkFile, roomDir } from '../home.js';
 import { writeAtomic } from '../store/atomic.js';
 import { MirrorStore } from '../store/mirror-store.js';
-import type { Draft } from '../store/store.js';
 import type { Channel, KeyPair } from './channel.js';
 import { NoiseError, connect } from './channel.js';
 import type { Rooms } from './daemon/rooms.js';
@@ -218,14 +217,14 @@ class Link {
   }
 
   /** The host's ack for a draft, its line by then extended here. A person's post goes through the engine's queue. */
-  private async write(d: Draft): Promise<Result<null>> {
+  private async write(d: StoreDraft): Promise<Result<null>> {
     if (d.kind === 'post' && d.by === 'person') return this.queue(d);
     const e = decodeAppendDraft(d);
     if (!e.ok) return e;
     const r = await this.wait(d.id, () => { this.send({ t: 'append', entry: e.value }); });
     return r.ok ? ok(null) : r;
   }
-  private async queue(d: Draft): Promise<Result<null>> {
+  private async queue(d: StoreDraft): Promise<Result<null>> {
     const e = decodeAppendDraft(d);
     if (!e.ok) return e;
     this.posts.set(d.id, e.value);

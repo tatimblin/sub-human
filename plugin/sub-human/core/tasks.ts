@@ -1,8 +1,9 @@
 // tasks: the room task rules (R24, R25, R26) and the bridge into a member's native task list (R24a), pure. Each rule
 // takes the RoomState and one request and returns the entries the host appends, or a refusal written as what didn't
 // happen. A task entry is the whole task after the change; the host writes it as system, `from` the member who acted.
+import type { TaskAct } from './api.js';
 import type { Draft, RoomState, Task } from './entries.js';
-import { LIMITS } from './entries.js';
+import { LIMITS, isMember } from './entries.js';
 import { err, ok, type Result } from './result.js';
 import { markLabel, oneLine } from './text.js';
 
@@ -46,6 +47,13 @@ export function done(s: RoomState, d: Op & { readonly note?: string }): Result<D
   const { note: _n, ...task } = t.value;
   const note = d.note?.trim() ? d.note : undefined;
   return ok([entry(d.from, { ...task, status: 'done', ...(note !== undefined && { note }) })]);
+}
+
+/** The host's one way to apply a task act: the entries to place and the task's number, or why nothing was written. */
+export function applyTask(s: RoomState, req: { readonly code: string; readonly from: string } & TaskAct): Result<{ readonly drafts: readonly Draft[]; readonly n: number }> {
+  if (!isMember(s, req.from)) return err(`${req.from} is not in ${req.code}; nothing was written`);
+  const drafts = req.act === 'add' ? add(s, req) : req.act === 'claim' ? claim(s, req) : req.act === 'release' ? release(s, req) : done(s, req);
+  return drafts.ok ? ok({ drafts: drafts.value, n: req.act === 'add' ? nextN(s.tasks) : req.n }) : drafts;
 }
 
 export function nextN(tasks: readonly Task[]): number {

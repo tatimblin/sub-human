@@ -5,7 +5,7 @@
 // RoomStore is the one seam over a room's files (ARCHITECTURE §4): memory-store.ts for tests, fs-store.ts on the host,
 // the mirror later. What both backends share is here: the line format, the chain check and the tail file.
 import * as v from '../vendor/valibot.mjs';
-import type { DocKind, DocKinds, Docs, Entry, LogLine, Snapshot } from '../core/entries.js';
+import type { DocKind, DocKinds, Docs, Entry, LogLine, Snapshot, StoreDraft } from '../core/entries.js';
 import { NO_DOCS } from '../core/entries.js';
 import { fold, takeSnapshot } from '../core/fold.js';
 import { decodeEntry, parseJson } from '../core/schema.js';
@@ -13,9 +13,6 @@ import { sha256 } from '../core/hash.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';
 
-type Without<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-/** An entry before the store places it: `seq` and `prev` are assigned under the lock. */
-export type Draft = Without<Entry, 'seq' | 'prev'>;
 export interface Head { readonly seq: number; readonly hash: string }
 /** The latest snapshot and the lines after it: what a catch-up folds. */
 export interface Catchup { readonly snapshot: Snapshot | null; readonly lines: readonly LogLine[] }
@@ -27,7 +24,7 @@ export interface Tail extends Head { readonly at: number; readonly docs?: string
 
 export interface RoomStore {
   /** Places the draft after the head; the line as stored, with its hash. */
-  append(draft: Draft): Promise<Result<LogLine>>;
+  append(draft: StoreDraft): Promise<Result<LogLine>>;
   /**
    * The lines after `afterSeq`, chain-checked from the line at `afterSeq`, whose hash must be `hash` when given (the
    * reader's cursor); a break is an error, never repaired.
@@ -51,7 +48,7 @@ export const lineHash: (line: string) => Promise<string> = sha256;
 export const BLOB_HASH: RegExp = /^[0-9a-f]{64}$/;
 
 /** The stored text of a draft placed after `head`, or why it can't be stored. */
-export function placeLine(draft: Draft, head: Head): Result<{ readonly line: string; readonly entry: Entry }> {
+export function placeLine(draft: StoreDraft, head: Head): Result<{ readonly line: string; readonly entry: Entry }> {
   const entry = decodeEntry({ ...draft, seq: head.seq + 1, prev: head.hash });
   return entry.ok ? ok({ line: JSON.stringify(entry.value), entry: entry.value }) : err(`entry not stored: ${entry.error}`);
 }

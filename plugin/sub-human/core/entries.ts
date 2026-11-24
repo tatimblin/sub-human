@@ -109,8 +109,13 @@ export type Kind = Entry['kind'];
  * reject, so the host never appends a line it can't read. `names` also caps a task's blockers.
  */
 export const LIMITS = { name: 64, short: 1024, text: 8000, names: 256, files: 1000 } as const;
-/** An entry as a rule writes it, before the host stamps the envelope fields it owns. */
-export type Draft<E extends Entry = Entry> = E extends Entry ? Omit<E, 'seq' | 'id' | 'at' | 'prev' | 'machine'> : never;
+/** `T` without fields `K`, member by member of a union. */
+export type Without<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+// An entry on its way to the log, one stage each: a rule writes a Draft; its writer gives it an id (AppendDraft, what a
+// caller sends); the host stamps `at` and `machine` (StoreDraft); the store assigns `seq` and `prev` under the lock.
+export type Draft<E extends Entry = Entry> = Without<E, 'seq' | 'id' | 'at' | 'prev' | 'machine'>;
+export type AppendDraft = Without<Entry, 'seq' | 'at' | 'prev' | 'machine'>;
+export type StoreDraft = Without<Entry, 'seq' | 'prev'>;
 
 /** An entry with the hash of its own line, which the next entry's `prev` names. The store computes it. */
 export interface LogLine { readonly entry: Entry; readonly hash: string }

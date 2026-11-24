@@ -5,7 +5,7 @@
 // every SNAPSHOT_EVERY lines, as on the host, so a catch-up never folds the whole copy.
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import type { DocKind, DocKinds, Docs, LogLine, Snapshot } from '../core/entries.js';
+import type { DocKind, DocKinds, Docs, LogLine, Snapshot, StoreDraft } from '../core/entries.js';
 import { SNAPSHOT_EVERY, snapshotDue } from '../core/fold.js';
 import { parseSnapshot } from '../core/schema.js';
 import type { Result } from '../core/result.js';
@@ -13,12 +13,12 @@ import { err, ok } from '../core/result.js';
 import { logFile, snapshotFile, tailFile } from '../home.js';
 import { writeAtomic } from './atomic.js';
 import { FsStore } from './fs-store.js';
-import type { Catchup, Draft, Head, RoomStore } from './store.js';
+import type { Catchup, Head, RoomStore } from './store.js';
 import { headOf, lineHash, nextSnapshot, tailText, verifyLines } from './store.js';
 
 /** The host, as the link reaches it. append resolves once the host's line for the draft has been extended here. */
 export interface Upstream {
-  append(draft: Draft): Promise<Result<null>>;
+  append(draft: StoreDraft): Promise<Result<null>>;
   putDoc<K extends DocKind>(kind: K, name: string, doc: DocKinds[K]): Promise<void>;
   putBlob(text: string, hash: string): Promise<void>;
 }
@@ -39,7 +39,7 @@ export class MirrorStore implements RoomStore {
     this.files = new FsStore(dir);
   }
 
-  async append(draft: Draft): Promise<Result<LogLine>> {
+  async append(draft: StoreDraft): Promise<Result<LogLine>> {
     const sent = await this.up.append(draft);
     if (!sent.ok) return sent;
     const { base } = await this.copy();

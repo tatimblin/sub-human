@@ -6,20 +6,20 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import type { Answers, Message, Op, PlanAct, RoomRequest, TaskAct } from '../../core/api.js';
-import { API_VERSION, CODE, HOST_AWAY, SESSION_ID, pingedFile, refusedAppend, sessionFile } from '../../core/api.js';
+import { API_VERSION, CODE, HOST_AWAY, SESSION_ID, pingedFile, acceptAppend, refusedAppend, sessionFile } from '../../core/api.js';
 import { sha256 } from '../../core/hash.js';
 import { Pointers } from './pointers.js';
 import { asRoom, fold } from '../../core/fold.js';
+import { Chains } from '../../core/chains.js';
 import { pick } from '../../core/join.js';
-import type { Docs, Draft, Kind, LogLine, RoomState, Snapshot } from '../../core/entries.js';
+import type { Docs, Draft, Kind, StoreDraft, LogLine, RoomState, Snapshot } from '../../core/entries.js';
 import { applyPlan, decide, latestVersion } from '../../core/plans.js';
 import type { Texts } from '../../core/plans.js';
 import type { Result } from '../../core/result.js';
 import { err, ok } from '../../core/result.js';
-import { add, claim, done, nextN, release } from '../../core/tasks.js';
+import { applyTask } from '../../core/tasks.js';
 import type { FsStore } from '../../store/fs-store.js';
 import { openFsStore } from '../../store/fs-store.js';
-import type { Draft as StoreDraft } from '../../store/store.js';
 import { nextSnapshot } from '../../store/store.js';
 import { RETAIN_MS, dropOld, unused } from '../../store/retention.js';
 import { writeAtomic } from '../../store/atomic.js';
@@ -80,7 +80,7 @@ export interface RoomsOptions {
 export class Rooms {
   private readonly o: RoomsOptions;
   private readonly rooms = new Map<string, Room>();
-  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly chains = new Chains();
   private readonly sessions = new Map<string, Session>();
   /** By session and code, so a session in two rooms keeps both. */
   private readonly inboxes = new Map<string, Message[]>();
@@ -124,13 +124,9 @@ export class Rooms {
         return this.queue(code, async room => {
           const seen = room.ids.get(draft.id);
           if (seen) return ok(seen); // a retry of a write that was stored
-          const m = room.snap.state.members.find(x => x.name === draft.from);
-          if (m?.kicked) return err(`${draft.from} was removed from ${code}; nothing was written`);
-          if (!m && draft.kind !== 'joined') return err(`${draft.from} is not in ${code}; nothing was written`);
-          // membership is per name: a joined for a member who is here, or a left for one who isn't, changes nothing
-          const here = m?.machine !== undefined;
-          if ((draft.kind === 'joined' && here) || (draft.kind === 'left' && !here)) return ok({ seq: room.snap.state.seq, hash: room.snap.state.hash });
-          return this.place(room, { ...draft, at: now, machine });
+          const a = acceptAppend(room.snap.state, draft, code);
+          if (!a.ok) return a;
+          return a.value === 'same' ? ok({ seq: room.snap.state.seq, hash: room.snap.state.hash }) : this.place(room, { ...draft, at: now, machine });
         });
       }
       case 'plan':
@@ -157,7 +153,7 @@ export class Rooms {
       case 'put_blob':
         if (links.hosts(req.code)) return links.forward(req.code, req);
         return this.queue(req.code, async room => ok({ hash: await room.store.putBlob(req.text) }));
-      case 'join': return this.serial(OPEN, () => this.join(req));
+      case 'join': return this.chains.run(OPEN, () => this.join(req));
       case 'leave': return this.pointers.leave(req.id);
       case 'retire': return this.pointers.retire(req.id);
       case 'handoff': return this.pointers.handoff(req.id, req.cwd);
@@ -213,7 +209,7 @@ export class Rooms {
   async sweep(): Promise<void> {
     for (const code of await this.codes()) {
       if (await this.pointers.holds(code)) continue;
-      await this.serial(code, async () => {
+      await this.chains.run(code, async () => {
         const dir = roomDir(this.o.home, await fileKey(code));
         if (!(await unused(dir, this.o.now()))) return;
         this.rooms.delete(code);
@@ -313,15 +309,8 @@ export class Rooms {
     return ok({ code, title: t.value.title, opened: fresh, others });
   }
 
-  /** Runs `fn` after every earlier call on `key` has finished. */
-  private serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.chains.get(key) ?? Promise.resolve()).then(fn);
-    this.chains.set(key, run.catch(() => undefined));
-    return run;
-  }
-
   /** Settles once every write started so far has finished. */
-  async drain(): Promise<void> { await Promise.all(this.chains.values()); }
+  drain(): Promise<void> { return this.chains.drain(); }
 
   private async plan(room: Room, req: Writer & PlanAct): Promise<Result<Answers['plan']>> {
     const s = asRoom(room.snap.state);
@@ -336,12 +325,10 @@ export class Rooms {
   }
 
   private async task(room: Room, req: Writer & TaskAct): Promise<Result<Answers['task']>> {
-    const s = asRoom(room.snap.state);
-    if (!isMember(s, req.from)) return err(`${req.from} is not in ${req.code}; nothing was written`);
-    const drafts = req.act === 'add' ? add(s, req) : req.act === 'claim' ? claim(s, req) : req.act === 'release' ? release(s, req) : done(s, req);
-    const n = req.act === 'add' ? nextN(s.tasks) : req.n;
-    const r = drafts.ok ? await this.commit(room, drafts.value) : drafts;
-    return r.ok ? ok({ seq: room.snap.state.seq, hash: room.snap.state.hash, n }) : r;
+    const applied = applyTask(asRoom(room.snap.state), req);
+    if (!applied.ok) return applied;
+    const r = await this.commit(room, applied.value.drafts);
+    return r.ok ? ok({ seq: room.snap.state.seq, hash: room.snap.state.hash, n: applied.value.n }) : r;
   }
 
   /** A rule's entries, stamped by the host and placed in order; the last one placed, or null for none. */
@@ -374,12 +361,10 @@ export class Rooms {
 
   /** Runs `fn` on the room after every earlier call on it has finished. */
   private queue<T>(code: string, fn: (room: Room) => Promise<Result<T>>): Promise<Result<T>> {
-    const run = (this.chains.get(code) ?? Promise.resolve()).then(async () => {
+    return this.chains.run(code, async () => {
       const room = await this.room(code);
       return room.ok ? fn(room.value) : room;
     });
-    this.chains.set(code, run.catch(() => undefined));
-    return run;
   }
 
   private async room(code: string): Promise<Result<Room>> {

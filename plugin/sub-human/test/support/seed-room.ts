@@ -149,7 +149,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   };
   // the daemon's `task`: the host's rules, then their entries
   const task = async (from: string, act: TaskAct): ReturnType<typeof taskRule> => {
-    const r = await taskRule(store, from, act);
+    const r = await taskRule(store, code, from, act);
     if (r.ok) for (const d of r.value.drafts) await append(d);
     return r;
   };

@@ -3,8 +3,7 @@
 // names bob. The prompt never reaches my Claude; one line says where it went. The daemon takes a person's post only
 // from a session of theirs here (core/api.ts refusedAppend), and the secret filter applies as to every post.
 import type { On } from 'claude-code';
-import type { AppendDraft } from '../core/api.js';
-import type { RoomState } from '../core/entries.js';
+import type { AppendDraft, RoomState } from '../core/entries.js';
 import { LIMITS } from '../core/entries.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';

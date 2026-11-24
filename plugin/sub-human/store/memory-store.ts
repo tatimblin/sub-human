@@ -1,12 +1,12 @@
 // The in-memory RoomStore, for tests and the kit harness. It keeps raw lines and document text, as the files do, so
 // it hashes, chains and decodes exactly as fs-store does. Several stores over one MemoryRoom are several handles on
 // one room; their appends take turns, as the lock makes them on disk.
-import type { DocKind, DocKinds, Docs, LogLine, Snapshot } from '../core/entries.js';
+import type { DocKind, DocKinds, Docs, LogLine, Snapshot, StoreDraft } from '../core/entries.js';
 import { SNAPSHOT_EVERY, snapshotDue } from '../core/fold.js';
 import { parseDoc } from '../core/schema.js';
 import type { Result } from '../core/result.js';
 import { ok } from '../core/result.js';
-import type { Catchup, Draft, Head, RoomStore } from './store.js';
+import type { Catchup, Head, RoomStore } from './store.js';
 import { BLOB_HASH, headOf, lineHash, nextSnapshot, placeLine, verifyLines } from './store.js';
 import { sha256 } from '../core/hash.js';
 
@@ -27,13 +27,13 @@ export class MemoryStore implements RoomStore {
   private readonly every: number;
   constructor(room: MemoryRoom = memoryRoom(), every: number = SNAPSHOT_EVERY) { this.room = room; this.every = every; }
 
-  append(draft: Draft): Promise<Result<LogLine>> {
+  append(draft: StoreDraft): Promise<Result<LogLine>> {
     const run = this.room.busy.then(() => this.place(draft));
     this.room.busy = run.catch(() => undefined);
     return run;
   }
 
-  private async place(draft: Draft): Promise<Result<LogLine>> {
+  private async place(draft: StoreDraft): Promise<Result<LogLine>> {
     const head = await this.head();
     if (!head.ok) return head;
     const placed = placeLine(draft, head.value);

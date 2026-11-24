@@ -15,9 +15,9 @@
  * the mirror lacks, message from another link, and bye before the host closes it. Both ways: hello, ping, pong.
  */
 import * as v from '../vendor/valibot.mjs';
-import type { AppendDraft, Request } from './api.js';
+import type { Request } from './api.js';
 import { decodeAppendDraft, decodeRequest } from './api.js';
-import type { LogLine, Snapshot } from './entries.js';
+import type { AppendDraft, LogLine, Snapshot } from './entries.js';
 import type { Result } from './result.js';
 import { err, ok } from './result.js';
 import { decodeEntry, decodeSnapshot } from './schema.js';

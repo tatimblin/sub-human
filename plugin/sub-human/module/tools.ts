@@ -6,11 +6,11 @@
 // The seam for U12/U13: add a spec to TOOLS, and a `tool.run` hook on `toolName(spec.name)` in their own file (`plan`: plans.ts, `task`: tasks.ts).
 import type { On, ToolSpec } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
-import type { AppendDraft, Request } from '../core/api.js';
+import type { Request } from '../core/api.js';
 import { MAX_BODY } from '../core/api.js';
 import { brief } from '../core/brief.js';
 import type { Input } from '../core/deliver.js';
-import type { RoomState } from '../core/entries.js';
+import type { AppendDraft, RoomState } from '../core/entries.js';
 import { LIMITS, isMember } from '../core/entries.js';
 import type { Result } from '../core/result.js';
 import { err, ok } from '../core/result.js';

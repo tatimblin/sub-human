@@ -2,7 +2,8 @@
 // memory and fs, and the mirror joins it later with a Backend of its own.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { RoomStore, Draft } from '../../store/store.js';
+import type { StoreDraft } from '../../core/entries.js';
+import type { RoomStore } from '../../store/store.js';
 import { fold } from '../../core/fold.js';
 import { must } from './must.js';
 
@@ -16,11 +17,11 @@ export interface Room {
 }
 
 let ids = 0;
-export const post = (from: string, text: string): Draft =>
+export const post = (from: string, text: string): StoreDraft =>
   ({ kind: 'post', id: `p${++ids}`, at: ids, from, by: 'person', machine: 'm1', text });
-const joined = (from: string): Draft => ({ kind: 'joined', id: `j${++ids}`, at: ids, from, by: 'system', machine: 'm1' });
+const joined = (from: string): StoreDraft => ({ kind: 'joined', id: `j${++ids}`, at: ids, from, by: 'system', machine: 'm1' });
 
-async function appendAll(s: RoomStore, drafts: readonly Draft[]): Promise<void> {
+async function appendAll(s: RoomStore, drafts: readonly StoreDraft[]): Promise<void> {
   for (const d of drafts) assert.ok((await s.append(d)).ok, 'an append');
 }
 
@@ -48,7 +49,7 @@ export function storeContract(name: string, backend: Backend): void {
 
     test('a draft that is not an entry is refused and nothing is stored', async () => {
       const s = (await backend.room()).open();
-      const bad: Draft = { ...post('ann', 'x'), from: '' };
+      const bad: StoreDraft = { ...post('ann', 'x'), from: '' };
       const r = await s.append(bad);
       assert.equal(r.ok, false);
       assert.deepEqual(await s.read(0), { ok: true, value: [] });

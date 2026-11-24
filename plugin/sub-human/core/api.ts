@@ -53,7 +53,7 @@
 //
 // Every request keeps the daemon up; it exits after a minute with none.
 import * as v from '../vendor/valibot.mjs';
-import type { Acceptance, ActivityDoc, Answer, By, DocKind, Entry, FocusDoc, PlanScope, PresenceDoc } from './entries.js';
+import type { Acceptance, ActivityDoc, Answer, AppendDraft, By, DocKind, FocusDoc, LogState, PlanScope, PresenceDoc } from './entries.js';
 import { DOC_KINDS, LIMITS } from './entries.js';
 import type { Result } from './result.js';
 import { err, ok } from './result.js';
@@ -115,9 +115,6 @@ export function daemonArgv(node: string, plugin: string, home: string): string[]
   return [node, '--import', `${plugin}/resolve-ts.ts`, `${plugin}/net/daemon.ts`, home];
 }
 
-type Without<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-/** An entry as a caller sends it: the host stamps seq, at, prev and machine; `id` is the caller's. */
-export type AppendDraft = Without<Entry, 'seq' | 'at' | 'prev' | 'machine'>;
 export interface Message { readonly code: string; readonly from: string; readonly text: string; readonly at: number }
 export interface Status { readonly version: number; readonly pid: number; readonly sessions: number; readonly cc: readonly string[]; readonly pinged?: boolean }
 /** The session a dial takes into the room once it is let in. */
@@ -138,7 +135,6 @@ export type TaskAct =
   | { readonly act: 'done'; readonly n: number; readonly note?: string };
 interface Writer { readonly code: string; readonly from: string }
 /** How an invite line reaches this machine: Tailscale Funnel, Tailscale Serve, or the joiner's own ssh login. */
-/** How a joiner reaches the host: Funnel, Serve, or the joiner's own ssh login. */
 export const PATHWAYS: readonly ['public', 'tailnet', 'ssh'] = ['public', 'tailnet', 'ssh'];
 export type Pathway = (typeof PATHWAYS)[number];
 /**
@@ -327,6 +323,18 @@ export function refusedAppend(d: AppendDraft, via: 'socket' | 'link', personHere
   if ((d.kind !== 'post' && d.kind !== 'finding') || d.by === 'claude') return null;
   if (d.kind === 'post' && d.by === 'person' && (via === 'link' || personHere)) return null;
   return `a ${d.kind} by ${d.by === 'person' ? 'a person' : 'the system'} is taken only from a session of theirs here`;
+}
+
+/**
+ * What the host does with an append refusedAppend let through, by the room's membership (per name): refuse it, place
+ * it, or keep the room as it is (`same`) for a joined of a member who is here or a left of one who isn't.
+ */
+export function acceptAppend(s: LogState, d: AppendDraft, code: string): Result<'place' | 'same'> {
+  const m = s.members.find(x => x.name === d.from);
+  if (m?.kicked) return err(`${d.from} was removed from ${code}; nothing was written`);
+  if (!m && d.kind !== 'joined') return err(`${d.from} is not in ${code}; nothing was written`);
+  const here = m?.machine !== undefined;
+  return ok((d.kind === 'joined' && here) || (d.kind === 'left' && !here) ? 'same' : 'place');
 }
 
 /** A request as the daemon reads it: the draft and the document through their own schemas. */

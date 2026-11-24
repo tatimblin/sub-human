@@ -1,7 +1,7 @@
 // The socket API's shapes: what the daemon reads, and what a caller reads back.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { AppendDraft } from './api.js';
+import type { AppendDraft } from './entries.js';
 import { daemonArgv, decodePointer, decodeRequest, readAnswer, refusedAppend, socketFile } from './api.js';
 
 const ID = '0b9d6f3e-2c4a-4f1e-9a7b-5d8c1e2f3a4b';

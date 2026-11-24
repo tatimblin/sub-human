@@ -12,6 +12,7 @@ import type { Handoff, Pointer } from '../../core/api.js';
 import { CODE, HANDOFF_MS, LIVE_MS, decodeHandoffs, decodePointer, handoffFile, lastFile, sessionFile, titleFor } from '../../core/api.js';
 import type { Result } from '../../core/result.js';
 import { ok } from '../../core/result.js';
+import { Chains } from '../../core/chains.js';
 import { parseJson } from '../../core/schema.js';
 import * as v from '../../vendor/valibot.mjs';
 import { writeAtomic } from '../../store/atomic.js';
@@ -37,7 +38,7 @@ export interface PointersOptions {
 
 export class Pointers {
   private readonly o: PointersOptions;
-  private readonly chains = new Map<string, Promise<unknown>>();
+  private readonly chains = new Chains();
   constructor(o: PointersOptions) { this.o = o; }
 
   /**
@@ -46,7 +47,7 @@ export class Pointers {
    */
   async write(id: string, p: Omit<Pointer, 'title'>): Promise<Result<{ title: string }>> {
     // one chain for every title, so two joins at once never take the same one
-    const title = await this.serial('', async () => {
+    const title = await this.chains.run('', async () => {
       const held = (await this.all()).filter(([o, q]) => o !== id && q.code === p.code && q.name === p.name).map(([, q]) => q.title);
       const t = titleFor(p.name, p.code, held);
       await writeAtomic(sessionFile(this.o.home, id), JSON.stringify({ ...p, title: t }));
@@ -80,7 +81,7 @@ export class Pointers {
   /** /clear or /resume: the pointer joins the cwd's handoffs, oldest first. */
   async handoff(id: string, cwd: string): Promise<Result<null>> {
     const key = cwdKey(cwd);
-    return this.serial(key, async () => {
+    return this.chains.run(key, async () => {
       const p = await this.read(id);
       if (!p) return ok(null); // in no room: nothing to hand on
       await this.save(key, [...(await this.list(key)), { ...p, at: this.o.now() }]);
@@ -91,7 +92,7 @@ export class Pointers {
   /** The next session in `cwd` takes the oldest fresh handoff; stale ones are dropped on the way. */
   async claim(id: string, cwd: string): Promise<Result<{ pointer: Pointer | null }>> {
     const key = cwdKey(cwd);
-    return this.serial(key, async () => {
+    return this.chains.run(key, async () => {
       const [first, ...rest] = await this.dropStale(key);
       if (!first) return ok({ pointer: null });
       await this.save(key, rest);
@@ -130,7 +131,7 @@ export class Pointers {
   /** Every cwd's stale handoffs, and day-old pointers, swept. */
   private async sweep(): Promise<void> {
     for (const n of await fs.readdir(`${this.o.home}/handoff`).catch(() => [])) {
-      if (n.endsWith('.json')) { const key = n.slice(0, -5); await this.serial(key, () => this.dropStale(key)); }
+      if (n.endsWith('.json')) { const key = n.slice(0, -5); await this.chains.run(key, () => this.dropStale(key)); }
     }
     for (const n of await fs.readdir(`${this.o.home}/sessions`).catch(() => [])) {
       const id = n.slice(0, -5);
@@ -170,11 +171,5 @@ export class Pointers {
   private async save(key: string, hs: readonly Handoff[]): Promise<void> {
     const file = handoffFile(this.o.home, key);
     if (hs.length) await writeAtomic(file, JSON.stringify(hs)); else await fs.rm(file, { force: true });
-  }
-  /** Runs `fn` after every earlier call on `key` has finished. */
-  private serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const run = (this.chains.get(key) ?? Promise.resolve()).then(fn);
-    this.chains.set(key, run.catch(() => undefined));
-    return run;
   }
 }

@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { AppendDraft } from '../../core/api.js';
+import type { AppendDraft } from '../../core/entries.js';
 import { startDaemon } from '../../net/daemon.js';
 import type { Daemon, DaemonOptions } from '../../net/daemon.js';
 import { call } from '../../net/daemon/client.js';
