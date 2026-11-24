@@ -231,7 +231,7 @@ test('SUB_HUMAN_CC_OFF turns off the task bridge, Claude\'s messages and wakes, 
   expect(native).toEqual([`bob.${room.code}`, `bob.${room.code}`])
   expect(room.submitted).toEqual([])
   expect(room.logs.filter(l => l.includes('SUB_HUMAN_CC_OFF'))).toEqual([
-    `sub-human isn't updating ${room.code}'s tasks from your task list here (SUB_HUMAN_CC_OFF); /sub-human tasks shows them.`,
+    `sub-human isn't updating ${room.code}'s tasks from your task list here (SUB_HUMAN_CC_OFF); /room tasks shows them.`,
     'sub-human isn\'t carrying Claude\'s messages to colleagues here (SUB_HUMAN_CC_OFF); Claude Code sends them itself.',
     'sub-human won\'t wake Claude for the room here (SUB_HUMAN_CC_OFF); the lines above are for you to pass on.',
   ])

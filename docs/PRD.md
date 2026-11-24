@@ -70,7 +70,7 @@ Existing options are:
 | Non-code collaborators | Writing a doc, planning, research | Nothing in the flow assumes code ("Ready to code?", evidence on done) |
 
 **Core stories:**
-- **S-Join.** I type `/sub-human` and I'm in a room with whoever else on this machine has done the same, whatever repo each of us is in. To bring someone from another machine, I run `/sub-human invite`, they type one line, and they're in.
+- **S-Join.** I type `/room` and I'm in a room with whoever else on this machine has done the same, whatever repo each of us is in. To bring someone from another machine, I run `/room invite`, they type one line, and they're in.
 - **S-Live.** I work with my Claude as usual. When my session learns, decides or changes something that matters to a colleague, their Claude has it by their next turn, and they see a count on their status line. Examples: I change the shape of `listTasks`; we find the flaky test is a timezone bug; I push the store half. I typed nothing extra.
 - **S-Relevant.** My Claude gets what bears on my work, not everything. A colleague's change to a file or interface I'm using, or a plan I'm part of, reaches me first and in full. The rest stays one short line, or waits in the catch-up.
 - **S-Ask.** My Claude needs a fact the other person's Claude has, and it asks directly. The other Claude is woken at the end of its current turn, and its person sees one line. It answers if it is sure; otherwise the question waits for its person. Likewise, when my session changes something bob's side depends on, my Claude tells his directly, and his updates its side on its own. Nobody's turn is interrupted.
@@ -86,14 +86,14 @@ Priority: **P0** = v2.0 ships with it; **P1** = v2.0 if cheap, else v2.1; **P2**
 
 ### 6.1 Rooms and membership
 - **R1 (P0)** **A room is not tied to a repo or directory.** Members may be in different repos (front end and back end), or in none.
-  - `/sub-human` with no arguments joins the one room open on this machine, or opens one if none is open.
+  - `/room` with no arguments joins the one room open on this machine, or opens one if none is open.
   - If several rooms are open, it asks which.
-  - `/sub-human ROOM` names one; an invite line joins from another machine.
-  - The default name is the git name; `/sub-human NAME` picks another.
+  - `/room ROOM` names one; an invite line joins from another machine.
+  - The default name is the git name; `/room NAME` picks another.
   - Each member's activity (R12) carries their repo and branch, so others know where it happened.
 - **R2 (P0)** A room has a short human-readable code (e.g. `vole-8126`). Each member is addressed `NAME.CODE`.
-- **R3 (P0)** `/sub-human leave` leaves the room and keeps the session. Ending the session doesn't leave: the member shows as away until a session of theirs comes back. A room with nobody left closes, and its data is deleted after a fixed retention period.
-- **R4 (P0)** `/sub-human who` lists the members, their machines and their state. `/sub-human help` lists every command.
+- **R3 (P0)** `/room leave` leaves the room and keeps the session. Ending the session doesn't leave: the member shows as away until a session of theirs comes back. A room with nobody left closes, and its data is deleted after a fixed retention period.
+- **R4 (P0)** `/room who` lists the members, their machines and their state. `/room help` lists every command.
 - **R5 (P1)** One person seated from two sessions or two machines counts once for agreement.
 
 ### 6.2 Live updates from the work
@@ -117,10 +117,10 @@ This is the product. Everything else supports it. The POC scored itself 1/5 here
   - Only updates that bear on the member's work (R15c) and overlaps (R15d) are pushed.
   - They are attached as context to the member's next submitted prompt, through the `prompt.submit` hook's `context`. So they arrive when the person next types, not in the middle of a long tool loop.
   - There is a hard cap of about 400 tokens per turn.
-  - Everything else is pulled on demand: the Claude calls `read` (R16), and the person runs `/sub-human news`.
+  - Everything else is pulled on demand: the Claude calls `read` (R16), and the person runs `/room news`.
   - Colleagues' content is datamarked: clearly delimited and labelled as data from a named colleague's Claude, never carrying commands. The mechanics tell the Claude to use it only if it bears on the current task and never to mention it unprompted.
   - Updates never start a turn on their own (R10).
-- **R15b (P0)** **To the person, ambiently:** one status line, e.g. `vole-8126 · bob (working on paging), carol here · 3 updates`. An update that bears on the person's own work (R15c) is drawn as one dim line; everything else is only counted. `/sub-human news` shows what each member changed and found since the person last looked, drawn by the module with no model call, and clears the count.
+- **R15b (P0)** **To the person, ambiently:** one status line at the end of the dim hint under the prompt, e.g. `Room ◐ bob ○ carol · plan "paging" needs your review (+2)`. An update that bears on the person's own work (R15c) is drawn as one dim line; everything else is only counted. `/room news` shows what each member changed and found since the person last looked, drawn by the module with no model call, and clears the count.
 - **R15c (P0)** **Relevance:** an update bears on a member when it touches a file they have edited or opened, a plan or task they are part of, or names them. Across repos, file paths rarely match, so the interfaces a plan names count as well (an endpoint, a type, a schema). Those come first and in full. Others are summarised in one line or left to the catch-up.
 - **R15d (P0)** **Overlap heads-up**, the main push signal (Q15): when two members edit the same file, or one changes a file named in an agreed plan, both get one dim line. This is never a wake.
 - **R16 (P0)** **Catch-up:** a Claude can read a short summary of the room on demand: who is working on what, recent updates and findings, open plans and their state, open tasks and recent decisions. It is bounded in size and framed as content.
@@ -160,7 +160,7 @@ There are two ways to use them, and either works alone:
 **Common to both**
 - **R17 (P0)** A plan is a named, versioned Markdown document held by the room. Every version is kept. Edits are compare-and-swap on the current version: a stale edit is refused with the current text, so the Claude can merge both changes.
 - **R18 (P0)** People write plans in Claude Code's native plan mode, exactly as they do alone. A hook handles everything; there is no command to learn.
-  - **When a plan is approved,** and only then, the person is asked once: **Keep it / make it a room plan / send to NAME**. The hook is on `ExitPlanMode`'s result, which carries `{plan, filePath}`. There is no module event for entering plan mode, so nothing is asked there.
+  - **When a plan is approved,** and only then, the person is asked once, **Share this plan?**: **No** (keep it local) / **Get agreement** (share for input and approval: a room plan, then who must agree) / **Send to the room** (share without waiting on approval, then who gets it: members here, or everyone). The hook is on `ExitPlanMode`'s result, which carries `{plan, filePath}`. There is no module event for entering plan mode, so nothing is asked there.
   - A room plan is stored as a shared plan (R20–R22a). A sent plan goes to one member or the room (R22b). Kept plans stay theirs, and nothing is shared without that choice.
   - The question is skipped when the answer is obvious, for example when the plan is a revision of a room plan.
   - A plan's name is a short slug of its first heading: its first three meaningful words, at most 24 characters, unique in the room (`finish-webography-click`). Lines show it in quotes.
@@ -215,7 +215,7 @@ None of that is needed if the room reads the native list instead of writing it.
 
 **Requirements**
 - **R23 (P0)** Personal native task changes are mirrored to the room as activity, from the module's `tool.call` results on the native task tools only. Nothing under Claude Code's config dir is read or written. It is on whenever the member is in a room (R14a) and the session has the Task tools (R23a).
-- **R24 (P0)** The room task list: add; claim, for oneself only, refused while someone else owns the task; release; and done, owner only. The host applies each change immediately. Reached by the `task` tool, `/sub-human tasks`, the catch-up, and a count on the status line.
+- **R24 (P0)** The room task list: add; claim, for oneself only, refused while someone else owns the task; release; and done, owner only. The host applies each change immediately. Reached by the `task` tool, `/room tasks`, the catch-up, and a count on the status line.
 - **R24a (P0)** **Bridge into the native list:** a room task I claim or am handed is added to my native list by my own Claude, carrying the room task id. Native status changes on a tagged task update the room task through R23's hook. If the person's session has no native task tool, the room list still works on its own.
 - **R25 (P1)** A room task can depend on others (`blockedBy`). When a task is done or released, the members who depend on it, or who suggested it, get it as context and one dim line.
 - **R26 (P1)** "Done" takes an optional note, not required evidence.
@@ -268,7 +268,7 @@ These findings change the requirements as follows:
   - ssh's separate signature proofs are retired in favour of this one handshake.
   - It is a deliberate exception to C6, explained in Q2.
 - **R30 (P0)** **Invite and admission: one line, plus the host letting them in.**
-  - `/sub-human invite jess` gives the host one command to send, e.g. `/sub-human join https://NODE.ts.net/ROOM#SECRET`. The line carries:
+  - `/room invite jess` gives the host one command to send, e.g. `/room join https://NODE.ts.net/ROOM#SECRET`. The line carries:
     - a 128-bit, single-use, short-lived secret, sent only inside the Noise channel and compared in constant time;
     - the host's key, so it can't be guessed and only reaches the real host.
 
@@ -279,7 +279,7 @@ These findings change the requirements as follows:
   - Nothing is admitted without the host's answer, so the secret doesn't need hiding from models. It does still sit in transcripts, which is acceptable only because the line is single-use and short-lived.
   - There is no PIN and no second thing to pass along. The PIN path, its throttling and the hidden-prompt blocking are dropped.
   - If the host doesn't answer within a few minutes, the joiner is told to ask again. A refused or expired line is dead.
-- **R31 (P0)** `/sub-human kick NAME` (host only) ends that person's access immediately and permanently for this room.
+- **R31 (P0)** `/room kick NAME` (host only) ends that person's access immediately and permanently for this room.
 - **R32 (P0)** Reconnect is handled by a pure, clock-injected state machine with backoff, heartbeat and sleep/network-change detection. While offline:
   - a member's latest-wins documents (activity, presence, focus) are kept locally and re-sent on reconnect (R12);
   - a person's `@room` posts queue for a bounded time;
@@ -311,7 +311,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
   - `tool.call` results, for activity capture (R12), native task mirroring (R23), and the plan-approval question (R18);
   - the `prompt.submit` hook's `context`, for per-turn context. `prompt.context` is not used: it fires once per conversation, and rewriting it breaks the prompt cache;
   - `$.session.append` notes and `tool.call` result `context`, which reach the Claude inside a long tool loop without starting a turn, for the overlap heads-up (R15d);
-  - `ui.status`, `ui.log`, `ui.ask` for cards, and `ui.open` panes;
+  - the `PromptHint` tail for the status line, the `AbovePrompt` band for the invite row, `ui.log`, `ui.ask` for cards, and `ui.open` panes;
   - `$.prompt.submit` for wakes;
   - `session.send`, caught at the sender, for Claude-to-Claude routing (R6);
   - `$.tool.register` and `tool.run`, for Claude's tools (no MCP server);
@@ -325,7 +325,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
   - `$.process.spawn` children die when the module unloads, so the one daemon per home, which must outlive the session, detaches itself.
 
   **Managed machines.** On Team or Enterprise logins, or wherever managed settings exist, Claude Code's guard never runs a user-installed module's `classic.*`, `prompt.context`, `prompt.attachment` or `session.compact` hooks. Policy can also turn modules off entirely. So the hooks v2 can't lose are command hooks in `hooks.json`, which the guard leaves alone:
-  - the `/sub-human` expansion;
+  - the `/room` expansion;
   - `SessionEnd`;
   - `SessionStart` with `sessionTitle`, for `NAME.CODE`;
   - `Notification`, for permission waits.
@@ -397,7 +397,7 @@ The threat is outsiders: someone who isn't in the room reading it, writing to it
 ## 11. Milestones
 
 1. **M0, Foundations.** Log and snapshot, store seam, schemas, folds, memory store, the scene harness on `claude plugin test`. The typings snapshot is refreshed to 2.1.330 (`npm run typings`). The vendored files and their drift check land (Q13).
-2. **M1, Live updates on one machine.** Join and leave, activity and findings (R12–R14a), delivery to Claude, the status line and `/sub-human news` (R15–R16), the overlap heads-up (R15d), `SendMessage` routed at the sender (and its module test), the R10 wake rule, Claude's tools through `$.tool.register`. Covers "work as normal; my colleague is kept up to date" end to end. `@room` (R8) only if it's cheap.
+2. **M1, Live updates on one machine.** Join and leave, activity and findings (R12–R14a), delivery to Claude, the status line and `/room news` (R15–R16), the overlap heads-up (R15d), `SendMessage` routed at the sender (and its module test), the R10 wake rule, Claude's tools through `$.tool.register`. Covers "work as normal; my colleague is kept up to date" end to end. `@room` (R8) only if it's cheap.
 3. **M2, Plans.** Versioned plans, compare-and-swap, the question at plan approval, sent plans, owners on parts, and review on the `ui.ask` card plus the scrollable pane. R19's three properties are tested.
 4. **M3, Tasks.** Native-list mirroring (R23, R23b), the room list (R24), the bridge into each person's native list (R24a), dependencies and done notices. (Q11 is answered.)
 5. **M4, Remote.** Transport layer; Tailscale pathway (Funnel and Serve, WebSocket over HTTPS, hardened); ssh pathway (`ssh -W`); name-bound invite; mirror with snapshot sync; reconnect engine; kick. Ships with M1–M3 if early users need it first; most will.

@@ -1,10 +1,10 @@
-# A `/sub-human` answer as one plain line (Claude Code 2.1.330)
+# A `/room` answer as one plain line (Claude Code 2.1.330)
 
 The owner's first live run drew every command answer inside Claude Code's error frame:
 
 ```
 ⏺ UserPromptExpansion operation blocked by hook:
-  sub-human: You opened room heron-2988 as alice. /sub-human invite brings someone from another machine.
+  sub-human: You opened room heron-2988 as alice. /room invite brings someone from another machine.
 ```
 
 ## What draws that frame
@@ -31,7 +31,7 @@ return{messages:[V?Me({content:Ane({inputString:Le(n,g),...})}):Xw(Le(n,g)),
 `e` is the answer's `text`, `I` its `context`, and `V` is true for a non-interactive session, pasted blocks before the
 command, or an origin other than the person's own (`OE`: `human` or `auto-continuation`).
 
-- `{ text }` (even with `isTextDisplayOnly`) adds the typed line `/sub-human join LINE PIN` as a row, then the output
+- `{ text }` (even with `isTextDisplayOnly`) adds the typed line `/room join LINE PIN` as a row, then the output
   under "sub-human: ". The line carries an invite's secret, so this is out.
 - `{}` from the person's own prompt adds no row at all: nothing echoed, nothing for the model, `shouldQuery` false.
 
@@ -54,7 +54,7 @@ for those first; command.ts is registered last.
 
 - Hooks modules off (managed policy, `--bare`): the classic hook answers, inside the frame. That is the C1 fallback, and
   no other surface is available without the module.
-- A `/sub-human` from the SDK, the bridge or `-p` (not `composer`): the module passes it on to the classic hook, since
+- A `/room` from the SDK, the bridge or `-p` (not `composer`): the module passes it on to the classic hook, since
   `{}` would still echo the line there.
 - A run that policy refuses, or that never answers: the module passes it on, and the classic hook answers.
 

@@ -94,6 +94,8 @@ export class Host {
   private readonly socks = new Set<net.Socket>();
   private readonly live = new Set<Live>();
   private readonly waiting = new Map<string, Waiting>();
+  /** The invites whose Let in is being written: uninvite refuses them. */
+  private readonly admitting = new Set<string>();
   private readonly forwards = new Map<string, Forward>();
   private release: (() => void) | null = null;
 
@@ -149,7 +151,7 @@ export class Host {
   }
 
   /** One line for NAME by the chosen pathway, recorded in the room (never its secret). */
-  async invite(req: { code: string; from: string; name: string; via: Pathway }): Promise<Result<{ line: string }>> {
+  async invite(req: { code: string; from: string; name: string; via: Pathway }): Promise<Result<{ line: string; id: string; expires: number }>> {
     const st = await this.o.rooms.state(req.code);
     if (!st.ok) return st;
     if (!isMember(st.value, req.from)) return err(`${req.from} is not in ${req.code}; no invite was made`);
@@ -176,7 +178,21 @@ export class Host {
     const { line, record } = mint({ code: req.code, name: req.name, hostKey: this.o.key.pub, via, now, ttlMs: INVITE_TTL_MS });
     await this.save(s => ({ ...s, invites: [...s.invites.filter(i => now < i.expiresAt && i.state !== 'dead'), record] }));
     const w = await this.o.rooms.write(req.code, [{ kind: 'invite', invite: record.id, name: req.name, expires: record.expiresAt, from: req.from, by: 'person' }]);
-    return w.ok ? ok({ line }) : w;
+    return w.ok ? ok({ line, id: record.id, expires: record.expiresAt }) : w;
+  }
+
+  /** A line taken back before it was used: it lets nobody in, and a dial waiting on it is refused. */
+  async uninvite(req: { code: string; from: string; id: string }): Promise<Result<null>> {
+    const st = await this.o.rooms.state(req.code);
+    if (!st.ok) return st;
+    if (!isMember(st.value, req.from)) return err(`${req.from} is not in ${req.code}; nothing was done`);
+    const rec = this.s.invites.find(i => i.id === req.id && i.code === req.code);
+    if (!rec || rec.state === 'used') return err('that invite was already used or is gone; nothing was done');
+    // Let in was answered and its admit is being written: too late to take the line back
+    if (this.admitting.has(rec.id)) return err('someone is being let in with that invite now; nothing was done');
+    for (const [id, w] of this.waiting) if (w.invite === rec.id) { this.waiting.delete(id); w.answer?.(false); }
+    await this.setInvite(rec.id, 'dead');
+    return ok(null);
   }
 
   /** The asks for a session's rooms it hasn't been shown yet. */
@@ -330,11 +346,15 @@ export class Host {
     this.waiting.delete(w.ask.id);
     const admit = { kind: 'admit', invite, name: p.name, link: key.slice(0, 16), from: p.name, by: 'system' } as const;
     // the admit is written first: a link is saved only once the room records it
-    const placed = yes ? await this.o.rooms.write(code, [admit]).catch(() => null) : null;
-    if (!placed?.ok) { await this.setInvite(invite, 'dead'); return null; }
-    const link = { key, code, name: p.name, machine: p.machine, invite, kicked: false };
-    await this.save(s => ({ ...s, invites: s.invites.map(i => (i.id === invite ? { ...i, state: 'used' } : i)), links: [...s.links.filter(l => l.key !== key || l.code !== code), link] }));
-    return link;
+    if (!yes) { await this.setInvite(invite, 'dead'); return null; }
+    this.admitting.add(invite); // until the line is used: an uninvite meanwhile is refused
+    try {
+      const placed = await this.o.rooms.write(code, [admit]).catch(() => null);
+      if (!placed?.ok) { await this.setInvite(invite, 'dead'); return null; }
+      const link = { key, code, name: p.name, machine: p.machine, invite, kicked: false };
+      await this.save(s => ({ ...s, invites: s.invites.map(i => (i.id === invite ? { ...i, state: 'used' } : i)), links: [...s.links.filter(l => l.key !== key || l.code !== code), link] }));
+      return link;
+    } finally { this.admitting.delete(invite); }
   }
 
   private serve(ch: Channel, link: LinkRecord): void {

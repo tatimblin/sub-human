@@ -2,7 +2,7 @@
 // The kit's `$.fs` reaches no disk ("no implementation for fs.read"), so the room is a MemoryStore and the test's
 // fs.read / fs.list hooks serve its files at the paths home.ts gives; the module's writes reach it through http.fetch.
 import type { On, RenderSurface } from 'claude-code';
-import type { MockClock } from 'claude-code/testing';
+import type { Engine, MockClock } from 'claude-code/testing';
 import { mock } from 'claude-code/testing';
 import type { DocKind, DocKinds, Draft } from '../../core/entries.js';
 import { blobFile, docFile, fileKey, logFile, roomDir, tailFile } from '../../home.js';
@@ -45,6 +45,8 @@ export interface Colleague {
   plan(name: string, text: string, people: readonly string[]): Promise<void>;
   left(): Promise<void>;
   joined(): Promise<void>;
+  /** Removed from the room for good by me (the host's kick). */
+  kicked(): Promise<void>;
   /** Their Claude's SendMessage to mine: into my inbox at the daemon, never the log (R6); `code` for another room's. */
   message(text: string, code?: string): void;
   /** A plan act of theirs (answer, accept, send, …) through the host's plan rules; throws when they refuse it. */
@@ -58,13 +60,17 @@ export interface Room {
   readonly home: string;
   readonly store: MemoryStore;
   as(name: string): Colleague;
-  /** Every `$.ui.status` text and `$.ui.log` line the module drew, and each process it tried to start. */
-  readonly status: (string | undefined)[];
+  /**
+   * The tail the prompt's hint is handed now (status.ts: the room's line), or undefined for none: on a terminal, or the
+   * surface given, with another plugin's tail already on it when given.
+   */
+  line($: Engine, o?: { readonly surface?: 'terminal' | 'desktop'; readonly tail?: string }): Promise<string | undefined>;
+  /** Every `$.ui.log` line the module drew, and each process it tried to start. */
   readonly logs: string[];
   /** Every debug-log line the module wrote, but the poll marker. */
   readonly debug: string[];
   readonly spawned: (readonly string[])[];
-  /** Each `/sub-human` the module ran through the command hook beneath (command.ts), and what that hook answers. */
+  /** Each `/room` the module ran through the command hook beneath (command.ts), and what that hook answers. */
   readonly ran: { readonly argv: readonly string[]; readonly stdin: string; readonly env?: Readonly<Record<string, string>> }[];
   answer: string;
   /** How many times each path was read, and each folder listed (`list:` and its path). */
@@ -83,6 +89,8 @@ export interface Room {
   readonly registered: string[];
   /** What the daemon's `link` answers for the room: null for a room hosted here. */
   link: LinkStatus | null;
+  /** What the daemon's `invite` answers: the line made, or its one-line refusal. */
+  invite: Answers['invite'] | string;
   /**
    * What the test breaks: the daemon refusing every write, the socket refused (the fetch rejects), the log's file
    * refusing reads, tool registration refused, running a command refused.
@@ -98,6 +106,7 @@ export interface Room {
   settled(clock: MockClock): Promise<void>;
 }
 
+const HINT = { isDraft: false, isWorking: false, hint: '? for shortcuts' } as const;
 export const HOME = '/home/me/.sub-human';
 export const SESSION = 'session-1';
 /** My recorded edit (test/fixtures/cc/2.1.330/tool-edit.json); the session runs in the folder it edits in. */
@@ -115,7 +124,6 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
   const store = new MemoryStore();
   const files = new Map<string, { text: string; mtime: number }>(); // documents and the pointer, as on disk
   let writes = 0;
-  const status: (string | undefined)[] = [];
   const logs: string[] = [];
   const debug: string[] = [];
   const spawned: (readonly string[])[] = [];
@@ -180,7 +188,19 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     registered.push(e.name);
     return { value: { tool: `mcp__sub-human__${e.name}` } };
   });
-  on('ui.status', (_, e) => { status.push(e.text); return { value: undefined }; });
+  // the engine's hint under the prompt: what status.ts hands it to draw at its end
+  let hinted: string | undefined;
+  on('ui.render', { component: 'PromptHint', plugin: '*' }, (_, e) => {
+    hinted = e.component === 'PromptHint' ? e.props.tail : undefined;
+    return { type: 'Text', children: [HINT.hint] };
+  });
+  const line: Room['line'] = async ($, o = {}) => {
+    hinted = undefined;
+    const props = { ...HINT, ...(o.tail !== undefined && { tail: o.tail }) };
+    const drawn = await $.ui.mount({ plugin: 'claude-code', surface: o.surface ?? 'terminal', component: 'PromptHint', requestId: 'hint', props, viewport: { columns: 120, rows: 40 } });
+    await drawn.unmount();
+    return hinted;
+  };
   on('ui.log', (_, e) => {
     if (e.to !== 'debug') logs.push(e.text);
     else if (e.text === POLLED) polls++;
@@ -232,6 +252,10 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     if (req.op === 'inbox') return reply(200, { ok: true, value: { messages: inbox.splice(0) } });
     if (req.op === 'asks') return reply(200, { ok: true, value: { asks: [] } }); // nobody knocks
     if (req.op === 'link') return reply(200, { ok: true, value: result.link });
+    if (req.op === 'invite' || req.op === 'uninvite') {
+      const answer = req.op === 'uninvite' ? null : result.invite;
+      return typeof answer === 'string' ? reply(400, { ok: false, error: answer }) : reply(200, { ok: true, value: answer });
+    }
     if (req.op === 'append' && req.code === code) {
       // a room whose host is away queues a person's post and answers seq 0, as the joiner's daemon does (core/api.ts)
       if (hostAway(result.link?.phase) && req.draft.kind === 'post' && req.draft.by === 'person') return reply(200, { ok: true, value: { seq: 0, hash: '' } });
@@ -293,6 +317,7 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
       await presence(name, 'away');
     },
     joined: () => append({ kind: 'joined', from: name, by: 'system' }),
+    kicked: () => append({ kind: 'kick', name, from: o.me, by: 'person' }),
     message: (text, other) => { inbox.push({ code: other ?? code, from: name, text, at: now() }); },
     async planAct(act) {
       const r = await plan(name, act);
@@ -319,13 +344,13 @@ export async function seedRoom(on: On, o: SeedOptions): Promise<Room> {
     await until(clock, want);
   };
   const settled = (clock: MockClock): Promise<void> => until(clock, 1);
-  const result: Room = { code, home: HOME, store, as, status, logs, debug, spawned, ran, answer: expandReply('done.'), reads, requests, submitted, surfaces, registered, link: null, onRun: null, pointer, resume: id => { current = id; }, broken, poll, settled, hold };
+  const result: Room = { code, home: HOME, store, as, line, logs, debug, spawned, ran, answer: expandReply('done.'), reads, requests, submitted, surfaces, registered, link: null, invite: 'Tailscale isn\'t running here', onRun: null, pointer, resume: id => { current = id; }, broken, poll, settled, hold };
   return result;
 }
 
-/** `/sub-human ARGS` typed at the prompt, as `command.run` gets it. */
+/** `/room ARGS` typed at the prompt, as `command.run` gets it. */
 export const slash = (args: string) =>
-  ({ command: 'sub-human', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } }) as const;
+  ({ command: 'room', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } }) as const;
 /** What the classic expand hook prints for an answer (commands/hooks.ts). */
 export const expandReply = (text: string): string =>
   JSON.stringify({ decision: 'block', reason: `sub-human: ${text}`, hookSpecificOutput: { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true } });

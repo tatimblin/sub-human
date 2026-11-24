@@ -68,7 +68,7 @@ test('a direct message carrying a command or URL is drawn for the person, never 
   const drawn = room.logs.filter(l => l.startsWith("carol's Claude messaged your Claude with a command or URL, held for you: "))
   expect(drawn).toHaveLength(DRAWS_PER_HOUR)
   expect(held.length).toBeGreaterThan(DRAWS_PER_HOUR)
-  expect(room.status.at(-1)).toMatch(new RegExp(` · ${held.length} held messages: /sub-human news$`)) // all of them, drawn or not
+  expect(await room.line($)).toMatch(new RegExp(` · ${held.length} held messages: /room news$`)) // all of them, drawn or not
   await $.session.end(END)
 })
 
@@ -81,7 +81,7 @@ test('a second held message in the same burst is counted, not drawn again', asyn
   await polls(room, clock)
   expect(room.submitted).toEqual([])
   expect(room.logs).toHaveLength(1)
-  expect(room.status.at(-1)).toMatch(/ · 2 held messages: \/sub-human news$/)
+  expect(await room.line($)).toMatch(/ · 2 held messages: \/room news$/)
   await $.session.end(END)
 })
 

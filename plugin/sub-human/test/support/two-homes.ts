@@ -8,6 +8,7 @@ import type { Result } from '../../core/result.js';
 import type { Daemon } from '../../net/daemon.js';
 import { call } from '../../net/daemon/client.js';
 import type { Net, NetOptions } from '../../net/daemon/net.js';
+import type { Rooms } from '../../net/daemon/rooms.js';
 import { makeNet } from '../../net/daemon/net.js';
 import { machineKey } from '../../keys.js';
 import { connect } from '../../net/channel.js';
@@ -36,9 +37,10 @@ export interface Homes {
 
 export const CODE = 'otter-4821';
 
-/** The two daemons, closed after the test; `hostOpts` and `joinOpts` reach makeNet. */
+/** The two daemons, closed after the test; `hostOpts` and `joinOpts` reach makeNet; `hostRooms` sees the host's rooms first. */
 export async function twoHomes(t: TestContext, o: {
   hostOpts?: Partial<NetOptions>;
+  hostRooms?: (rooms: Rooms) => void;
   joinOpts?: Partial<NetOptions>;
   dial?: (hostNet: Net) => Dial;
 } = {}): Promise<Homes> {
@@ -46,7 +48,7 @@ export async function twoHomes(t: TestContext, o: {
   const [hh, jh] = [await home(), await home()];
   const made: { net?: Net } = {};
   const startHost = (): Promise<Daemon> => started(t, {
-    home: hh, machine: 'mA', net: rooms => (made.net = makeNet(rooms, {
+    home: hh, machine: 'mA', net: rooms => (o.hostRooms?.(rooms), made.net = makeNet(rooms, {
       home: hh, machine: 'mA', now: Date.now, sshAddr: 'devbox',
       awake: () => { awake.count++; awake.held = true; return () => { awake.held = false; }; },
       ...o.hostOpts,

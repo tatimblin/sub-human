@@ -8,18 +8,18 @@ happens. Nobody writes a status update, and nobody copies between chats.
 
 - Your Claude learns, by your next prompt, what a colleague changed that bears on your work: a file you touched, an
   interface a plan you're on names, a line that names you.
-- Your status line shows the room, who is in it and what each is doing, and the one thing that needs you next:
+- The dim line under your prompt ends with the room, who is in it and what each is doing, and the one thing that
+  needs you next:
 
   ```
-  heron-2988 ● bob ○ carol
-  heron-2988 ○ bob · plan "finish-webography" needs your review (+2)
+  Room ● bob ○ carol
+  Room ◐ bob · plan "finish-webography" needs your review (+2)
   ```
 
-  It is a row of its own, which Claude Code draws as the plugin's status, with its own prefix:
-  `⚠ sub-human: heron-2988 …`.
+  Only the terminal draws that line; elsewhere there is none.
 
   `●` working, `○` idle, `◐` waiting on a permission prompt, `◌` away. On the right, most urgent first: a plan waiting
-  on your review, a plan someone sent you, messages held for you (`/sub-human news` shows them), a task of yours that
+  on your review, a plan someone sent you, messages held for you (`/room news` shows them), a task of yours that
   is now free to start; `(+N)` says how many more.
 - Your Claude can ask a colleague's Claude a question directly; the answer comes back after your turn, not in the
   middle of it.
@@ -41,19 +41,19 @@ Code's hooks modules, which are on by default. It was tested on Claude Code 2.1.
 ## Commands
 
 ```
-/sub-human [NAME]            join the room open here, or open one (as NAME)
-/sub-human invite NAME       bring in NAME from another machine
-/sub-human join LINE [NAME]  join a room on another machine, from the line its host sent
-/sub-human who               who is here and what each is doing
-/sub-human tasks             the room's tasks
-/sub-human leave             leave the room; your session keeps going
+/room [NAME]            join the room open here, or open one (as NAME)
+/room invite NAME       bring in NAME from another machine
+/room join LINE [NAME]  join a room on another machine, from the line its host sent
+/room who               who is here and what each is doing
+/room tasks             the room's tasks
+/room leave             leave the room; your session keeps going
 ```
 
 Also:
-- `/sub-human ROOM` joins that room by its code (`vole-8126`); `NAME` and `ROOM` may come in either order. With
-  several rooms open, a bare `/sub-human` lists them.
-- `/sub-human news` opens what each colleague changed and found since you last looked, and clears the count.
-- `/sub-human kick NAME` removes a member for good; `/sub-human doctor` checks this machine; `/sub-human help` lists
+- `/room ROOM` joins that room by its code (`vole-8126`); `NAME` and `ROOM` may come in either order. With
+  several rooms open, a bare `/room` lists them.
+- `/room news` opens what each colleague changed and found since you last looked, and clears the count.
+- `/room kick NAME` removes a member for good; `/room doctor` checks this machine; `/room help` lists
   the commands.
 - `@room TEXT` at your prompt posts your exact words to the room as yours; your Claude never sees it, and one line
   says it went. Start with a name (`@room bob, which port does the server use?`) to address one person: a line of
@@ -66,7 +66,7 @@ back. A room with nobody left in it closes, and one nobody has used for 30 days 
 
 ## Working together on one machine
 
-Each person types `/sub-human` in their own session. The first opens a room; the others join it, whatever repo each
+Each person types `/room` in their own session. The first opens a room; the others join it, whatever repo each
 is in. That's all: from then on your work is shared as you do it.
 
 ## Inviting someone from another machine
@@ -74,22 +74,28 @@ is in. That's all: from then on your work is shared as you do it.
 The machine that opened the room is its host. To bring someone in:
 
 ```
-/sub-human invite jess            a public https:// line (the default)
-/sub-human invite jess --tailnet  a line only your tailnet can reach
-/sub-human invite jess --ssh      a line over jess's own ssh login to this machine
+/room invite jess            a public https:// line (the default)
+/room invite jess --tailnet  a line only your tailnet can reach
+/room invite jess --ssh      a line over jess's own ssh login to this machine
 ```
 
 You get one line to send to jess. It works once, for 15 minutes, and only for the name you gave. Jess types it in her
 Claude Code:
 
 ```
-/sub-human join https://your-mac.tail1234.ts.net/vole-8126#…
+/room join https://your-mac.tail1234.ts.net/vole-8126#…
 ```
 
 Jess sees a short check string at once, to tell you. You get a card naming jess, her machine and the same check
 string, with **Let in** and **Refuse**: compare the two, then answer. Once you let her in, her session takes its place
 in the room by itself, and she sees one line saying so. If someone else uses the line too, nobody gets in with it and
 you are told, with a one-key removal if it had already let someone in.
+
+**From the row above the prompt.** While you're the only one in a room you host, a row above the prompt reads
+`Room heron-2988. Invite: [ public ] [ tailnet ] [ ssh ]` (`… created.` right after you made it). Pick one and name the person: you get the same
+line as the command, with
+**copy** (`c`) and **cancel**, which takes the line back so it lets nobody in. The row goes once anyone else is here.
+Clicks work in fullscreen; otherwise ctrl+x then tab puts you in the row.
 
 **Over Tailscale.** Only the host needs Tailscale. A public line (Tailscale Funnel) works for a joiner with nothing
 but the plugin: no Tailscale and no account. A tailnet line (Tailscale Serve) works only on your tailnet. The
@@ -102,7 +108,7 @@ in as you. The host's sshd must allow TCP forwarding (`AllowTcpForwarding yes`),
 `SUB_HUMAN_SSH_ADDR` sets the address others use to reach this machine.
 
 While the host is away (asleep, or its last session ended), the room waits and the others see `host away` on their
-status line and in `/sub-human who`. Their own updates are kept and go out when the host is back.
+status line and in `/room who`. Their own updates are kept and go out when the host is back.
 
 ## What is shared
 
@@ -126,7 +132,7 @@ What is never shared:
 Messages between two Claudes are private to them: they never go into the room's history, on any machine.
 
 **What reaches your Claude.** Only updates that bear on your work go to your Claude, beside your next prompt, marked
-as data from a named colleague and capped at about 400 tokens. The rest waits for `/sub-human news`, or for your Claude to
+as data from a named colleague and capped at about 400 tokens. The rest waits for `/room news`, or for your Claude to
 ask for the catch-up. Nothing in the room starts a turn by itself except
 three things: a person's line naming you, a colleague's Claude messaging yours directly, and an answer to your
 Claude's own question. Even then it waits for your turn to end and is framed as a colleague's request, and a message
@@ -134,11 +140,14 @@ that carries a command or URL to run is shown to you instead of handed to your C
 
 ## Plans
 
-Write plans in plan mode, as you do alone. When you approve one, you're asked once:
+Write plans in plan mode, as you do alone. When you approve one, you're asked once, **Share this plan?**:
 
-- **Keep it**: it stays yours, and nothing is shared.
-- **Room plan**: it's stored in the room, and you pick who should agree.
-- **Send to NAME** (or the room): it goes, whole, to that person, with your branch, the files it names and a note.
+- **No**: keep it local; nothing is shared.
+- **Get agreement**: share it for input and approval. It's stored in the room, you pick who must agree, and your
+  Claude waits for them.
+- **Send to the room**: share it without waiting on approval. You pick who gets it (anyone here, or everyone in the
+  room; type a name under Other for someone not listed), and it goes, whole, with your branch, the files it names and
+  a note.
 
 A room plan is versioned. Every version is kept, and an edit made on an old version is refused so the two can be
 merged. A part that names an owner (`## Store (owner: tristan)`, `- @jess the HTTP handler`) becomes a task once the
@@ -161,7 +170,7 @@ permission mode.
 
 The room has a small task list. Anyone adds a task; you claim one for yourself (refused while someone else has it);
 only its owner releases it or marks it done. A task can wait on others, and when one you're waiting on is done or
-released, your Claude hears of it. `/sub-human tasks` lists them, and your Claude has a task tool.
+released, your Claude hears of it. `/room tasks` lists them, and your Claude has a task tool.
 
 Your own native task list stays yours and works as it does alone. If you launch Claude Code with
 `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` (Claude Code's own setting, which sub-human never sets), two more things happen: your
@@ -190,12 +199,12 @@ write, so everyone who joins trusts the host.
 ## When the hooks module is off
 
 sub-human runs as a Claude Code hooks module. Where hooks modules are off (a managed machine's policy, or an older
-Claude Code), nothing would be shared, so `/sub-human` and `/sub-human join` join no room and say so in one line, and
-`/sub-human news` and `/sub-human doctor` say so too. The others never see such a session as here.
+Claude Code), nothing would be shared, so `/room` and `/room join` join no room and say so in one line, and
+`/room news` and `/room doctor` say so too. The others never see such a session as here.
 
 ## Doctor
 
-`/sub-human doctor` checks this machine, one line each, `ok` or `fix` with what to do: Node, sub-human's home folder,
+`/room doctor` checks this machine, one line each, `ok` or `fix` with what to do: Node, sub-human's home folder,
 the hooks module in your sessions, the Claude Code version sub-human was checked on (and any other version your
 sessions run), every room's history, sshd's TCP forwarding, and Tailscale. A setting with a bad value is listed too.
 
@@ -210,7 +219,7 @@ All optional, as environment variables; sub-human never writes your Claude Code 
 | `SUB_HUMAN_SSH_ADDR` | how others reach this machine over ssh |
 | `SUB_HUMAN_PORT` | the local port the host listens on (one is picked if unset) |
 | `SUB_HUMAN_HOME` | where sub-human keeps its files (default `~/.sub-human`) |
-| `SUB_HUMAN_CC_OFF` | `wake`, `messages` or `tasks-bridge` (comma-separated) off, if a Claude Code release breaks it |
+| `SUB_HUMAN_CC_OFF` | `wake`, `messages`, `tasks-bridge` or `invite-band` (comma-separated) off, if a Claude Code release breaks it |
 
 ## More
 

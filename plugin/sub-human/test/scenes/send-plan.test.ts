@@ -20,7 +20,7 @@ test('I send my plan to bob, packed for his Claude; his answer reaches mine', as
   await $.session.start(START)
   await room.settled(clock)
   w.plan = MINE
-  w.answer('Send to bob', 'build the handler on this')
+  w.answer('Send to the room', 'bob', 'build the handler on this')
   await $.tool.call(EXIT.input)
   const sent = room.store.room.lines.map(l => v.parse(Line, JSON.parse(l))).filter(e => e.kind === 'plan_sent')
   expect(sent).toMatchObject([{ name: 'store-paging', version: 1, to: 'bob', branch: 'alice/paging', files: ['src/store.js', 'test/store-paging.test.js'], note: 'build the handler on this' }])

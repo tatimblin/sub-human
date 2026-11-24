@@ -51,8 +51,8 @@ test('a member is here on each machine whose presence isn\'t away, and nowhere o
 
 test('who, tasks, leave and kick in a session in no room say so', async () => {
   const ctx = testCtx(fakeHome());
-  assert.equal((await runCommand('who', ctx)).text, 'This session is in no room. Type /sub-human to join one.');
-  assert.equal((await runCommand('tasks', ctx)).text, 'This session is in no room. Type /sub-human to join one.');
+  assert.equal((await runCommand('who', ctx)).text, 'This session is in no room. Type /room to join one.');
+  assert.equal((await runCommand('tasks', ctx)).text, 'This session is in no room. Type /room to join one.');
   assert.equal((await runCommand('leave', ctx)).text, 'This session is in no room.');
   assert.equal((await runCommand('kick bob', ctx)).kind, 'refused');
 });
@@ -109,8 +109,8 @@ test('a leave retried after its left was stored writes it once: the pointer keep
 
 test('kick removes a member for good; never yourself, nobody unknown, nobody twice (R31)', async () => {
   const { fake, alice, bob, code } = await room();
-  assert.equal((await runCommand('kick', alice)).text, 'Nobody was removed. Type /sub-human kick NAME.');
-  assert.equal((await runCommand('kick alice', alice)).text, 'You were not removed: to go, type /sub-human leave.');
+  assert.equal((await runCommand('kick', alice)).text, 'Nobody was removed. Type /room kick NAME.');
+  assert.equal((await runCommand('kick alice', alice)).text, 'You were not removed: to go, type /room leave.');
   assert.equal((await runCommand('kick zed', alice)).text, `zed was not removed: there is no zed in ${code}.`);
   assert.deepEqual(await runCommand('kick bob', alice), { kind: 'say', text: `bob is removed from ${code} for good.` });
   assert.equal((await runCommand('kick bob', alice)).text, `bob is already removed from ${code}.`);
@@ -122,15 +122,15 @@ test('help is at most six lines (R4)', async () => {
   const ctx = testCtx(fakeHome());
   const help = await runCommand('help', ctx);
   assert.ok(help.text.split('\n').length <= 6);
-  assert.match(help.text, /^\/sub-human \[NAME\]/);
+  assert.match(help.text, /^\/room \[NAME\]/);
   assert.deepEqual(fakeHome().calls, []);
 });
 
 test('news reaches the command only where hooks modules are off: one line saying so (the module draws it)', async () => {
-  assert.equal((await runCommand('news', testCtx(fakeHome()))).text, 'This session is in no room. Type /sub-human to join one.');
+  assert.equal((await runCommand('news', testCtx(fakeHome()))).text, 'This session is in no room. Type /room to join one.');
   const { alice } = await room();
   assert.deepEqual(await runCommand('news', alice), {
-    kind: 'refused', text: "News wasn't shown: Claude Code's hooks modules are off in this session, and they draw it. /sub-human who shows what each member is doing.",
+    kind: 'refused', text: "News wasn't shown: Claude Code's hooks modules are off in this session, and they draw it. /room who shows what each member is doing.",
   });
 });
 
@@ -184,7 +184,7 @@ test('doctor: node, the socket path, the module, the version checked on, every r
   assert.match(must(lines[2], 'module'), /^fix   sub-human did not answer/);
   assert.match(must(lines[4], 'rooms'), new RegExp(`^fix   room logs that don't read: ${code} \\(the log of ${code} does not read \\(fork`));
   assert.equal(lines[5], 'fix   sshd has AllowTcpForwarding no, so an ssh invite can\'t connect; set it to yes in sshd_config, or invite by URL');
-  assert.equal(lines[6], 'fix   Tailscale is NeedsLogin, not running: sign in to it to invite by URL, or use /sub-human invite NAME --ssh');
+  assert.equal(lines[6], 'fix   Tailscale is NeedsLogin, not running: sign in to it to invite by URL, or use /room invite NAME --ssh');
   assert.equal(lines[7], 'fix   SUB_HUMAN_INVITE=carrier-pigeon is not public, tailnet or ssh; public is used');
   fake.down = null;
   fake.cc = ['2.1.330', '2.1.331'];
@@ -192,7 +192,7 @@ test('doctor: node, the socket path, the module, the version checked on, every r
   const text = (await runCommand('doctor', none)).text.split('\n');
   assert.equal(text[3], 'ok    sub-human is checked on Claude Code 2.1.330; sessions here run 2.1.331, which it was not checked on');
   assert.equal(text[5], 'ok    no sshd here to read; only an ssh invite needs one, on the machine that invites');
-  assert.equal(text[6], 'fix   Tailscale isn\'t installed or doesn\'t answer: install it to invite by URL, or use /sub-human invite NAME --ssh');
+  assert.equal(text[6], 'fix   Tailscale isn\'t installed or doesn\'t answer: install it to invite by URL, or use /room invite NAME --ssh');
 });
 
 test('nodeRuns: 22.18+, 24.3+, 25 on; never 23', () => {

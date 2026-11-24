@@ -22,7 +22,7 @@ test('a value a knob can\'t take keeps the default and is a problem for doctor; 
   assert.deepEqual(c.problems, [
     'SUB_HUMAN_INVITE=pigeon is not public, tailnet or ssh; public is used',
     'SUB_HUMAN_PORT=70000 is not a port; one is picked',
-    'SUB_HUMAN_CC_OFF names nope; only wake, messages, tasks-bridge can be turned off',
-    'SUB_HUMAN_CC_OFF names core; only wake, messages, tasks-bridge can be turned off',
+    'SUB_HUMAN_CC_OFF names nope; only wake, messages, tasks-bridge, invite-band can be turned off',
+    'SUB_HUMAN_CC_OFF names core; only wake, messages, tasks-bridge, invite-band can be turned off',
   ]);
 });

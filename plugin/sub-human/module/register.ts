@@ -11,6 +11,7 @@ import { registerStatus } from './status.js';
 import { registerTools } from './tools.js';
 import { registerTasks } from './tasks.js';
 import { registerAdmit } from './admit.js';
+import { registerBand } from './band.js';
 import { registerWake } from './wake.js';
 import { registerPlans } from './plans.js';
 
@@ -23,8 +24,9 @@ export function register(on: On): void {
   registerTools(on);
   registerTasks(on);
   registerAdmit(on);
+  registerBand(on);
   registerMessages(on);
   registerWake(on);
   registerPlans(on);
-  registerCommand(on); // innermost: news (status.ts) and invite (admit.ts) see /sub-human first
+  registerCommand(on); // innermost: news (status.ts) and invite (admit.ts) see /room first
 }

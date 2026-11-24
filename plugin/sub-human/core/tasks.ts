@@ -119,7 +119,7 @@ export function bridgeOp(change: StatusChange | undefined, t: Tag | null): Bridg
 }
 
 /**
- * Room `code`'s open tasks with their owners and blockers, and how many are done: `/sub-human tasks` and `task list`.
+ * Room `code`'s open tasks with their owners and blockers, and how many are done: `/room tasks` and `task list`.
  * A title and owner are colleagues' text, so each line is one line, with no escape or label in it.
  */
 export function taskLines(code: string, all: readonly Task[]): string[] {

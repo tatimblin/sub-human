@@ -147,7 +147,8 @@ plugin/sub-human/
     capture.ts       tool.call → activity documents and events; presence; pings (R12, R23)
     follow.ts        polls the tail file, reads the log by ranges, feeds deliver(); follow-lines.ts its pure part
     context.ts       prompt.submit context: mechanics once, relevant updates capped (R15a); mid-loop heads-up (R15d)
-    status.ts        the status line (its own row, ui.status); /sub-human news pane (R15b)
+    status.ts        the room's line (the PromptHint tail); /room news pane (R15b)
+    band.ts          the invite row above the prompt while I am alone (AbovePrompt; R30)
     messages.ts      session.send caught at the sender for NAME.CODE (R6)
     at-room.ts       prompt.submit: an `@room` line posted as the person's, dropped from the model (R8)
     wake.ts          $.prompt.submit once idle; retry on turn.complete.isAborted (R10)
@@ -157,7 +158,7 @@ plugin/sub-human/
     tasks.ts         the task tool and the bridge into the native list (R24, R24a)
     tools.ts         Claude's share and read tools via $.tool.register + tool.run (§6)
     admit.ts         the host's Let in / Refuse card (R30)
-  commands/        /sub-human verbs, one small file each: (bare), invite, join, who, tasks, news, leave, kick, help,
+  commands/        /room verbs, one small file each: (bare), invite, join, who, tasks, news, leave, kick, help,
                    doctor; hooks.ts the four command hooks; context.ts and daemon.ts their real-machine wiring
   hooks/           hooks.json (the module, plus UserPromptExpansion, SessionStart, Notification, SessionEnd) and node.sh
   net/             the daemon only (the module can't load node:crypto or ws)
@@ -188,7 +189,7 @@ plugin/sub-human/
 
 | Kind | Written by | Meaning |
 |---|---|---|
-| `joined`, `left` | system | membership, per name, with repo, branch and machine: `joined` once, when a name that isn't a member joins; `left` only for an explicit `/sub-human leave` that no other session or pending handoff holds the name against. A session ending, a crash or a sweep never writes either: it marks the member away (presence). |
+| `joined`, `left` | system | membership, per name, with repo, branch and machine: `joined` once, when a name that isn't a member joins; `left` only for an explicit `/room leave` that no other session or pending handoff holds the name against. A session ending, a crash or a sweep never writes either: it marks the member away (presence). |
 | `activity` | module, mechanically | discrete events only: a commit, a push, a test result, a personal task change (R12, R23). File edits go in the activity document. |
 | `finding` | the member's Claude (`share`) | one-line update in its own words (R13) |
 | `post` | person (`@room`) or Claude (`share post`) | room-visible words; optional `to` to name someone (R7, R8). Private Claude-to-Claude messages are never posts (R6). |
@@ -208,7 +209,7 @@ plugin/sub-human/
 
 **Plan text** lives in `plans/<hash>.md`, content-addressed.
 
-**Folding.** `RoomState = fold(snapshot, log after it, docs)` is the only reader logic. Every view is a function of `RoomState`: the status line, `/sub-human news`, the catch-up, `who`, delivery and the task list. There are no other caches.
+**Folding.** `RoomState = fold(snapshot, log after it, docs)` is the only reader logic. Every view is a function of `RoomState`: the status line, `/room news`, the catch-up, `who`, delivery and the task list. There are no other caches.
 
 **The snapshot** (`snapshot.json`, P0) is written by the host every N entries, at a known `seq`. A joiner or a reconnecting mirror fetches the snapshot plus the entries after it, never the whole log.
 
@@ -227,7 +228,7 @@ plugin/sub-human/
 
 When the host's last session leaves a room, the listener stops serving it, and remote members see "host away" until it returns (R34). There is no room-level Claude and no background job besides the daemon (PRD §4).
 
-The command hooks in `hooks.json` keep working when policy disables user modules on managed machines (PRD C1): the `/sub-human` expansion, `SessionStart` with `sessionTitle`, `Notification` and `SessionEnd`. If the module is off, the person gets one line saying so.
+The command hooks in `hooks.json` keep working when policy disables user modules on managed machines (PRD C1): the `/room` expansion, `SessionStart` with `sessionTitle`, `Notification` and `SessionEnd`. If the module is off, the person gets one line saying so.
 
 ## 6. Claude's tools
 
@@ -268,7 +269,7 @@ Native mid-turn interrupts are therefore never used for room members. Whether Cl
    - `context` entries are only those that bear on my work (R15c) or overlap it (R15d). They queue for the next `prompt.submit` `context`, datamarked and capped at about 400 tokens. Claude Code's own limits (100k characters per entry, 200k in total) are far above this cap.
    - An overlap heads-up (R15d) also reaches a Claude that is deep in a long tool loop. It rides as the `context` on its next `tool.call` result, without starting a turn (`$.session.append` is not used).
    - `notice` entries add one dim line through `ui.log`.
-   - The status line is redrawn from the new state: who is here, and what needs me (`module/status.ts`). The rest waits for `read` or `/sub-human news`.
+   - The status line is redrawn from the new state: who is here, and what needs me (`module/status.ts`). The rest waits for `read` or `/room news`.
 
 A finding takes the same path, starting from the `share` tool.
 
@@ -308,8 +309,8 @@ How a wake is delivered:
 No Claude Code task file is read or written, and the mirror never waits on a deletion event, because auto-reset and retention delete tasks silently.
 
 **Remote join (R29–R31).**
-1. The host runs `/sub-human invite NAME --public | --tailnet | --ssh`. That mints a 128-bit secret bound to the host's key and the expected name, and prints one line.
-2. The joiner types `/sub-human join LINE`. `net/link.ts` dials through the line's pathway and runs Noise XK against the host key named in the line.
+1. The host runs `/room invite NAME --public | --tailnet | --ssh`. That mints a 128-bit secret bound to the host's key and the expected name, and prints one line.
+2. The joiner types `/room join LINE`. `net/link.ts` dials through the line's pathway and runs Noise XK against the host key named in the line.
    - The third message carries the secret's MAC, so the host refuses anyone else before doing any per-connection work.
    - The secret itself travels only inside the channel.
 3. Both sides see the same check string: the joiner's command answers with it at once ("Tell the host: CHECK. Waiting to be let in…"). The host's module shows **Let in / Refuse** through `ui.ask`, naming the joiner, their machine, any name mismatch, and the check string. A second dial of a pending or used line refuses both and alerts the host.
@@ -350,7 +351,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 
 ## 9. Claude Code surfaces
 
-**How this was checked (Q1, 2026-11-22).** These rows were checked against typings extracted from the Claude Code 2.1.330 binary, now the committed snapshot (`typings/`, refreshed with `npm run typings`). `core/cc/contract.json` lists each surface below: 24 entries, 19 API and 5 internal.
+**How this was checked (Q1, 2026-11-22).** These rows were checked against typings extracted from the Claude Code 2.1.330 binary, now the committed snapshot (`typings/`, refreshed with `npm run typings`). `core/cc/contract.json` lists each surface below: 25 entries, 20 API and 5 internal.
 
 **What the check changed:**
 - Claude's tools are registered by the module (`$.tool.register`, `tool.run`), so there is no MCP server.
@@ -370,7 +371,8 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 | Whether the session has native task tools | `$.tool.list` | typed; *why* they are off (the env var and model list) is internal |
 | Context on the next turn | `prompt.submit` hook `context`: 100k characters per entry, 200k in total. **Not `prompt.context`**, which fires once per conversation. **Not `$.state`**, which is render state. | typed. It also fires for peer and plugin prompts. |
 | Notes inside a long tool loop | `tool.call` result `context` | typed |
-| Status line, dim line | `ui.status`, its own row (drawn as `⚠ NAME: text`, docs/internals/v2-status-line.md); `ui.log` (2,000 characters drawn) | typed |
+| Status line, dim line | `ui.render` on `PromptHint`, its `tail` (the terminal's dim hint under the prompt; no other surface draws one, docs/internals/v2-status-line.md), redrawn by `$.ui.invalidate`; `ui.log` (2,000 characters drawn) | typed |
+| Invite row while alone | `ui.render` on `AbovePrompt` (yields to a survey); `Button` `onPress` and a letter `hotkey`; `$.ui.copy` to the pressing surface | typed, early access: clicks land only in fullscreen, else ctrl+x tab focuses the band |
 | Let in / Refuse; keep / room / send; plan review | `ui.ask`, answered with a label or Other text | typed; it rejects when dismissed or in `-p` |
 | Full plan, scrollable | `$.ui.open` pane; Pane bodies scroll (`ui.scroll`) | typed. An unasked pane only places from 144 columns, so it opens from the card. |
 | Plan approval | `tool.call` on ExitPlanMode → `{plan, filePath?}` | typed; the rejection shape isn't needed |
@@ -385,7 +387,7 @@ No Claude Code task file is read or written, and the mirror never waits on a del
 | `NAME.CODE` addressing | `sessionTitle` from a `SessionStart` command hook | documented; name uniqueness is internal |
 | Claude's tools | `$.tool.register` + `tool.run` | typed (also in 2.1.296) |
 | Node work | `$.process.spawn`/`run`; `$.http.fetch` to loopback | typed. The module has no Node and no `import()`; spawned children die with the module. |
-| `/sub-human` command, session end | the module's `command.run`, answering `{}` and drawing the answer with `ui.log` (no frame, no echo: docs/internals/v2-command-answer.md); command hooks (`UserPromptExpansion`, `SessionEnd`) | `command.run` typed, its `{}` adding no row internal; the command hooks documented, and they survive managed-machine policy |
+| `/room` command, session end | the module's `command.run`, answering `{}` and drawing the answer with `ui.log` (no frame, no echo: docs/internals/v2-command-answer.md); command hooks (`UserPromptExpansion`, `SessionEnd`) | `command.run` typed, its `{}` adding no row internal; the command hooks documented, and they survive managed-machine policy |
 | Managed machines | The guard skips user hooks on `classic.*`, `prompt.compose`, `prompt.section`, `prompt.context`, `prompt.attachment`, `skill.prompt`, `attribution.text`, `telemetry.log`, `session.compact`, `settings.read`, and on `session.append` rows filtered by door. `allowManagedModsOnly` refuses the module, but leaves `hooks.json` hooks alone. | documented; v2 needs none of the skipped hooks |
 
 **Internals, as built:** 5 of the 10 allowed: the task-tool gate, the wake prompt's frame, honouring a `session.send` answer without `next` (U6 confirmed it on 2.1.330), `sessionTitle` uniqueness, and a `command.run` answer `{}` adding no row. Total contract entries: 24.
@@ -403,7 +405,7 @@ Six knobs, read only by `config.ts` (a value a knob can't take keeps the default
 | `SUB_HUMAN_INVITE` | default pathway: `public`, `tailnet` or `ssh` |
 | `SUB_HUMAN_SSH_ADDR` | how others reach this host over ssh |
 | `SUB_HUMAN_PORT` | listener port |
-| `SUB_HUMAN_CC_OFF` | turn `wake`, `messages` or `tasks-bridge` off (the module's gated parts) |
+| `SUB_HUMAN_CC_OFF` | turn `wake`, `messages`, `tasks-bridge` or `invite-band` off (the module's gated parts) |
 
 Timings are constants in `config.ts`. Tests pass their own values in through parameters.
 

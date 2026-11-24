@@ -47,7 +47,7 @@ test('join: the line, the same check string on both sides, Let in, the link key 
     JSON.parse(await fs.readFile(`${h.host.home}/host.json`, 'utf8')));
   assert.deepEqual(host.links.map(l => [l.name, l.machine]), [['bob', 'mB']]);
   assert.deepEqual(host.invites.map(i => i.state), ['used']);
-  // online, the daemon takes the session that dialled into the room, as /sub-human ROOM would
+  // online, the daemon takes the session that dialled into the room, as /room ROOM would
   const pointer = await until('the session\'s pointer', () => fs.readFile(sessionFile(h.joiner.home, 'sb'), 'utf8').then(decodePointer, () => null));
   assert.deepEqual(pointer, { code: CODE, name: 'bob', title: `bob.${CODE}`, leave });
   assert.deepEqual(await hostLog(h), ['joined', 'post', 'invite', 'admit', 'joined']);
@@ -180,6 +180,48 @@ test('a name mismatch is on the card; Refuse kills the line (R30)', async t => {
   assert.deepEqual((await h.host.ok({ op: 'asks', session: 'sa' })).asks, [], 'a dead line asks nothing');
 });
 
+for (const dialled of [true, false]) {
+  test(`uninvite ${dialled ? 'with a dial waiting refuses it' : 'of an unused line'}, and the line lets nobody in after (R30)`, async t => {
+    const h = await twoHomes(t);
+    await hostRoom(h);
+    const { line, id } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
+    if (dialled) { await h.joiner.ok({ op: 'dial', line, name: 'bob' }); await nextAsk(h); }
+    assert.ok(!(await h.host.call({ op: 'uninvite', code: CODE, from: 'mallory', id })).ok, 'only a member takes a line back');
+    await h.host.ok({ op: 'uninvite', code: CODE, from: 'alice', id });
+    if (dialled) await linkIs(h, 'stopped');
+    await h.joiner.ok({ op: 'dial', line, name: 'bob' });
+    await linkIs(h, 'stopped');
+    assert.deepEqual((await h.host.ok({ op: 'asks', session: 'sa' })).asks, [], 'a line taken back asks nothing');
+    assert.ok(!(await h.host.call({ op: 'uninvite', code: CODE, from: 'alice', id: 'nope' })).ok, 'an unknown line is one refusal');
+  });
+}
+
+test('an uninvite while Let in is being written is refused: the joiner gets in', async t => {
+  let hit = (): void => {};
+  const writing = new Promise<void>(res => { hit = res; });
+  let release = (): void => {};
+  const gate = new Promise<void>(res => { release = res; });
+  const h = await twoHomes(t, {
+    hostRooms: rooms => {
+      const write = rooms.write.bind(rooms);
+      rooms.write = async (code, drafts) => {
+        if (drafts[0]?.kind === 'admit') { hit(); await gate; }
+        return write(code, drafts);
+      };
+    },
+  });
+  await hostRoom(h);
+  const { line, id } = await h.host.ok({ op: 'invite', code: CODE, from: 'alice', name: 'bob', via: 'ssh' });
+  await h.joiner.ok({ op: 'dial', line, name: 'bob' });
+  const ask = await nextAsk(h);
+  await h.host.ok({ op: 'admit', session: 'sa', code: CODE, id: ask.id, answer: 'let_in' });
+  await writing;
+  const r = await h.host.call({ op: 'uninvite', code: CODE, from: 'alice', id });
+  release();
+  assert.ok(!r.ok, 'too late to take the line back');
+  await linkIs(h, 'online');
+});
+
 test('a leaked line dialled twice refuses both dials and alerts the host (R30)', async t => {
   const h = await twoHomes(t);
   await hostRoom(h);
@@ -263,7 +305,7 @@ test('a join that fails after Let in is the link\'s one stopped answer; the bare
     const s = await h.joiner.ok({ op: 'link', code: CODE });
     return s?.phase === 'stopped' ? s : null;
   });
-  assert.match(failed.why ?? '', new RegExp(`^you were let in, but this session did not take its place \\(.+\\); type /sub-human ${CODE}$`));
+  assert.match(failed.why ?? '', new RegExp(`^you were let in, but this session did not take its place \\(.+\\); type /room ${CODE}$`));
   assert.equal((await h.joiner.ok({ op: 'link', code: CODE }))?.phase, 'online', 'said once');
   await fs.rm(`${h.joiner.home}/sessions`);
   const r = await h.joiner.ok({ op: 'join', id: 'sb', cwd: '/w', name: 'bob', leave: crypto.randomUUID(), code: CODE });

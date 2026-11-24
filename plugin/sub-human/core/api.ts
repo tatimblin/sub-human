@@ -12,13 +12,13 @@
 //   put_doc  {code, kind, name, doc}   → null         a member's presence, activity or focus document
 //   put_blob {code, text}              → {hash}       plan text, stored by its hash
 //   join     {id, cwd, name, code?, repo?, branch?, leave} → {code, title, opened, others} | {rooms}  a bare
-//                                                     /sub-human, on one chain: the room asked for, else the room this
+//                                                     /room, on one chain: the room asked for, else the room this
 //                                                     cwd last used while NAME is a member, else the one open room (a
 //                                                     member present), else a new one; several open: {rooms}, and no
 //                                                     join. `joined` only when NAME isn't a member; then presence idle,
 //                                                     and the pointer <home>/sessions/ID.json with the lowest NAME.CODE
 //                                                     title no pointer here holds
-//   leave    {id}                      → null         /sub-human leave: `left` (under the pointer's leave id) and presence
+//   leave    {id}                      → null         /room leave: `left` (under the pointer's leave id) and presence
 //                                                     away, unless another pointer or pending handoff holds the name;
 //                                                     then the pointer goes
 //   retire   {id}                      → null         the session ended: the pointer goes and the member is away, unless
@@ -37,7 +37,10 @@
 //                                                     sessions run; `pinged`: whether that session's module ever pinged
 //
 // Across machines (net/, U15):
-//   invite   {code, from, name, via}   → {line}       a line for NAME (via public, tailnet or ssh); starts the listener
+//   invite   {code, from, name, via}   → {line, id, expires}  a line for NAME (via public, tailnet or ssh); starts the
+//                                                     listener. `id` is the line's record, `expires` when it stops working
+//   uninvite {code, from, id}          → null         that line is dead: unused, it lets nobody in; a dial waiting on
+//                                                     it is refused
 //   asks     {session}                 → {asks}       who waits to be let into this session's rooms, and any line
 //                                                     dialled twice; module/admit.ts shows each as a card
 //   admit    {session, code, id, answer}  → null      a session's answer to an ask of its room: let_in or refuse,
@@ -60,7 +63,7 @@ import { err, ok } from './result.js';
 import { decode, decodeDoc, decodeEntry, parseJson } from './schema.js';
 
 /** Bumped when a request or an answer changes shape; status carries it. */
-export const API_VERSION = 5;
+export const API_VERSION = 6;
 /** A request body larger than this is refused unread. */
 export const MAX_BODY: number = 1024 * 1024;
 export const DAEMON_URL: string = 'http://daemon/';
@@ -179,6 +182,7 @@ export type Request =
   | { readonly op: 'inbox'; readonly session: string }
   | { readonly op: 'status'; readonly session?: string }
   | ({ readonly op: 'invite'; readonly name: string; readonly via: Pathway } & Writer)
+  | ({ readonly op: 'uninvite'; readonly id: string } & Writer)
   | { readonly op: 'asks'; readonly session: string }
   | { readonly op: 'admit'; readonly session: string; readonly code: string; readonly id: string; readonly answer: 'let_in' | 'refuse' | 'kick' }
   | ({ readonly op: 'kick'; readonly name: string } & Writer)
@@ -186,7 +190,7 @@ export type Request =
   | { readonly op: 'link'; readonly code: string };
 export type Op = Request['op'];
 /** The ops net/ answers (the host's side and the links); every other op is the rooms'. */
-export type NetOp = 'invite' | 'asks' | 'admit' | 'kick' | 'dial' | 'link';
+export type NetOp = 'invite' | 'uninvite' | 'asks' | 'admit' | 'kick' | 'dial' | 'link';
 export type NetRequest = Extract<Request, { readonly op: NetOp }>;
 export type RoomRequest = Exclude<Request, { readonly op: NetOp }>;
 export interface Answers {
@@ -204,7 +208,8 @@ export interface Answers {
   message: null;
   inbox: { readonly messages: readonly Message[] };
   status: Status;
-  invite: { readonly line: string };
+  invite: { readonly line: string; readonly id: string; readonly expires: number };
+  uninvite: null;
   asks: { readonly asks: readonly Ask[] };
   admit: null;
   kick: null;
@@ -261,6 +266,7 @@ const request = v.variant('op', [
   v.object({ op: v.literal('inbox'), session }),
   v.object({ op: v.literal('status'), session: opt(sessionId) }),
   v.object({ op: v.literal('invite'), ...writer, name, via: v.picklist(PATHWAYS) }),
+  v.object({ op: v.literal('uninvite'), ...writer, id: name }),
   v.object({ op: v.literal('asks'), session }),
   v.object({ op: v.literal('admit'), session, code: name, id: name, answer: v.picklist(['let_in', 'refuse', 'kick']) }),
   v.object({ op: v.literal('kick'), ...writer, name }),
@@ -288,7 +294,8 @@ const answers: { readonly [O in Op]: v.GenericSchema<unknown, Answers[O]> } = {
   message: v.null(),
   inbox: v.object({ messages: v.array(v.object({ code: name, from: name, text, at: count })) }),
   status: v.object({ version: count, pid: count, sessions: count, cc: v.array(v.string()), pinged: opt(v.boolean()) }),
-  invite: v.object({ line: v.string() }),
+  invite: v.object({ line: v.string(), id: name, expires: count }),
+  uninvite: v.null(),
   asks: v.object({ asks: v.array(v.object({
     id: name, code: name, kind: v.picklist(['admit', 'again', 'leaked']), name, expected: name, machine: v.string(), check: v.string(), member: v.boolean(),
   })) }),

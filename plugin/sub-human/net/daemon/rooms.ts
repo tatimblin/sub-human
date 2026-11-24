@@ -273,7 +273,7 @@ export class Rooms {
   }
 
   /**
-   * A bare /sub-human, on one chain so two first opens make one room: open.ts picks the room; `joined` only when the
+   * A bare /room, on one chain so two first opens make one room: open.ts picks the room; `joined` only when the
    * name isn't a member; then an idle presence here (which makes the room open), the pointer and the cwd's last room.
    */
   private async join(req: Extract<RoomRequest, { op: 'join' }>): Promise<Result<Answers['join']>> {

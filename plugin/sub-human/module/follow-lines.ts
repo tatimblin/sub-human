@@ -82,7 +82,7 @@ export function toDraw(drawn: readonly Drawn[], shown: number): { draw: string[]
   const draw = ranked.slice(0, Math.max(0, DRAWN_MAX - shown));
   const rest = ranked.length - draw.length;
   if (!rest || shown > DRAWN_MAX) return { draw, shown: shown + draw.length };
-  return { draw: [...draw, `sub-human: and ${rest} more: /sub-human news`], shown: DRAWN_MAX + 1 };
+  return { draw: [...draw, `sub-human: and ${rest} more: /room news`], shown: DRAWN_MAX + 1 };
 }
 
 export interface Absorbed {

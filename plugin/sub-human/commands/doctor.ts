@@ -1,4 +1,4 @@
-// `/sub-human doctor`: one line per check, each `ok` or `fix` (with what to do).
+// `/room doctor`: one line per check, each `ok` or `fix` (with what to do).
 import { SOCKET_MAX, socketFile } from '../core/api.js';
 import { parseContract } from '../core/cc/contract.js';
 import type { Ctx, Verb } from './types.js';
@@ -87,6 +87,6 @@ async function tailscale(ctx: Ctx): Promise<Line> {
   const state = status && /"BackendState"\s*:\s*"(\w+)"/.exec(status)?.[1];
   if (state === 'Running') return ['ok', 'Tailscale is running, so a URL invite works'];
   return ['fix', state
-    ? `Tailscale is ${state}, not running: sign in to it to invite by URL, or use /sub-human invite NAME --ssh`
-    : 'Tailscale isn\'t installed or doesn\'t answer: install it to invite by URL, or use /sub-human invite NAME --ssh'];
+    ? `Tailscale is ${state}, not running: sign in to it to invite by URL, or use /room invite NAME --ssh`
+    : 'Tailscale isn\'t installed or doesn\'t answer: install it to invite by URL, or use /room invite NAME --ssh'];
 }

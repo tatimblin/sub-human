@@ -104,15 +104,21 @@
    "id": "status-line",
    "kind": "api",
    "feature": "status",
-   "surface": "$.ui.status and $.ui.log (2,000 characters drawn)",
+   "surface": "the PromptHint line's tail (the terminal's only), and $.ui.log (2,000 characters drawn)",
    "typings": [
-    "status: (text: string | undefined) => void;",
+    {
+     "in": "PromptHint: {",
+     "has": [
+      "tail?: string;",
+      "hint: string;"
+     ]
+    },
     "log: (text: string, options?: UiLogOptions) => void;"
    ],
    "checked": [
     "2.1.330"
    ],
-   "note": "The room's line (R15b): its own row through $.ui.status, which Claude Code draws as '⚠ sub-human: …' (docs/internals/v2-status-line.md). $.ui.log for one-line notices and debug lines."
+   "note": "The room's line (R15b) at the end of the dim hint under the prompt (PromptHint's tail), not $.ui.status, which Claude Code draws as '⚠ sub-human: …' (docs/internals/v2-status-line.md); no line where no terminal draws the hint. $.ui.log for one-line notices and debug lines."
   },
   {
    "id": "ask-card",
@@ -140,6 +146,41 @@
     "2.1.330"
    ],
    "note": "The full plan, scrollable. An unasked pane only places from 144 columns, so it opens from the card."
+  },
+  {
+   "id": "invite-band",
+   "kind": "api",
+   "feature": "invite-band",
+   "surface": "ui.render on AbovePrompt (yields to a survey, redrawn by $.ui.invalidate); Button onPress with a letter hotkey; $.ui.copy to the pressing surface",
+   "typings": [
+    "'ui.render': RenderInput;",
+    {
+     "in": "AbovePrompt: {",
+     "has": [
+      "hasSurvey: boolean;",
+      "bodyColumns: number;"
+     ]
+    },
+    "invalidate: (event: InvalidatableEventName) => void;",
+    {
+     "in": "export type ButtonProps = {",
+     "has": [
+      "hotkey?: string;",
+      "onPress: ((e: UiPressArgument) => void) | ((e: UiPressArgument) => Promise<unknown>);"
+     ]
+    },
+    "copy: (args: UiCopyArgs) => Promise<UiCopyResult>;",
+    {
+     "in": "export type UiPressArgument = {",
+     "has": [
+      "surface: RenderSurface;"
+     ]
+    }
+   ],
+   "checked": [
+    "2.1.330"
+   ],
+   "note": "The row shown while the person is alone in their room (R30): a button per way in, then the line with copy and cancel. Early access: clicks land only in fullscreen; elsewhere ctrl+x tab focuses the band. No digit hotkeys: a bare digit in an empty prompt presses a band Button."
   },
   {
    "id": "exit-plan-mode",
@@ -308,15 +349,22 @@
    "id": "command-hooks",
    "kind": "api",
    "feature": "core",
-   "surface": "command hooks in hooks.json: UserPromptExpansion (the /sub-human command), SessionEnd",
+   "surface": "command hooks in hooks.json: UserPromptExpansion (the /room command), SessionEnd; the module declares /room immediate ($.command.register)",
    "typings": [
     "hook_event_name: 'UserPromptExpansion';",
-    "hook_event_name: 'SessionEnd';"
+    "hook_event_name: 'SessionEnd';",
+    "register: (command: CommandSpec) => Promise<OpValueOf['command.register']>;",
+    {
+     "in": "export type CommandSpec = {",
+     "has": [
+      "immediate?: true;"
+     ]
+    }
    ],
    "checked": [
     "2.1.330"
    ],
-   "note": "Documented; they survive managed-machine policy, which can refuse the module."
+   "note": "Documented; they survive managed-machine policy, which can refuse the module. Declared immediate, a /room typed mid-turn runs at once instead of queueing behind the turn (no verb needs the model)."
   },
   {
    "id": "command-run-empty-answer",
@@ -330,7 +378,7 @@
    "checked": [
     "2.1.330"
    ],
-   "reason": "A /sub-human answer must be one plain line: a {text} answer echoes the typed command (a join line's secret) into the transcript, and the classic UserPromptExpansion block draws 'UserPromptExpansion operation blocked by hook:'.",
+   "reason": "A /room answer must be one plain line: a {text} answer echoes the typed command (a join line's secret) into the transcript, and the classic UserPromptExpansion block draws 'UserPromptExpansion operation blocked by hook:'.",
    "fallback": "The classic hook answers, inside Claude Code's 'blocked by hook' frame.",
    "request": "Document that an empty command.run answer adds no row (not yet filed).",
    "note": "Only for origin composer with no pasted blocks before it; the SDK, the bridge and -p echo the line. module/command.ts; docs/internals/v2-command-answer.md."

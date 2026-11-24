@@ -124,7 +124,7 @@ test('after /clear the session follows on under its new id, and its new conversa
   await room.poll(clock)
   await room.as('bob').finding('the store pages by cursor now')
   await room.poll(clock)
-  expect(room.status.at(-1)).toBe(`${room.code} ● bob`)
+  expect(await room.line($)).toBe(`Room ● bob`)
   expect(room.logs).toEqual([]) // an update that bears on nothing of mine is news's, not a line
   expect(room.requests.filter(r => r.op === 'ping').at(-1)).toMatchObject({ session: 'session-2' })
   expect(mechanicsOf(await $.prompt.submit(typed('again')))).toHaveLength(1)

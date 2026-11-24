@@ -5,8 +5,8 @@ import type { ActivityDoc, RoomState } from '../core/entries.js';
 import type { Gated } from '../config.js';
 import type { LinkStatus, Pointer } from '../core/api.js';
 
-/** The /sub-human command's name in a prompt.submit, as Claude Code gives it. */
-export const COMMAND: RegExp = /^(?:sub-human:)?sub-human$/;
+/** The /room command's name in a prompt.submit, as Claude Code gives it. */
+export const COMMAND: RegExp = /^(?:sub-human:)?room$/;
 
 export interface InRoom {
   readonly home: string; readonly code: string; readonly name: string; readonly title: string;
@@ -54,12 +54,16 @@ export interface Session {
   off: readonly Gated[];
   /** The room's host can't be reached (R34): its link is host_away or offline. */
   away: boolean;
-  /** The room a /sub-human join is waiting to be let into (R30), until its pointer appears or the link stops. */
+  /** The room a /room join is waiting to be let into (R30), until its pointer appears or the link stops. */
   joining: string | null;
+  /** My room is hosted on this machine (its link is none): only a host invites. */
+  hosted: boolean;
+  /** The room this session's /room just made, for the invite row's wording. */
+  opened: string | null;
 }
 export const fresh = (): Session => ({
   room: null, state: null, queue: [], touched: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', waiting: [], wakes: [], turns: { started: 0, ended: 0, at: 0 }, drawn: 0, recheck: false, told: false,
-  titled: '', said: [], off: [], away: false, joining: null,
+  titled: '', said: [], off: [], away: false, joining: null, hosted: false, opened: null,
 });
 export const session: Session = fresh();
 
@@ -85,7 +89,7 @@ export function once(s: Session, key: string): boolean {
 export function off(s: Session, f: Gated): boolean { return s.off.includes(f); }
 
 /**
- * The one line a /sub-human join under way ends with (R30): in, once the daemon wrote this session's pointer; or why
+ * The one line a /room join under way ends with (R30): in, once the daemon wrote this session's pointer; or why
  * not, once the room's link stopped. Null while it waits, and for a session that joined some other way.
  */
 export function joined(s: Session, p: Pointer | null, l: LinkStatus | null): string | null {
@@ -115,5 +119,5 @@ const OUR_TITLE = /^\S+\.[a-z]+-\d{4}$/;
 
 /** What the session knew of a room it is no longer in. */
 export function forget(s: Session): void {
-  Object.assign(s, { state: null, queue: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', waiting: [], wakes: [], away: false });
+  Object.assign(s, { state: null, queue: [], mine: null, held: 0, feed: [], fed: 0, read: { news: 0, since: 0 }, shown: '', waiting: [], wakes: [], away: false, hosted: false });
 }

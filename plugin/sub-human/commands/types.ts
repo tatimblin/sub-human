@@ -1,4 +1,4 @@
-// What every /sub-human verb is handed and answers. The verbs write nothing themselves: each write is one call to the
+// What every /room verb is handed and answers. The verbs write nothing themselves: each write is one call to the
 // daemon (Daemon), and reads go through Rooms and Sessions, so a test hands them in over memory stores.
 import type { Config } from '../config.js';
 import type { Answers, Joining, Pathway, Pointer, Request } from '../core/api.js';
@@ -18,9 +18,9 @@ export interface Daemon {
   putDoc(code: string, doc: MemberDoc): Promise<Result<unknown>>;
   /** The host's: `by` removes `name` for good, or the daemon says why not. */
   kick(code: string, name: string, by: string): Promise<Result<unknown>>;
-  /** `join`: a bare /sub-human, the room picked and joined on the daemon's chain (core/api.ts). */
+  /** `join`: a bare /room, the room picked and joined on the daemon's chain (core/api.ts). */
   join(req: Omit<Extract<Request, { op: 'join' }>, 'op'>): Promise<Result<Answers['join']>>;
-  /** `leave`: `/sub-human leave`; `left` only when no other pointer or pending handoff holds the name. */
+  /** `leave`: `/room leave`; `left` only when no other pointer or pending handoff holds the name. */
   leave(id: string): Promise<Result<unknown>>;
   /** `retire`: the session ended; its pointer goes and the member is away. Never a `left`. */
   retire(id: string): Promise<Result<unknown>>;

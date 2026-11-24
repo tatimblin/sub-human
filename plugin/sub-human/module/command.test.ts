@@ -1,4 +1,4 @@
-// command.ts: `/sub-human …` typed at my prompt is answered by the module as one plain line: the verbs run in the
+// command.ts: `/room …` typed at my prompt is answered by the module as one plain line: the verbs run in the
 // command hook beneath (node), the answer is a `$.ui.log` line, and the hook answers `{}`, which runs no expansion (no
 // "blocked by hook" frame), echoes nothing and starts no turn. Elsewhere the classic hook answers (C1).
 import { expect, mock, test } from 'claude-code/testing'
@@ -7,10 +7,10 @@ import { CWD, END, HOME, START, SESSION, expandReply, seedRoom, slash } from '..
 
 const HOME_KNOB = ['SUB', 'HUMAN', 'HOME'].join('_')
 
-const OPENED = 'You opened room heron-2988 as alice. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.'
+const OPENED = 'You opened room heron-2988 as alice. Others on this machine type /room to join; /room invite NAME brings someone from another machine.'
 const LINE = 'ssh://devbox/heron-2988#7Q2M9K4R1T6V8X3Z5B0C2D4F6G'
 
-test('a typed /sub-human runs its verb in the command hook beneath and draws the answer as one plain line, nothing else', async ($, on) => {
+test('a typed /room runs its verb in the command hook beneath and draws the answer as one plain line, nothing else', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: [], now: clock.now, env: { SUB_HUMAN_NAME: 'alice' } })
   room.pointer(null)
@@ -38,12 +38,23 @@ test('a join line and its PIN go to the command hook alone: never drawn, echoed 
   room.answer = expandReply('Asked the host to let you in.')
   expect(await $.command.run(slash(`join ${LINE} 4821`))).toEqual({})
   expect(room.logs).toEqual(['Asked the host to let you in.'])
-  expect(JSON.stringify([room.logs, room.debug, room.submitted, room.status])).not.toContain('7Q2M9K4R')
+  expect(JSON.stringify([room.logs, room.debug, room.submitted, await room.line($)])).not.toContain('7Q2M9K4R')
   expect(JSON.parse(room.ran[0]?.stdin ?? '')).toMatchObject({ command_args: `join ${LINE} 4821` })
   await $.session.end(END)
 })
 
-test('a /sub-human that is not the person\'s own goes on to the classic hook beneath', async ($, on) => {
+test('/room is declared immediate: typed mid-turn it runs at once, never queued behind the turn', async ($, on) => {
+  const clock = mock.clock(on)
+  const declared: unknown[] = []
+  on('command.register', (_, e) => { declared.push(e); return { value: { command: e.name } } })
+  const room = await seedRoom(on, { me: 'alice', others: [], now: clock.now })
+  await $.session.start(START)
+  await room.settled(clock)
+  expect(declared).toEqual([expect.objectContaining({ name: 'room', immediate: true })]) // people type /room
+  await $.session.end(END)
+})
+
+test('a /room that is not the person\'s own goes on to the classic hook beneath', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   on('command.run', () => ({ text: 'the classic hook' }))
@@ -62,7 +73,7 @@ test('a command hook that answers nothing readable is one line; one policy refus
   await room.settled(clock)
   room.answer = ''
   expect(await $.command.run(slash('who'))).toEqual({})
-  expect(room.logs).toEqual(["/sub-human didn't answer."])
+  expect(room.logs).toEqual(["/room didn't answer."])
   room.answer = ''
   expect(room.logs).toHaveLength(1)
   room.broken.run = true // policy refuses the run: the classic hook beneath answers, as with the module off

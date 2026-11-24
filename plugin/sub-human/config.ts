@@ -7,7 +7,7 @@ import { parsePort } from './core/host-rules.js';
 import { homeDir } from './home.js';
 
 /** The features SUB_HUMAN_CC_OFF can turn off: the module's parts that rest on a Claude Code surface a release may break. */
-export const GATED = ['wake', 'messages', 'tasks-bridge'] as const;
+export const GATED = ['wake', 'messages', 'tasks-bridge', 'invite-band'] as const;
 export type Gated = (typeof GATED)[number];
 export interface Config {
   readonly home: string;

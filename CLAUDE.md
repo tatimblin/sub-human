@@ -23,7 +23,7 @@ proof of concept. User docs: `plugin/sub-human/README.md`.
   - `module/` the hooks module (`register.ts` wires the parts): capture, follow, context, status and news, messages,
     wake, plans (author, review, cards, pending, notes), tasks (tool and native bridge), tools, admit (Let in cards),
     `bridge.ts` (the daemon's socket), `session.ts` (the parts' shared plain data).
-  - `commands/` one file per `/sub-human` verb, `hooks.ts` the four command hooks of `hooks/hooks.json`.
+  - `commands/` one file per `/room` verb, `hooks.ts` the four command hooks of `hooks/hooks.json`.
   - `net/` the daemon only: `daemon.ts` and `daemon/` (rooms, pointers, the net ops, client), `channel.ts` (Noise
     XK), `pathways/` (tailscale, ssh, pipe), `host.ts`, `link.ts`, `invite.ts`, `proxy-v2.ts`.
   - top level: `cli.ts` (the one node entry; `hooks/node.sh` finds node), `keys.ts`, `home.ts`, `config.ts`,

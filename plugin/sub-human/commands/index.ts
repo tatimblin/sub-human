@@ -1,4 +1,4 @@
-// Every /sub-human verb, by its first word; anything else is a name or a room code for the bare join (bare.ts). Each
+// Every /room verb, by its first word; anything else is a name or a room code for the bare join (bare.ts). Each
 // verb's file is loaded only when it runs.
 import type { VerbName } from '../core/join.js';
 import type { Answer, Ctx, Verb } from './types.js';
@@ -17,7 +17,7 @@ const VERBS: Readonly<Record<VerbName, () => Promise<Verb>>> = {
 
 const isVerb = (w: string): w is VerbName => Object.hasOwn(VERBS, w);
 
-/** The command's words after `/sub-human`, as Claude Code passes them. */
+/** The command's words after `/room`, as Claude Code passes them. */
 export async function runCommand(text: string, ctx: Ctx): Promise<Answer> {
   const words = text.trim().split(/\s+/).filter(w => w !== '');
   const [first = '', ...rest] = words;

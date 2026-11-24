@@ -16,7 +16,7 @@ test('share, read and plan are registered for the model once the session is in a
   await $.session.start(START)
   await room.settled(clock)
   expect(room.registered).toEqual([])
-  room.pointer('session-1') // a /sub-human join
+  room.pointer('session-1') // a /room join
   await room.poll(clock)
   await room.poll(clock)
   expect(room.registered).toEqual(['share', 'read', 'plan', 'task'])

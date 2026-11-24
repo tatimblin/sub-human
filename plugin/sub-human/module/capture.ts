@@ -37,7 +37,7 @@ export function registerCapture(on: On): void {
     }
     const bridged = bridgeCall(r, tasks, room, session.state);
     if (bridged && off(session, 'tasks-bridge')) {
-      if (once(session, 'off tasks-bridge')) $.ui.log(`sub-human isn't updating ${room.code}'s tasks from your task list here (SUB_HUMAN_CC_OFF); /sub-human tasks shows them.`);
+      if (once(session, 'off tasks-bridge')) $.ui.log(`sub-human isn't updating ${room.code}'s tasks from your task list here (SUB_HUMAN_CC_OFF); /room tasks shows them.`);
     } else if (bridged === 'already') $.ui.log(`sub-human: room ${room.code} already shows that task change`, { to: 'debug' });
     else if (bridged) {
       const q = request(bridged, room.home);

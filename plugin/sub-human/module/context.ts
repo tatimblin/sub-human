@@ -13,7 +13,7 @@ export function registerContext(on: On): void {
     session.drawn = 0; // the line cap is per prompt (R41)
     // a prompt typed at an idle session (no turnId) means no turn runs: a start whose end never came is over (wake.ts)
     if (e.turnId === undefined && e.origin.kind !== 'plugin') session.turns.ended = Math.max(session.turns.ended, session.turns.started);
-    if (e.command) return next(e); // command.ts answers /sub-human; no command takes context
+    if (e.command) return next(e); // command.ts answers /room; no command takes context
     const room = session.room;
     if (!room) return next(e);
     const blocks = [...(session.told ? [] : [mechanics(room.name, room.code)]), ...(session.queue.length ? [context(session.queue, room.code)] : [])];

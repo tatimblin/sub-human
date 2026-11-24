@@ -8,7 +8,9 @@ import type { Pending } from './plans-pending.js';
 import { summary } from './plans-pending.js';
 
 // the cards' labels: at approval, on sending, and on a review
-const [KEEP, ROOM, TO_ROOM, NOBODY] = ['Keep it', 'Room plan', 'Send to the room', 'Nobody yet'];
+const [KEEP, ROOM, TO_ROOM, NOBODY, EVERYONE] = ['No', 'Get agreement', 'Send to the room', 'Nobody yet', 'Everyone in the room'];
+/** The approval card's question; plans.ts finds the card by it to put each option's line under it. */
+export const SHARE_QUESTION = 'Share this plan?';
 export const SEND = 'Send it';
 export const DONT = "Don't send";
 const [AGREE, CHANGES, READ, ACCEPT, DISMISS] = ['Agree', 'Ask for changes', 'Read the full plan', 'Accept', 'Dismiss'];
@@ -49,35 +51,60 @@ export type Approval =
 
 /**
  * At approval (R18). The next version of a room plan this session stored (`stored`: its name → the plan file it came
- * from, '' from the plan tool) is obvious, and asks nothing. Otherwise the person picks: keep it, a room plan, or send
- * it to a member here; first, a new version of a room plan of the same name they are on.
+ * from, '' from the plan tool) is obvious, and asks nothing. Otherwise the person picks: keep it, get agreement (a room
+ * plan, then who must agree), or send it (then to whom); first, a new version of a room plan of the same name they
+ * are on.
  */
-export function approval(s: RoomState, me: string, code: string, text: string, file: string, stored: ReadonlyMap<string, string>): Approval {
+export function approval(s: RoomState, me: string, text: string, file: string, stored: ReadonlyMap<string, string>): Approval {
   const name = [...stored].find(([, f]) => f && f === file)?.[0] ?? planName(text);
   const plan = s.plans.find(p => p.name === name && p.scope === 'group');
   const at = plan?.versions.at(-1);
   const revision = plan && at && onPlan(plan, me) ? { name, base: at.version, people: [...new Set([at.from, ...at.asked])].filter(p => p !== me && memberNamed(s, p)) } : undefined;
   if (revision && stored.has(name)) return { kind: 'revision', revision };
-  const first = [...(revision ? [revise(name)] : []), KEEP, ROOM];
-  const here = others(s, me).filter(isHere).map(m => `Send to ${m.name}`);
-  const options = [...first, ...here, TO_ROOM].slice(0, 4);
-  return { kind: 'ask', name, card: { question: `Share your plan with ${code}? To send it to someone else, type their name under Other.`, options }, ...(revision && { revision }) };
+  const options = [...(revision ? [revise(name)] : []), KEEP, ROOM, TO_ROOM];
+  return { kind: 'ask', name, card: { question: SHARE_QUESTION, options }, ...(revision && { revision }) };
+}
+
+/** The line under an approval option: what picking it does; none for a new version, which says it all. */
+export function described(label: string): string | undefined {
+  if (label === KEEP) return 'keep it local';
+  if (label === ROOM) return 'share for input and approval';
+  return label === TO_ROOM ? 'share without waiting on approval' : undefined;
 }
 
 const revise = (name: string): string => `New version of ${oneLine(name, 40)}`;
 
-export type Choice = { readonly kind: 'keep'; readonly line?: string } | { readonly kind: 'room' } | { readonly kind: 'revise' } | { readonly kind: 'send'; readonly to?: string };
+/** A send's `to`: the members it goes to, [] for the whole room, absent while the recipients card is still to ask. */
+export type Choice = { readonly kind: 'keep'; readonly line?: string } | { readonly kind: 'room' } | { readonly kind: 'revise' } | { readonly kind: 'send'; readonly to?: readonly string[] };
 
 /** The approval card's answer (null: dismissed, which keeps the plan). */
 export function choice(picked: string | null, a: Extract<Approval, { kind: 'ask' }>, s: RoomState, me: string, code: string): Choice {
   if (picked === null || picked === KEEP) return { kind: 'keep' };
   if (picked === ROOM) return { kind: 'room' };
   if (a.revision && picked === revise(a.name)) return { kind: 'revise' };
+  if (picked === TO_ROOM) return { kind: 'send' };
+  // typed under Other: a member's name sends it to them
   const said = picked.replace(/^\s*send(?: it)? to\s+/i, '').trim();
-  if (/^(?:the )?room$/i.test(said)) return { kind: 'send' };
+  if (/^(?:the )?room$/i.test(said)) return { kind: 'send', to: [] };
   const to = memberNamed(s, said);
-  if (to && to !== me) return { kind: 'send', to };
-  return { kind: 'keep', line: `sub-human: ${code} has no member named ${oneLine(said, 64)}; your plan stays yours.` };
+  if (to && to !== me) return { kind: 'send', to: [to] };
+  return { kind: 'keep', line: noMember(code, said) };
+}
+const noMember = (code: string, said: string): string => `sub-human: ${code} has no member named ${oneLine(said, 64)}; your plan stays yours.`;
+
+/** Who gets a plan sent to the room: each member here, or everyone; null when nobody else is here (it goes to the room). */
+export function recipientsCard(s: RoomState, me: string, name: string): Card | null {
+  const here = others(s, me).filter(isHere).map(m => m.name);
+  if (!here.length) return null;
+  return { question: `Who gets ${name}? Pick them, or type a name under Other.`, options: [...here.slice(0, 3), EVERYONE], multiSelect: true };
+}
+
+/** The recipients card's answer: the members picked or typed ([] for everyone), or keep the plan (dismissed, nobody known). */
+export function recipients(picked: string | null, s: RoomState, me: string, code: string): Extract<Choice, { kind: 'keep' | 'send' }> {
+  if (picked === null) return { kind: 'keep' };
+  if (picked.includes(EVERYONE)) return { kind: 'send', to: [] };
+  const to = [...new Set(picked.split(/[,\s]+/).flatMap(n => memberNamed(s, n) ?? []))].filter(n => n !== me);
+  return to.length ? { kind: 'send', to } : { kind: 'keep', line: noMember(code, picked) };
 }
 
 /**
@@ -109,8 +136,9 @@ export function reviewers(picked: string | null, s: RoomState, me: string): stri
   return [...new Set(named)].filter(n => n !== me);
 }
 
-export function sendCard(name: string, to: string | undefined): Card {
-  return { question: `Send ${name} to ${to ?? 'the room'}? Type a note for them under Other, or send it as it is.`, options: [SEND, DONT] };
+/** The note card before a send to `to` (names, or 'the room'). */
+export function sendCard(name: string, to: string): Card {
+  return { question: `Send ${name} to ${to}? Type a note for them under Other, or send it as it is.`, options: [SEND, DONT] };
 }
 
 export function reviewCard(p: Pending, before: string | null, after: string): Card {

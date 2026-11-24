@@ -33,7 +33,7 @@ export function registerAtRoom(on: On): void {
   on('prompt.submit', { origin: { kind: 'composer' } }, async ($, e, next) => {
     if (e.command || !AT_ROOM.test(e.text)) return next(e);
     const room = session.room;
-    if (!room) return { drop: "sub-human: you're in no room, so nothing was sent. /sub-human joins one." };
+    if (!room) return { drop: "sub-human: you're in no room, so nothing was sent. /room joins one." };
     const line = roomLine(e.text, room, session.state, crypto.randomUUID());
     if (!line.ok) return { drop: `sub-human: ${line.error}` };
     const q = request({ op: 'append', code: room.code, draft: line.value }, room.home);

@@ -15,7 +15,7 @@ export const PANE = { title: 'plan', isFocused: true, bodyColumns: 100, placemen
 export const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer' } }) as const
 
 const Asked = v.looseObject({
-  questions: v.tuple([v.looseObject({ question: v.string(), header: v.optional(v.string()), multiSelect: v.optional(v.boolean()), options: v.array(v.looseObject({ label: v.string() })) })]),
+  questions: v.tuple([v.looseObject({ question: v.string(), header: v.optional(v.string()), multiSelect: v.optional(v.boolean()), options: v.array(v.looseObject({ label: v.string(), description: v.optional(v.string()) })) })]),
 })
 
 export interface Card { readonly question: string; readonly options: readonly string[]; readonly multiSelect: boolean }
@@ -23,8 +23,9 @@ export interface Card { readonly question: string; readonly options: readonly st
 export interface PlanWorld {
   /** The plan text the next approval carries. */
   plan: string
-  /** Every card the module asked, in order. */
+  /** Every card the module asked, in order, and the line under each of its options ('' for none). */
   readonly asked: Card[]
+  readonly described: string[][]
   /** The answers the next cards get, in order: a label, typed text, or null for a dismissed card. */
   answer(...picks: (string | null)[]): void
   readonly opened: string[]
@@ -47,7 +48,7 @@ export const PLAN_FILE: string = APPROVED.filePath
 export function planWorld(on: On, o: { branch?: string; isAgent?: boolean; placed?: false } = {}): PlanWorld {
   const picks: (string | null)[] = []
   const open = new Set<string>()
-  const w: PlanWorld = { plan: APPROVED.plan, asked: [], answer: (...p) => { picks.push(...p) }, escape: id => { open.delete(id) }, opened: [], closed: [], writes: [], configs: [], tools: [] }
+  const w: PlanWorld = { plan: APPROVED.plan, asked: [], described: [], answer: (...p) => { picks.push(...p) }, escape: id => { open.delete(id) }, opened: [], closed: [], writes: [], configs: [], tools: [] }
   on('tool.call', (_, e) => {
     if (e.tool === 'ExitPlanMode') return { result: { ...APPROVED, plan: w.plan, ...(o.isAgent && { isAgent: true }) }, text: RECORDED.text }
     w.tools.push(e.tool)
@@ -55,6 +56,7 @@ export function planWorld(on: On, o: { branch?: string; isAgent?: boolean; place
     const asked = v.parse(Asked, e).questions
     const q = asked[0]
     w.asked.push({ question: q.question, options: q.options.map(x => x.label), multiSelect: q.multiSelect === true })
+    w.described.push(q.options.map(x => x.description ?? ''))
     const pick = picks.shift()
     if (pick === undefined) throw new Error(`no answer scripted for "${q.question}"`)
     if (pick === null) throw new Error('dismissed')

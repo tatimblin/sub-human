@@ -1,4 +1,4 @@
-// `/sub-human leave`: this session leaves its room and keeps going (R3). Ending the session only marks it away.
+// `/room leave`: this session leaves its room and keeps going (R3). Ending the session only marks it away.
 import type { Ctx, Membership, Verb } from './types.js';
 import { refused, say } from './types.js';
 import type { Result } from '../core/result.js';

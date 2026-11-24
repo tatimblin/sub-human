@@ -1,10 +1,10 @@
 // follow: watches my room (ARCHITECTURE §7 "Live update" step 3). It finds the room through this session's pointer,
 // reads the room as it stands, then each poll reads the small tail file and, only when it moved, the log by byte ranges
 // and (when its documents stamp moved) the document folders; follow-lines.ts absorb() says what that is for me. The
-// pointer is read again after a /sub-human command, a /clear or resume (the id changes and no session.start fires) and
+// pointer is read again after a /room command, a /clear or resume (the id changes and no session.start fires) and
 // every PING_MS, when the session pings the daemon: a pointer gone is a leave, and following stops quietly. A session
-// in no room pings too, every poll until one gets through under its id, then each PING_MS, so /sub-human knows the
-// module runs here (C1). After /sub-human join,
+// in no room pings too, every poll until one gets through under its id, then each PING_MS, so /room knows the
+// module runs here (C1). After /room join,
 // the daemon writes the pointer once the host lets this machine in (R30): its appearing is drawn as one line. The link
 // to a room hosted elsewhere is asked at each ping, so the status line says when its host is away (R34).
 import type { On } from 'claude-code';
@@ -133,7 +133,7 @@ export function registerFollow(on: On): void {
       const line = c.state ? statusLine(c.state.room, room, session.held, session.away) : session.shown;
       if (line === session.shown) return;
       session.shown = line;
-      $.ui.status(line);
+      $.ui.invalidate('ui.render'); // status.ts draws it at the end of the prompt's hint
     };
     // colleagues' Claudes' direct messages (R6), which the daemon keeps for this session until taken; a daemon that
     // doesn't answer is the ping's to say
@@ -168,7 +168,7 @@ export function registerFollow(on: On): void {
         if (was) {
           c = freshCursor();
           forget(session);
-          $.ui.status(undefined);
+          $.ui.invalidate('ui.render');
         }
         session.room = p && { home, code: p.code, name: p.name, title: p.title, dir: roomDir(home, await fileKey(p.code)), ...await where() };
         // a room this session was in as it started (a compact, a resume, a /clear's handoff): the SessionStart hook gave
@@ -182,7 +182,7 @@ export function registerFollow(on: On): void {
         const r = await $.http.fetch(q.url, q).then(x => readAnswer('ping', x), (x: unknown) => err(why(x)));
         if (r.ok) pinged = { id, at: now };
         for (const n of r.ok ? r.value?.notes ?? [] : []) $.ui.log(n, { to: 'debug' }); // the daemon's (a room swept)
-        if (!r.ok && p) say(`sub-human didn't answer, so ${p.code} may show you away: ${r.error}. /sub-human doctor says why.`, 'ping');
+        if (!r.ok && p) say(`sub-human didn't answer, so ${p.code} may show you away: ${r.error}. /room doctor says why.`, 'ping');
       }
       const code = p?.code ?? session.joining;
       const q = code === null ? null : request({ op: 'link', code }, home);
@@ -191,6 +191,7 @@ export function registerFollow(on: On): void {
       const line = joined(session, p, l);
       if (line !== null) $.ui.log(line);
       if (!p) return;
+      session.hosted = got?.ok === true && got.value === null;
       const away = hostAway(l?.phase);
       if (away !== session.away && session.room) { session.away = away; shown(session.room); }
       if (!registered) { // Claude's tools, from the next prompt on, once this session is in a room

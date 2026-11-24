@@ -22,9 +22,9 @@ const internal = (search: string[], unverified?: string): Internal => ({
 });
 const file = (entries: unknown[]): unknown => ({ note: 'n', probed: '2.1.330', entries });
 
-test('the committed contract: 18 to 24 entries, internals within the cap, each with its reason, fallback and request', () => {
+test('the committed contract: 18 to 25 entries, internals within the cap, each with its reason, fallback and request', () => {
   const c = committed();
-  assert.ok(c.entries.length >= 18 && c.entries.length <= 24, `${c.entries.length} entries`);
+  assert.ok(c.entries.length >= 18 && c.entries.length <= 25, `${c.entries.length} entries`);
   const internals = c.entries.filter(e => e.kind === 'internal');
   assert.ok(internals.length <= 5, `${internals.length} internal entries; ARCHITECTURE §9 lists 5`);
   for (const e of internals) assert.ok(e.reason && e.fallback && e.request, e.id);

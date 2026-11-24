@@ -12,8 +12,8 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: /sub-human doctor
-      description: The output of `/sub-human doctor` (or `node <plugin root>/scripts/sub-human doctor --bundle` in a shell). It leaves out secrets and PINs, but look it over before you paste.
+      label: /room doctor
+      description: The output of `/room doctor` (or `node <plugin root>/scripts/sub-human doctor --bundle` in a shell). It leaves out secrets and PINs, but look it over before you paste.
       render: text
     validations:
       required: true

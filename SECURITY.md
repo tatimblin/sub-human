@@ -12,7 +12,7 @@ fix's release notes if you want to be.
 The threat is **outsiders**: someone who isn't in a room reading it, writing to it, or impersonating its host. Inside
 a room, members and their Claudes are trusted collaborators.
 
-- **Admission.** `/sub-human invite NAME` makes one line holding a 128-bit secret and the host's public key. The line
+- **Admission.** `/room invite NAME` makes one line holding a 128-bit secret and the host's public key. The line
   works once, for 15 minutes. It is made for NAME, but the line does not enforce the name: the card shows the name the
   joiner gave and the name the invite was for, and the host decides. The secret travels only inside an encrypted
   channel keyed to the host's key, so it never reaches anyone but the real host, and the proof of it is compared in
@@ -23,7 +23,7 @@ a room, members and their Claudes are trusted collaborators.
   people compare. A second use of a line, even at the same moment as the first, refuses both dials and alerts the host.
 - **The channel.** Every connection, over Tailscale (Funnel or Serve) or ssh, runs Noise XK
   (`Noise_XK_25519_ChaChaPoly_SHA256`, on `node:crypto`, checked against the published test vectors in CI). Each
-  joining machine proves a key of its own; that key is its access, and `/sub-human kick NAME` ends it for good.
+  joining machine proves a key of its own; that key is its access, and `/room kick NAME` ends it for good.
 - **Behind Funnel.** Each connection's real source comes from a PROXY v2 header and is limited per source (an IPv6
   source per /64) and in all, with room kept for ssh connections, which have a cap of their own; writes, messages
   and resubscribes are rate-limited per machine.

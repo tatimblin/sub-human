@@ -56,7 +56,7 @@ function run(name: string, stdin: unknown, home: string, env: NodeJS.ProcessEnv 
   });
   return { out: r.stdout, err: r.stderr, exit: r.status };
 }
-const expansion = (args: string) => ({ ...hookFixture('hook-user-prompt-expansion-steps', 'UserPromptExpansion'), command_name: 'sub-human', command_args: args });
+const expansion = (args: string) => ({ ...hookFixture('hook-user-prompt-expansion-steps', 'UserPromptExpansion'), command_name: 'room', command_args: args });
 const start = hookFixture('hook-session-start-steps', 'SessionStart');
 
 after(async () => {
@@ -77,7 +77,7 @@ test('node.sh expand help: one block, nothing on stderr', () => {
   assert.deepEqual([r.err, r.exit], ['', 0]);
   const out: unknown = JSON.parse(r.out);
   assert.ok(typeof out === 'object' && out !== null && Reflect.get(out, 'decision') === 'block');
-  assert.match(String(Reflect.get(out, 'reason')), /^sub-human: \/sub-human \[NAME\]/);
+  assert.match(String(Reflect.get(out, 'reason')), /^sub-human: \/room \[NAME\]/);
 });
 
 test('node.sh, through the real daemon: no join before the module pings (C1); then a join, its title at the next SessionStart, and SessionEnd removing its pointer', async () => {

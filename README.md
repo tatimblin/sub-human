@@ -15,7 +15,7 @@ or copying between chats.
 /plugin install sub-human@sub-human
 ```
 
-Then type `/sub-human` in each person's session. The plugin's [README](plugin/sub-human/README.md) has the rest:
+Then type `/room` in each person's session. The plugin's [README](plugin/sub-human/README.md) has the rest:
 commands, inviting someone from another machine over Tailscale or ssh, plans, tasks, what is shared and what never is.
 
 ## Why

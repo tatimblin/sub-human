@@ -57,7 +57,7 @@ export class Pointers {
     return ok({ title });
   }
 
-  /** `/sub-human leave`: `left` only when no other pointer or pending handoff holds the name. */
+  /** `/room leave`: `left` only when no other pointer or pending handoff holds the name. */
   async leave(id: string): Promise<Result<null>> {
     const p = await this.read(id);
     if (!p) return ok(null); // already left

@@ -29,7 +29,7 @@ const title = (t: string): Reply => ({ out: { hookSpecificOutput: { hookEventNam
 
 export const HOOKS: Readonly<Record<Hook, Handler>> = {
   /**
-   * UserPromptExpansion of /sub-human: a block ends the expansion with the answer for the person and no model turn,
+   * UserPromptExpansion of /room: a block ends the expansion with the answer for the person and no model turn,
    * and the typed prompt is never echoed (a join line may carry a secret).
    */
   expand: hook(v.object({ ...base, command_args: v.optional(v.string(), '') }), async (p, c) => {
@@ -65,7 +65,7 @@ export const HOOKS: Readonly<Record<Hook, Handler>> = {
     return r.ok ? NOTHING : { err: `sub-human: ${m.name} isn't shown as waiting in ${m.code}: ${r.error}`, exit: 1 };
   }),
   /**
-   * SessionEnd: the member is away and the pointer goes; only /sub-human leave leaves the room. /clear and /resume
+   * SessionEnd: the member is away and the pointer goes; only /room leave leaves the room. /clear and /resume
    * hand the pointer on to the next session instead.
    */
   end: hook(v.object({ ...base, reason: v.optional(v.string(), '') }), async (p, c) => {

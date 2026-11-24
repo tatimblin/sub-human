@@ -1,4 +1,4 @@
-// command: `/sub-human …` typed at my prompt, answered here as one plain line with no model turn. The verbs need Node,
+// command: `/room …` typed at my prompt, answered here as one plain line with no model turn. The verbs need Node,
 // which the module hasn't, so the hook runs the command hook beneath it itself (hooks/node.sh expand, the same verbs
 // hooks.json's UserPromptExpansion would run) and draws its answer with `$.ui.log`. It answers `{}`: Claude Code then
 // adds no row at all, so the typed line (an invite's secret) is never echoed and nothing reaches the model, and no
@@ -10,7 +10,9 @@ import type { On } from 'claude-code';
 import * as v from '../vendor/valibot.mjs';
 import { CODE } from '../core/api.js';
 import { FROM_MODULE, KNOBS } from '../config.js';
+import { openedCode } from '../core/join.js';
 import { homeDir } from '../home.js';
+import { why } from '../core/text.js';
 import { COMMAND, session } from './session.js';
 
 /** As long as hooks.json gives the classic hook. */
@@ -18,7 +20,7 @@ export const COMMAND_MS = 15_000;
 /** A run that fails sooner than this was refused before it started. */
 export const REFUSED_MS = 2000;
 const PREFIX = 'sub-human: ';
-export const STILL_WORKING = '/sub-human is still working; check /sub-human who';
+export const STILL_WORKING = '/room is still working; check /room who';
 const Reply = v.object({ reason: v.string() });
 
 /** The answer the classic expand hook printed (`{decision: 'block', reason: 'sub-human: …'}`), or null. */
@@ -30,7 +32,7 @@ export function answerOf(stdout: string): string | null {
   } catch { return null; }
 }
 
-/** The room a `/sub-human join LINE PIN` is for (R30), read off the line; null for any other command. */
+/** The room a `/room join LINE PIN` is for (R30), read off the line; null for any other command. */
 export function joiningOf(args: string): string | null {
   return /^\s*join\s/.test(args) ? (args.split(/[/?#\s]/).find(p => CODE.test(p)) ?? null) : null;
 }
@@ -52,6 +54,14 @@ const HOME_KNOB = KNOBS[0];
 const PASSED: readonly string[] = [...KNOBS, 'HOME', 'PATH'];
 
 export function registerCommand(on: On): void {
+  // the same name as the plugin's markdown command, declared `immediate` so a /room typed mid-turn runs at once
+  // instead of queueing behind the turn: no verb needs the model
+  on('session.start', { isInteractive: true }, async ($, e, next) => {
+    const out = await next(e);
+    await $.command.register({ name: 'room', description: 'Join the room open on this machine, or open one. /room help lists the rest.', argumentHint: '[NAME | who | tasks | leave | invite | help | doctor]', immediate: true })
+      .catch((x: unknown) => { $.ui.log(`sub-human: /room waits for a turn to end here (${why(x)})`, { to: 'debug' }); });
+    return out;
+  });
   on('command.run', { command: COMMAND }, async ($, e, next) => {
     session.joining = joiningOf(e.args);
     session.recheck = true; // a join, leave or kick may have moved this session's pointer
@@ -78,7 +88,9 @@ export function registerCommand(on: On): void {
     }
     session.recheck = true; // the run may have moved the pointer after the first recheck was taken
     const why = run.stderr.trim().split('\n').at(-1)?.replace(PREFIX, '').slice(0, 200);
-    $.ui.log(answerOf(run.stdout) ?? `/sub-human didn't answer${why ? `: ${why}` : ''}.`);
+    const answer = answerOf(run.stdout);
+    session.opened = (answer && openedCode(answer)) ?? session.opened; // the invite row says the room is new (band.ts)
+    $.ui.log(answer ?? `/room didn't answer${why ? `: ${why}` : ''}.`);
     return {};
   });
 }

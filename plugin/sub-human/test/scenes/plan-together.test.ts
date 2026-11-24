@@ -22,7 +22,7 @@ test('one shared plan, asked, changed, agreed for its exact version; then my Cla
   await room.settled(clock)
 
   w.plan = V1
-  w.answer('Room plan', 'bob')
+  w.answer('Get agreement', 'bob')
   await $.tool.call(EXIT.input)
   expect(log().filter(e => e.kind === 'plan_ask')).toMatchObject([{ version: 1, people: ['bob'] }])
 

@@ -39,16 +39,18 @@ async function inRoom($: Engine, on: On, o: { others?: string[]; world?: Paramet
   return { clock, w, room, start }
 }
 
-test('at approval the person is asked once: keep it, a room plan, or send it; keeping it shares nothing (R18, R19)', async ($, on) => {
+test('at approval the person is asked once, Share this plan?: no, get agreement, or send it, each with its line; No shares nothing (R18, R19)', async ($, on) => {
   const { w, room, start } = await inRoom($, on)
   await start()
   w.plan = PAGING
-  w.answer('Keep it')
+  w.answer('No')
   const r = await $.tool.call(EXIT.input)
   expect(w.asked).toEqual([{
-    question: `Share your plan with ${room.code}? To send it to someone else, type their name under Other.`,
-    options: ['Keep it', 'Room plan', 'Send to bob', 'Send to the room'], multiSelect: false,
+    question: 'Share this plan?',
+    options: ['No', 'Get agreement', 'Send to the room'], multiSelect: false,
   }])
+  // each option's line under it, put on the dialog's own call (ui.ask takes labels only)
+  expect(w.described).toEqual([['keep it local', 'share for input and approval', 'share without waiting on approval']])
   expect(r.context ?? []).toEqual([])
   expect(room.requests.filter(q => q.op === 'plan')).toEqual([])
   untouched(w)
@@ -59,7 +61,7 @@ test('a room plan is stored, the people picked are asked, and the approval reach
   const { w, room, start } = await inRoom($, on, { others: ['bob', 'carol'] })
   await start()
   w.plan = PAGING
-  w.answer('Room plan', 'bob, carol')
+  w.answer('Get agreement', 'bob, carol')
   const r = await $.tool.call(EXIT.input)
   expect(w.asked[1]).toEqual({ question: 'Who should agree on cursor-paging v1? Pick them, or type names under Other.', options: ['bob', 'carol', 'Nobody yet'], multiSelect: true })
   expect(entries(room, 'plan')).toMatchObject([{ from: 'alice', name: 'cursor-paging', version: 1, base: 0, scope: 'group' }])
@@ -76,7 +78,7 @@ test('the next version of a room plan this session stored asks nothing: one line
   const { clock, w, room, start } = await inRoom($, on)
   await start()
   w.plan = PAGING
-  w.answer('Room plan', 'bob')
+  w.answer('Get agreement', 'bob')
   await $.tool.call(EXIT.input)
   await room.poll(clock)
   w.plan = `# Paging, revised\n${PAGING}- an empty page has \`next: null\`\n` // the same plan file, even with a new heading
@@ -94,7 +96,7 @@ test('only the session whose person asked waits: its wait survives a restart; an
   const { clock, w, room, start } = await inRoom($, on, { others: ['bob', 'carol'] })
   await start()
   w.plan = PAGING
-  w.answer('Room plan', 'bob')
+  w.answer('Get agreement', 'bob')
   await $.tool.call(EXIT.input)
   // my person's ask from another session of mine (its own tag)
   await room.as('alice').planAct({ act: 'edit', name: 'errors', base: 0, text: '# Errors\n', scope: 'group' })
@@ -109,6 +111,26 @@ test('only the session whose person asked waits: its wait survives a restart; an
   await $.session.end(END)
 })
 
+test('an agree that leaves someone to answer is one line naming them; the one that decides draws only the decision, which the wake doesn\'t repeat', async ($, on) => {
+  const { clock, w, room, start } = await inRoom($, on, { others: ['bob', 'carol'] })
+  await start()
+  w.plan = PAGING
+  w.answer('Get agreement', 'bob, carol')
+  await $.tool.call(EXIT.input)
+  const before = room.logs.length
+  await room.as('bob').planAct({ act: 'answer', name: 'cursor-paging', version: 1, answer: 'agree' })
+  await room.poll(clock)
+  expect(room.logs.slice(before)).toEqual(['bob agreed to plan "cursor-paging" version 1; waiting on carol.'])
+  await room.as('carol').planAct({ act: 'answer', name: 'cursor-paging', version: 1, answer: 'agree' })
+  await room.poll(clock)
+  await room.poll(clock)
+  // the agreed plan's tasks draw lines of their own (split.test.ts); of the agreement, one line
+  expect(room.logs.slice(before + 1).filter(l => /agreed|decided/.test(l))).toEqual(['Plan "cursor-paging" version 1 is decided: it was agreed by bob, carol.'])
+  expect(room.submitted).toHaveLength(1)
+  expect(JSON.stringify(room.submitted)).not.toContain('agreed to plan')
+  await $.session.end(END)
+})
+
 test('a room plan of the same name from before this session is the person\'s choice: a new version of it is the first option', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on)
   await room.as('alice').plan('cursor-paging', PAGING, ['bob'])
@@ -117,7 +139,7 @@ test('a room plan of the same name from before this session is the person\'s cho
   w.plan = `${PAGING}- an empty page has \`next: null\`\n`
   w.answer('New version of cursor-paging')
   await $.tool.call(EXIT.input)
-  expect(w.asked[0]?.options).toEqual(['New version of cursor-paging', 'Keep it', 'Room plan', 'Send to bob'])
+  expect(w.asked[0]?.options).toEqual(['New version of cursor-paging', 'No', 'Get agreement', 'Send to the room'])
   expect(entries(room, 'plan')).toMatchObject([{ version: 1 }, { version: 2, base: 1 }])
   expect(entries(room, 'plan_ask').at(-1)).toMatchObject({ version: 2, people: ['bob'] })
   expect(room.logs).toEqual([]) // the card said it
@@ -132,11 +154,11 @@ test('a new plan never takes another person\'s plan name, and offers no new vers
   await start()
   await room.poll(clock)
   w.plan = PAGING
-  w.answer('Room plan', 'Nobody yet')
+  w.answer('Get agreement', 'Nobody yet')
   const r = await $.tool.call(EXIT.input)
   // nobody asked: nothing to wait for (R21a)
   expect(r.context).toEqual([`sub-human: this approved plan is room plan "cursor-paging-3" v1 in ${room.code}.`])
-  expect(w.asked[0]?.options).toEqual(['Keep it', 'Room plan', 'Send to bob', 'Send to carol'])
+  expect(w.asked[0]?.options).toEqual(['No', 'Get agreement', 'Send to the room'])
   expect(entries(room, 'plan').at(-1)).toMatchObject({ from: 'alice', name: 'cursor-paging-3', version: 1, base: 0, scope: 'group' })
   untouched(w)
   await $.session.end(END)
@@ -169,21 +191,24 @@ test('an approval Claude Code marks a subagent\'s is not shared', async ($, on) 
   await $.session.end(END)
 })
 
-test('send packs the plan with my branch, the files I touched and a note; a typed name sends it to them (R22b)', async ($, on) => {
+test('send asks who gets it (several, or everyone), then packs the plan with my branch, the files I touched and a note (R22b)', async ($, on) => {
   const { clock, w, room, start } = await inRoom($, on, { others: ['bob', 'carol', 'dan'], world: { branch: 'alice/paging' } })
   await room.as('alice').activity({ files: ['src/store.js'] })
   await start()
   await room.poll(clock)
   w.plan = PAGING
-  w.answer('carol', 'the handler half is yours')
+  w.answer('Send to the room', 'carol, dan', 'the handler half is yours')
   const r = await $.tool.call(EXIT.input)
-  expect(w.asked[0]?.options).toEqual(['Keep it', 'Room plan', 'Send to bob', 'Send to carol'])
-  expect(w.asked[1]?.question).toBe('Send cursor-paging to carol? Type a note for them under Other, or send it as it is.')
+  expect(w.asked[1]).toEqual({ question: 'Who gets cursor-paging? Pick them, or type a name under Other.', options: ['bob', 'carol', 'dan', 'Everyone in the room'], multiSelect: true })
+  expect(w.asked[2]?.question).toBe('Send cursor-paging to carol, dan? Type a note for them under Other, or send it as it is.')
   expect(entries(room, 'plan')).toMatchObject([{ name: 'cursor-paging', version: 1, scope: 'personal' }])
-  expect(entries(room, 'plan_sent')).toMatchObject([{
-    from: 'alice', by: 'person', name: 'cursor-paging', version: 1, to: 'carol', branch: 'alice/paging', files: ['src/store.js'], note: 'the handler half is yours',
-  }])
-  expect(r.context).toEqual([`sub-human: your person sent this plan to carol in ${room.code} as cursor-paging v1.`])
+  const packed = { from: 'alice', by: 'person', name: 'cursor-paging', version: 1, branch: 'alice/paging', files: ['src/store.js'], note: 'the handler half is yours' }
+  expect(entries(room, 'plan_sent')).toMatchObject([{ ...packed, to: 'carol' }, { ...packed, to: 'dan' }])
+  expect(r.context).toEqual([`sub-human: your person sent this plan to carol, dan in ${room.code} as cursor-paging v1.`])
+  await room.poll(clock) // the stored version read back, so the same plan is sent again as it is
+  w.answer('Send to the room', 'Everyone in the room', 'Send it')
+  await $.tool.call(EXIT.input)
+  expect(entries(room, 'plan_sent').at(-1)).not.toHaveProperty('to') // the whole room
   untouched(w)
   await $.session.end(END)
 })
@@ -194,11 +219,13 @@ test('a name nobody has keeps the plan, in one line; "Don\'t send" and a dismiss
   w.plan = PAGING
   w.answer('zed')
   await $.tool.call(EXIT.input)
-  w.answer('Send to bob', "Don't send")
+  w.answer('Send to the room', 'bob', "Don't send")
+  await $.tool.call(EXIT.input)
+  w.answer('Send to the room', 'zed') // typed on the recipients card
   await $.tool.call(EXIT.input)
   w.answer(null)
   await $.tool.call(EXIT.input)
-  expect(room.logs).toEqual([`sub-human: ${room.code} has no member named zed; your plan stays yours.`])
+  expect(room.logs).toEqual([`sub-human: ${room.code} has no member named zed; your plan stays yours.`, `sub-human: ${room.code} has no member named zed; your plan stays yours.`])
   expect(room.requests.filter(q => q.op === 'plan')).toEqual([])
   untouched(w)
   await $.session.end(END)

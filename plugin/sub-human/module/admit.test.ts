@@ -95,7 +95,7 @@ test('a session in no room that has not invited asks nothing', async ($, on) => 
   expect(w.sent.filter(s => s.op === 'asks')).toEqual([])
 })
 
-test('a host session in its room asks who waits without typing /sub-human invite', async ($, on) => {
+test('a host session in its room asks who waits without typing /room invite', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'alice', others: [], now: clock.now })
   await $.session.start(IN_ROOM)

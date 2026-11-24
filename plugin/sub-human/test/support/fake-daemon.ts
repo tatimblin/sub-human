@@ -91,7 +91,7 @@ export function fakeHome(o: { machine?: string } = {}): FakeHome {
         return r.value !== null && typeof r.value === 'object' && 'pointer' in r.value ? ok(r.value.pointer) : err('not a claim');
       },
       // the network is test/net's (two homes); here a line is one fixed answer, and no link is up
-      invite: async (code, from, name, via) => guard(`invite ${code} ${name} ${via} ${from}`) ?? ok({ line: `ssh://devbox/${code}?port=7420#${'0'.repeat(77)}` }),
+      invite: async (code, from, name, via) => guard(`invite ${code} ${name} ${via} ${from}`) ?? ok({ line: `ssh://devbox/${code}?port=7420#${'0'.repeat(77)}`, id: 'inv1', expires: 900_000 }),
       dial: async (line, name, session) => guard(`dial ${name} ${session.id}`) ?? ok({ code: /\/([a-z]+-\d{4})/.exec(line)?.[1] ?? 'none', check: '1f2e-3d4c' }),
       link: async code => guard(`link ${code}`) ?? ok(home.linked.get(code) ?? null),
       pinged: () => Promise.resolve(home.down === null ? ok(home.modules) : err(home.down)),

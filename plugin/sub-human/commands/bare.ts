@@ -1,8 +1,8 @@
-// `/sub-human [NAME] [ROOM]` (R1), as NAME, else SUB_HUMAN_NAME, else the git name: the room named, else the room this
+// `/room [NAME] [ROOM]` (R1), as NAME, else SUB_HUMAN_NAME, else the git name: the room named, else the room this
 // cwd last used while a member, else the one room open here, else a new one; several open, it lists them and joins
 // none. The daemon decides (net/daemon/open.ts).
 import { CODE } from '../core/api.js';
-import { nameFrom } from '../core/join.js';
+import { OPENED, nameFrom } from '../core/join.js';
 import type { Ctx, Verb } from './types.js';
 import { refused, say } from './types.js';
 
@@ -12,19 +12,19 @@ export const MODULES_OFF = "Nobody joined: sharing needs Claude Code's hooks mod
 export const bare: Verb = async (args, ctx) => {
   const code = args.find(a => CODE.test(a));
   const named = args.filter(a => a !== code);
-  if (named.length > 1) return refused(`${named.join(' ')} is not one name; nobody joined. Type /sub-human NAME.`);
+  if (named.length > 1) return refused(`${named.join(' ')} is not one name; nobody joined. Type /room NAME.`);
   const asked = named[0];
   const mine = await ctx.sessions.get(ctx.session);
   if (mine) {
     return (code ?? mine.code) === mine.code && (asked === undefined || nameFrom(asked) === mine.name)
       ? say(`You're already in ${mine.code} as ${mine.name}.`)
-      : refused(`This session is in ${mine.code} as ${mine.name}, so it joined no other. Type /sub-human leave first.`);
+      : refused(`This session is in ${mine.code} as ${mine.name}, so it joined no other. Type /room leave first.`);
   }
   const name = asked === undefined ? await defaultName(ctx) : nameFrom(asked);
   if (name === null) {
     return refused(asked === undefined
-      ? 'Nobody joined: there is no git name to join as. Type /sub-human NAME.'
-      : `Nobody joined: ${asked} can't be a name (one lowercase word, not a verb, not ending in -digits). Type /sub-human NAME.`);
+      ? 'Nobody joined: there is no git name to join as. Type /room NAME.'
+      : `Nobody joined: ${asked} can't be a name (one lowercase word, not a verb, not ending in -digits). Type /room NAME.`);
   }
   const on = await ctx.daemon.pinged(ctx.session);
   if (!on.ok || !on.value) return refused(on.ok ? MODULES_OFF : `Nobody joined: ${on.error}`);
@@ -36,9 +36,9 @@ export const bare: Verb = async (args, ctx) => {
   // the daemon picks the room and joins on one chain (core/api.ts join), so two first opens make one room
   const r = await ctx.daemon.join({ id: ctx.session, cwd: ctx.cwd, name, leave: ctx.uuid(), ...(code !== undefined && { code }), ...where });
   if (!r.ok) return refused(`Nobody joined: ${r.error}`);
-  if ('rooms' in r.value) return say(`Rooms open here: ${r.value.rooms.join(', ')}. Type /sub-human ROOM to join one.`);
+  if ('rooms' in r.value) return say(`Rooms open here: ${r.value.rooms.join(', ')}. Type /room ROOM to join one.`);
   const { code: room, opened, others } = r.value;
-  if (opened) return say(`You opened room ${room} as ${name}. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.`);
+  if (opened) return say(`${OPENED}${room} as ${name}. Others on this machine type /room to join; /room invite NAME brings someone from another machine.`);
   return say(`You're in ${room} as ${name}${others.length ? `, with ${others.join(', ')}` : ''}.`);
 };
 

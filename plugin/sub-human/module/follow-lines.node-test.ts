@@ -93,10 +93,10 @@ test('toDraw: the most valuable and newest first, three between prompts, then on
   assert.equal(DRAWN_MAX, 3);
   const burst = [d('old note', 1, 1), d('new note', 1, 5), d('overlap', 3, 2), d('about me', 2, 3), d('another', 1, 4)];
   const first = toDraw(burst, 0);
-  assert.deepEqual(first, { draw: ['overlap', 'about me', 'new note', 'sub-human: and 2 more: /sub-human news'], shown: 4 });
+  assert.deepEqual(first, { draw: ['overlap', 'about me', 'new note', 'sub-human: and 2 more: /room news'], shown: 4 });
   assert.deepEqual(toDraw([d('later', 3, 9)], first.shown), { draw: [], shown: 4 }); // the rest went in the one line
   assert.deepEqual(toDraw([d('a', 1, 1), d('b', 1, 2)], 0), { draw: ['b', 'a'], shown: 2 });
-  assert.deepEqual(toDraw([d('c', 1, 3), d('d', 1, 4)], 2), { draw: ['d', 'sub-human: and 1 more: /sub-human news'], shown: 4 });
+  assert.deepEqual(toDraw([d('c', 1, 3), d('d', 1, 4)], 2), { draw: ['d', 'sub-human: and 1 more: /room news'], shown: 4 });
 });
 
 test('freshCursor: each one its own, from the log\'s start', () => {

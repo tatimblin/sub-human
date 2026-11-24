@@ -1,4 +1,4 @@
-// `/sub-human who`: who is in this session's room, on which machines, and what each is doing (R4, R14).
+// `/room who`: who is in this session's room, on which machines, and what each is doing (R4, R14).
 import type { Member } from '../core/entries.js';
 import { oneLine } from '../core/text.js';
 import type { Verb } from './types.js';
@@ -8,7 +8,7 @@ import { isHere } from '../core/entries.js';
 
 export const who: Verb = async (_args, ctx) => {
   const mine = await ctx.sessions.get(ctx.session);
-  if (!mine) return say('This session is in no room. Type /sub-human to join one.');
+  if (!mine) return say('This session is in no room. Type /room to join one.');
   const s = await ctx.rooms.state(mine.code);
   if (!s.ok) return refused(`Nobody could be listed: ${s.error}`);
   // R34: a room hosted elsewhere whose host can't be reached shows who was here when it went

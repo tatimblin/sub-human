@@ -33,7 +33,7 @@ export function registerMessages(on: On): void {
       const r = readAnswer('message', await $.http.fetch(q.url, q));
       return r.ok ? { isDelivered: true } : refused(r.error);
     } catch (x) {
-      return refused(`sub-human didn't answer (${why(x)}); /sub-human doctor says why`);
+      return refused(`sub-human didn't answer (${why(x)}); /room doctor says why`);
     }
   });
 }

@@ -45,7 +45,7 @@ const missing = (file: string): Promise<boolean> => fs.stat(file).then(() => fal
 
 async function readKey(file: string): Promise<Result<KeyPair>> {
   const text = (await fs.readFile(file, 'utf8').catch(() => '')).trim();
-  if (!/^[0-9a-f]{64}$/.test(text)) return err(`the machine key in ${file} is not readable; move it aside and run /sub-human again`);
+  if (!/^[0-9a-f]{64}$/.test(text)) return err(`the machine key in ${file} is not readable; move it aside and run /room again`);
   const { mode } = await fs.stat(file);
   if ((mode & 0o077) !== 0) return err(`the machine key in ${file} can be read by others; run chmod 600 on it`);
   return ok(keyPair(Buffer.from(text, 'hex')));

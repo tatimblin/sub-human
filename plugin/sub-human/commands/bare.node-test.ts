@@ -16,13 +16,13 @@ async function seed(fake: FakeHome, code: string, name: string, state: 'idle' | 
   assert.ok(r.ok);
 }
 
-test('a bare /sub-human with no room open opens one, as the git name, with repo and branch (R1)', async () => {
+test('a bare /room with no room open opens one, as the git name, with repo and branch (R1)', async () => {
   const fake = fakeHome();
   const ctx = testCtx(fake);
   const a = await runCommand('', ctx);
   const code = await fake.code();
   assert.match(code, /^[a-z]+-\d{4}$/);
-  assert.deepEqual(a, { kind: 'say', text: `You opened room ${code} as alice. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.` });
+  assert.deepEqual(a, { kind: 'say', text: `You opened room ${code} as alice. Others on this machine type /room to join; /room invite NAME brings someone from another machine.` });
   const s = await fake.rooms.state(code);
   assert.ok(s.ok);
   assert.deepEqual(s.value.members.map(m => [m.name, m.repo, m.branch, m.machines]), [['alice', 'api', 'main', ['laptop']]]);
@@ -94,7 +94,7 @@ test('two first opens at once make one room', async () => {
   assert.equal((await fake.rooms.codes()).length, 1);
   const code = await fake.code();
   // whichever open lands first makes the room; the other joins it
-  const opened = (who: string) => `You opened room ${code} as ${who}. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.`;
+  const opened = (who: string) => `You opened room ${code} as ${who}. Others on this machine type /room to join; /room invite NAME brings someone from another machine.`;
   const texts = answers.map(x => x.text).sort();
   const either = [[opened('alice'), `You're in ${code} as bob, with alice.`], [opened('bob'), `You're in ${code} as alice, with bob.`]];
   assert.ok(either.some(pair => JSON.stringify([...pair].sort()) === JSON.stringify(texts)), texts.join(' | '));
@@ -129,7 +129,7 @@ test('a cwd\'s last room is passed over once the person has left it', async () =
 test('a name ending in -digits is refused in one line, as a title would read', async () => {
   const fake = fakeHome();
   assert.deepEqual(await runCommand('alice-2', testCtx(fake)), {
-    kind: 'refused', text: 'Nobody joined: alice-2 can\'t be a name (one lowercase word, not a verb, not ending in -digits). Type /sub-human NAME.',
+    kind: 'refused', text: 'Nobody joined: alice-2 can\'t be a name (one lowercase word, not a verb, not ending in -digits). Type /room NAME.',
   });
   assert.deepEqual(fake.calls, []);
 });
@@ -150,7 +150,7 @@ test('a session already in a room says so, and joins no other', async () => {
   assert.equal((await runCommand('', ctx)).text, `You're already in ${code} as alice.`);
   assert.equal((await runCommand('alice', ctx)).kind, 'say');
   const other = await runCommand('bob', ctx);
-  assert.deepEqual(other, { kind: 'refused', text: `This session is in ${code} as alice, so it joined no other. Type /sub-human leave first.` });
+  assert.deepEqual(other, { kind: 'refused', text: `This session is in ${code} as alice, so it joined no other. Type /room leave first.` });
   assert.deepEqual(fake.calls, ['join session-1 alice']);
 });
 
@@ -159,7 +159,7 @@ test('with several rooms open it lists them and joins none (R1)', async () => {
   await seed(fake, 'vole-0001', 'x');
   await seed(fake, 'wren-0002', 'y');
   const ctx = testCtx(fake);
-  assert.equal((await runCommand('', ctx)).text, 'Rooms open here: vole-0001, wren-0002. Type /sub-human ROOM to join one.');
+  assert.equal((await runCommand('', ctx)).text, 'Rooms open here: vole-0001, wren-0002. Type /room ROOM to join one.');
   assert.equal(await ctx.sessions.get('session-1'), null);
   assert.equal((await runCommand('wren-0002', ctx)).text, 'You\'re in wren-0002 as alice, with y.');
 });
@@ -176,8 +176,8 @@ test('a room whose every member is away, or who left, is not open: a bare join o
 test('refusals: an unknown room, no name, a bad name, two names, a kicked name (R43)', async () => {
   const fake = fakeHome();
   assert.deepEqual(await runCommand('mole-1234', testCtx(fake)),
-    { kind: 'refused', text: 'Nobody joined: there is no room mole-1234 on this machine. Type /sub-human to open one.' });
-  assert.equal((await runCommand('', testCtx(fake, { run: {} }))).text, 'Nobody joined: there is no git name to join as. Type /sub-human NAME.');
+    { kind: 'refused', text: 'Nobody joined: there is no room mole-1234 on this machine. Type /room to open one.' });
+  assert.equal((await runCommand('', testCtx(fake, { run: {} }))).text, 'Nobody joined: there is no git name to join as. Type /room NAME.');
   assert.match((await runCommand('room', testCtx(fake))).text, /^Nobody joined: room can't be a name/);
   assert.match((await runCommand('ann bea', testCtx(fake))).text, /^ann bea is not one name/);
   await seed(fake, 'vole-0001', 'x');

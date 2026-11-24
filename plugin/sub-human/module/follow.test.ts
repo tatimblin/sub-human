@@ -170,7 +170,7 @@ test('a burst draws at most three lines, newest first, then one line for the res
   }
   await room.poll(clock)
   expect(room.logs).toEqual([ // equals in value: the newest first
-    `bob's Claude: ${EDITED} note 21`, `bob's Claude: ${EDITED} note 20`, `bob's Claude: ${EDITED} note 19`, 'sub-human: and 19 more: /sub-human news',
+    `bob's Claude: ${EDITED} note 21`, `bob's Claude: ${EDITED} note 20`, `bob's Claude: ${EDITED} note 19`, 'sub-human: and 19 more: /room news',
   ])
   await $.session.end(END)
 })
@@ -183,7 +183,7 @@ test('a daemon that is down while I am idle is one line a session, not a line a 
   await room.settled(clock)
   for (let i = 0; i < 40; i++) await room.poll(clock) // two more pings
   expect(room.requests.filter(r => r.op === 'ping')).toHaveLength(3)
-  expect(room.logs).toEqual([`sub-human didn't answer, so ${room.code} may show you away: the daemon is broken for this test. /sub-human doctor says why.`])
+  expect(room.logs).toEqual([`sub-human didn't answer, so ${room.code} may show you away: the daemon is broken for this test. /room doctor says why.`])
   await $.session.end(END)
 })
 
@@ -209,7 +209,7 @@ test('a session in no room pings each poll until one gets through, then each PIN
   await $.session.end(END)
 })
 
-test('after /sub-human join, the pointer the daemon writes once let in is one line; a link that stopped is another (R30)', async ($, on) => {
+test('after /room join, the pointer the daemon writes once let in is one line; a link that stopped is another (R30)', async ($, on) => {
   const clock = mock.clock(on)
   const room = await seedRoom(on, { me: 'bob', others: ['alice'], now: clock.now })
   room.pointer(null)
@@ -241,10 +241,10 @@ test('the first read of the room never holds up the session\'s start', async ($,
   const room = await seedRoom(on, { me: 'alice', others: ['bob'], now: clock.now })
   const release = room.hold() // a slow disk: no read answers yet
   await $.session.start(START) // resolves all the same
-  expect(room.status).toEqual([])
+  expect(await room.line($)).toBeUndefined()
   release()
   await room.settled(clock)
-  expect(room.status.at(-1)).toBe(`${room.code} ● bob`)
+  expect(await room.line($)).toBe(`Room ● bob`)
   await $.session.end(END)
 })
 
@@ -265,7 +265,7 @@ test('the line cap is per prompt: two bursts in two polls draw three lines and o
   await room.as('bob').finding(`${EDITED} six`)
   await room.poll(clock)
   expect(room.logs).toHaveLength(4)
-  expect(room.logs.at(-1)).toBe('sub-human: and 2 more: /sub-human news')
+  expect(room.logs.at(-1)).toBe('sub-human: and 2 more: /room news')
   await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'composer' } })
   await room.as('bob').finding(`${EDITED} seven`)
   await room.poll(clock)

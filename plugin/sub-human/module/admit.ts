@@ -1,5 +1,5 @@
 // The host's Let in / Refuse card (R30): from an interactive session's start, while the session is in a room (follow.ts
-// fills that in) or has typed `/sub-human invite`, the module asks the daemon every few seconds who waits to be let
+// fills that in) or has typed `/room invite`, the module asks the daemon every few seconds who waits to be let
 // into this session's rooms (`asks`: only rooms hosted here have any), shows each joiner once as a native question card
 // naming them, their machine, a name that is not the invite's and the check string both people compare, and posts the
 // answer (`admit`). So a host session started after the invite shows the knock too. A card dismissed is a Refuse. A

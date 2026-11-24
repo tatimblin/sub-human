@@ -1,5 +1,5 @@
 // What the daemon gets from net/: the host's side (net/host.ts) for rooms hosted here, the links (net/link.ts) for
-// rooms hosted elsewhere, and the ops of core/api.ts that drive them (invite, asks, admit, kick, join, link). The home's
+// rooms hosted elsewhere, and the ops of core/api.ts that drive them (invite, uninvite, asks, admit, kick, join, link). The home's
 // machine key (keys.ts) is both the host key a line pins and this machine's link key.
 import os from 'node:os';
 import { spawn } from 'node:child_process';
@@ -19,7 +19,7 @@ import { dialSsh } from '../pathways/ssh.js';
 import { dialWs, expose } from '../pathways/tailscale.js';
 import type { Links, Rooms } from './rooms.js';
 
-const NET_OPS: ReadonlySet<string> = new Set<NetOp>(['invite', 'asks', 'admit', 'kick', 'dial', 'link']);
+const NET_OPS: ReadonlySet<string> = new Set<NetOp>(['invite', 'uninvite', 'asks', 'admit', 'kick', 'dial', 'link']);
 export const isNet = (req: Request): req is NetRequest => NET_OPS.has(req.op);
 
 export interface Net {
@@ -69,7 +69,7 @@ export function makeNet(rooms: Rooms, o: NetOptions): Net {
     if (p === 'online' || p === 'stopped') joining.delete(code);
     if (!j || p !== 'online') return;
     // a join that fails after Let in is told to the joiner's module, as the link's last word (core/api.ts link)
-    const fail = (why: string): void => { failed.set(code, `you were let in, but this session did not take its place (${why}); type /sub-human ${code}`); };
+    const fail = (why: string): void => { failed.set(code, `you were let in, but this session did not take its place (${why}); type /room ${code}`); };
     void rooms.handle({ op: 'join', ...j, code }).then(r => { if (!r.ok) fail(r.error); }, (e: unknown) => { fail(String(e)); });
   };
   const failed = new Map<string, string>();
@@ -101,6 +101,7 @@ export function makeNet(rooms: Rooms, o: NetOptions): Net {
       const hostOnly = (code: string): Result<never> | null => (set?.hosts(code) ? err(`only ${code}'s host can do that; nothing was done`) : null);
       switch (req.op) {
         case 'invite': return hostOnly(req.code) ?? host.invite(req);
+        case 'uninvite': return hostOnly(req.code) ?? host.uninvite(req);
         case 'asks': return ok({ asks: host.asks(req.session) });
         case 'admit': return host.answer(req);
         case 'kick': return hostOnly(req.code) ?? host.kick(req);

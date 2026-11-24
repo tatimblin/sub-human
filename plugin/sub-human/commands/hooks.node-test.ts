@@ -12,7 +12,7 @@ import { HANDOFF_MS } from '../core/api.js';
 
 const SID = '00000000-0000-4000-8000-000000000001';
 const expansion = (args: string) => ({
-  ...hookFixture('hook-user-prompt-expansion-steps', 'UserPromptExpansion'), command_name: 'sub-human', command_args: args, prompt: `/sub-human ${args}`,
+  ...hookFixture('hook-user-prompt-expansion-steps', 'UserPromptExpansion'), command_name: 'room', command_args: args, prompt: `/room ${args}`,
 });
 const notification = hookFixture('notification-permission-prompt', 'Notification',
   name => fs.readFileSync(new URL(`../test/fixtures/hooks/${name}.json`, import.meta.url), 'utf8'));
@@ -23,19 +23,19 @@ function setup() {
   return { fake, ctx };
 }
 
-test('the /sub-human expansion blocks with the answer as one line for the person (R43)', async () => {
+test('the /room expansion blocks with the answer as one line for the person (R43)', async () => {
   const { fake, ctx } = setup();
   const r = await HOOKS.expand(expansion(''), ctx);
   const code = await fake.code();
   assert.deepEqual(r, {
     out: {
-      decision: 'block', reason: `sub-human: You opened room ${code} as alice. Others on this machine type /sub-human to join; /sub-human invite NAME brings someone from another machine.`,
+      decision: 'block', reason: `sub-human: You opened room ${code} as alice. Others on this machine type /room to join; /room invite NAME brings someone from another machine.`,
       hookSpecificOutput: { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true },
     },
     exit: 0,
   });
   const help = await HOOKS.expand(expansion('help'), ctx);
-  assert.match(JSON.stringify(help.out), /sub-human: \/sub-human \[NAME\]/);
+  assert.match(JSON.stringify(help.out), /sub-human: \/room \[NAME\]/);
 });
 
 test('SessionStart gives a session in a room its NAME.CODE title, and says nothing otherwise', async () => {
@@ -136,7 +136,7 @@ test('probe C: a compact 61 s after the last ping keeps the session in its room,
   assert.deepEqual(await fake.kinds(code), ['joined']);
 });
 
-test('no SessionEnd reason posts a left: only /sub-human leave does', async () => {
+test('no SessionEnd reason posts a left: only /room leave does', async () => {
   for (const reason of ['logout', 'prompt_input_exit', 'other', 'clear', 'resume'] as const) {
     const { fake, ctx } = setup();
     await HOOKS.expand(expansion(''), ctx);

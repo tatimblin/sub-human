@@ -21,7 +21,7 @@ import { blobFile } from '../home.js';
 import { request } from './bridge.js';
 import type { Card } from './plans-cards.js';
 import type { Revision } from './plans-cards.js';
-import { DONT, SEND, approval, choice, freeName, reviewers, reviewersCard, sendCard } from './plans-cards.js';
+import { DONT, SEND, SHARE_QUESTION, approval, choice, described, freeName, recipients, recipientsCard, reviewers, reviewersCard, sendCard } from './plans-cards.js';
 import { staleNote } from './plans-notes.js';
 import { planSession, registerReview } from './plans-review.js';
 import type { InRoom } from './session.js';
@@ -60,6 +60,11 @@ export function planCall(input: unknown, room: InRoom): Result<ToolPlan> {
 
 export function registerPlans(on: On): void {
   registerReview(on);
+  // `$.ui.ask` takes labels only: the approval card's lines under its options are added to the dialog's own call
+  on('tool.call', { tool: 'AskUserQuestion' }, (_, e, next) => {
+    if (e.questions[0]?.question !== SHARE_QUESTION) return next(e);
+    return next({ ...e, questions: e.questions.map(q => ({ ...q, options: q.options.map(o => ({ ...o, description: described(o.label) ?? o.description })) })) });
+  });
   on('tool.call', { tool: 'ExitPlanMode' }, async ($, e, next) => {
     const r = await next(e);
     const room = session.room;
@@ -100,7 +105,7 @@ export function registerPlans(on: On): void {
       }
       return shared(rev.name, at.value, rev.people, asked);
     };
-    const a = approval(s, room.name, room.code, text, file, planSession.stored);
+    const a = approval(s, room.name, text, file, planSession.stored);
     if (a.kind === 'revision') return revise(a.revision, true);
     const c = choice(await ask(a.card), a, s, room.name, room.code);
     if (c.kind === 'keep') {
@@ -109,7 +114,15 @@ export function registerPlans(on: On): void {
     }
     if (c.kind === 'revise' && a.revision) return revise(a.revision, false);
     if (c.kind === 'send') {
-      const picked = await ask(sendCard(a.name, c.to));
+      const card = c.to ? null : recipientsCard(s, room.name, a.name);
+      const got = card ? recipients(await ask(card), s, room.name, room.code) : { kind: 'send' as const, to: c.to ?? [] };
+      if (got.kind === 'keep') {
+        if (got.line) $.ui.log(got.line);
+        return r;
+      }
+      const to = got.to ?? [];
+      const label = to.length ? to.join(', ') : 'the room';
+      const picked = await ask(sendCard(a.name, label));
       if (picked === null || picked === DONT) return r;
       const again = file ? [...planSession.stored].find(([, f]) => f === file)?.[0] : undefined;
       const { name: as, base } = freeName(s, a.name, room.name, 'personal', again);
@@ -119,11 +132,13 @@ export function registerPlans(on: On): void {
       planSession.stored.set(as, file);
       const branch = (await $.vcs.detect({ path: room.root }).catch(() => null))?.branch;
       const note = picked === SEND ? '' : picked.trim();
-      const sent = await plan({
-        act: 'send', name: as, version: at.value, files: sentFiles(text, session.mine?.files ?? [], room.ignore), by: 'person',
-        ...(c.to !== undefined && { to: c.to }), ...(note && { note }), ...(branch && { branch }),
-      });
-      return sent.ok ? told(`your person sent this plan to ${c.to ?? 'the room'} in ${room.code} as ${as} v${at.value}.`) : r;
+      const files = sentFiles(text, session.mine?.files ?? [], room.ignore);
+      let sent = true;
+      for (const one of to.length ? to : [undefined]) {
+        const r1 = await plan({ act: 'send', name: as, version: at.value, files, by: 'person', ...(one !== undefined && { to: one }), ...(note && { note }), ...(branch && { branch }) });
+        sent &&= r1.ok;
+      }
+      return sent ? told(`your person sent this plan to ${label} in ${room.code} as ${as} v${at.value}.`) : r;
     }
     const { name: as, base } = freeName(s, a.name, room.name, 'group');
     const at = await plan({ act: 'edit', name: as, base, text, scope: 'group' });

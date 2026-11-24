@@ -155,7 +155,14 @@ function onEntry(e: Entry, me: Me, s: State, now: number, budget: number): Deliv
     case 'plan_answer': {
       const v = room.plans.find(p => p.name === e.name)?.versions.find(x => x.version === e.version);
       if (v?.from !== me.name) return keep(NONE);
-      if (e.answer === 'agree') return keep(item(`agreed to plan ${e.name} version ${e.version}`, 2));
+      if (e.answer === 'agree') {
+        // an agree that settles the version is the decision's to tell, in one line and the wake: nothing of its own
+        const left = v.asked.filter(n => !v.answers.some(a => a.name === n));
+        if (v.decision || (v.asked.length && !left.length)) return keep(NONE);
+        // one still to answer: the person's line, not my Claude's news, since the decision will tell it whole
+        if (left.length) return keep(notice(`${who} agreed to plan ${quoted(e.name)} version ${e.version}; waiting on ${left.join(', ')}.`));
+        return keep(item(`agreed to plan ${e.name} version ${e.version}`, 2));
+      }
       const told = noted(`asked for changes on plan ${e.name} version ${e.version}`, e.note);
       if (!waits(s, e)) return keep(told);
       const note = e.note ?? ''; // asking for changes always carries one (core/plans.ts)
